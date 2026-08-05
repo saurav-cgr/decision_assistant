@@ -4,9 +4,9 @@
 
 **Goal:** Build a local-first application that ingests project documents, extracts correctable decisions, answers questions with exact citations, displays supersession timelines, and measures hybrid retrieval quality.
 
-**Architecture:** A React/TypeScript frontend calls a single-worker FastAPI modular monolith. PostgreSQL with pgvector stores versioned documents, passages, decisions, traces, and evaluations; Ollama is accessed only through generation and embedding provider interfaces. Implementation proceeds test-first and establishes a Markdown vertical slice before adding PDF/DOCX parsing and the complete UI.
+**Architecture:** A React/TypeScript frontend calls a single-worker FastAPI modular monolith. PostgreSQL with pgvector stores versioned documents, passages, decisions, traces, and evaluations; Ollama is accessed only through generation and embedding provider interfaces. Development tools, dependency installation, tests, builds, migrations, and application services run in Docker so the host requires only Git and Docker Desktop. Implementation proceeds test-first and establishes a Markdown vertical slice before adding PDF/DOCX parsing and the complete UI.
 
-**Tech Stack:** Python 3.12, FastAPI, Pydantic 2, SQLAlchemy 2 async, Alembic, PostgreSQL 16, pgvector, httpx, pypdf, python-docx, pytest, React 19, TypeScript, Vite, React Router, Vitest, Testing Library, Docker Compose, Ollama.
+**Tech Stack:** Docker Compose, Python 3.12 container, FastAPI, Pydantic 2, SQLAlchemy 2 async, Alembic, PostgreSQL 16, pgvector, httpx, pypdf, python-docx, pytest, Node.js 24 container, React 19, TypeScript, Vite, React Router, Vitest, Testing Library, Ollama container.
 
 ---
 
@@ -17,7 +17,8 @@
 - Keep FastAPI at one worker because MVP jobs are in-process background tasks.
 - Keep evidence text untrusted and isolated from model instructions.
 - Complete P0 tasks in order. Do not begin the optional P1 task until the final P0 verification passes.
-- Run backend commands from `api/` and frontend commands from `web/` unless the command explicitly uses Docker Compose.
+- Run every Python, pytest, Alembic, Node, npm, and Vite command through Docker from the repository root. Do not depend on host Python, Node, npm, PostgreSQL, or Ollama.
+- Bind-mount the repository root at `/workspace` in the API development container with workdir `/workspace/api` and `PYTHONPATH=/workspace/api/src`, so imports always resolve live source rather than the package snapshot built into the image. Bind-mount `web/` at `/app` and mount a named `web_node_modules` volume at `/app/node_modules`, so the source mount does not hide image-installed dependencies. This gives API/evaluation commands access to `sample_data/`, `evaluation/`, and `scripts/` without host runtimes or stale code.
 - Commit after every task using the stated commit message.
 
 ## Repository Structure
@@ -31,6 +32,7 @@ decision_assistant/
 ├── README.md                            # Setup, architecture, results, limitations
 ├── api/
 │   ├── Dockerfile
+│   ├── .dockerignore
 │   ├── alembic.ini
 │   ├── pyproject.toml
 │   ├── alembic/
@@ -58,7 +60,9 @@ decision_assistant/
 │       └── fixtures/                     # Small parser/provider fixtures
 ├── web/
 │   ├── Dockerfile
+│   ├── .dockerignore
 │   ├── package.json
+│   ├── package-lock.json
 │   ├── vite.config.ts
 │   ├── src/
 │   │   ├── main.tsx
@@ -84,49 +88,50 @@ decision_assistant/
 - Create: `Makefile`
 - Create: `api/pyproject.toml`
 - Create: `api/Dockerfile`
+- Create: `api/.dockerignore`
+- Create: `api/src/decision_memory/__init__.py`
 - Create: `web/package.json`
 - Create: `web/Dockerfile`
+- Create: `web/.dockerignore`
 - Create: `web/vite.config.ts`
 
-- [ ] **Step 1: Write the Compose configuration test**
+- [ ] **Step 1: Run the failing infrastructure check**
 
-Create `api/tests/unit/test_project_layout.py`:
-
-```python
-from pathlib import Path
-import yaml
-
-
-def test_compose_declares_required_services() -> None:
-    compose = yaml.safe_load(Path("../compose.yaml").read_text())
-    assert set(compose["services"]) == {"web", "api", "db", "ollama"}
-    assert compose["services"]["api"]["command"][-2:] == ["--workers", "1"]
-```
-
-- [ ] **Step 2: Run the test and verify it fails**
-
-Run: `python -m pytest tests/unit/test_project_layout.py -v`  
+Run: `docker compose config --quiet`
 Expected: FAIL because `compose.yaml` does not exist.
 
-- [ ] **Step 3: Create the minimal project manifests**
+- [ ] **Step 2: Create the minimal project manifests**
 
-Use `pgvector/pgvector:pg16` for `db`, `ollama/ollama` for `ollama`, health checks for both, named volumes for database/model/upload data, and `uvicorn decision_memory.main:app --host 0.0.0.0 --port 8000 --workers 1` for the API. Pin Python and JavaScript dependencies in their lockfiles during installation.
+Use `python:3.12-slim` as the API build base, `node:24-bookworm-slim` as the web build/development base, `pgvector/pgvector:pg16` for `db`, and `ollama/ollama` for `ollama`. Add health checks, named volumes for database/model/upload data, the API root bind mount at `/workspace` with workdir `/workspace/api` and `PYTHONPATH=/workspace/api/src`, the web bind mount at `/app`, and named volume `web_node_modules:/app/node_modules`. The web image installs the committed lockfile dependencies so Docker copies them into the initially empty named volume. Run `uvicorn decision_memory.main:app --host 0.0.0.0 --port 8000 --workers 1` for the API. Configure health-gated `depends_on` conditions for database/model consumers and use an evaluation path such as `/workspace/evaluation/questions.json`. Pass the configured generation and embedding model names to both the API and Ollama services so model-pull commands do not depend on exported host variables. Pin Python dependencies exactly in `pyproject.toml` and commit the npm lockfile.
 
-`api/pyproject.toml` must define runtime dependencies for FastAPI, Uvicorn, Pydantic Settings, SQLAlchemy async, asyncpg, Alembic, pgvector, httpx, python-multipart, pypdf, and python-docx; development dependencies include pytest, pytest-asyncio, pytest-cov, and PyYAML.
+`api/pyproject.toml` must define runtime dependencies for FastAPI, Uvicorn, Pydantic Settings, SQLAlchemy async, asyncpg, Alembic, pgvector, httpx, python-multipart, pypdf, and python-docx; development dependencies include pytest, pytest-asyncio, and pytest-cov.
 
-- [ ] **Step 4: Install dependencies and rerun the test**
+- [ ] **Step 3: Validate Compose and generate the frontend lockfile in Docker**
 
-Run: `python -m pip install -e '.[dev]'`  
-Run: `python -m pytest tests/unit/test_project_layout.py -v`  
-Expected: PASS.
+Run: `docker compose config --quiet`
+Expected: exit code 0.
 
-Run: `npm install` in `web/`  
+Run: `docker run --rm -v "$PWD/web:/app" -w /app node:24-bookworm-slim npm install --package-lock-only`
 Expected: `package-lock.json` created with no install failure.
 
-- [ ] **Step 5: Validate Compose**
+- [ ] **Step 4: Build the development images**
 
-Run: `docker compose config --quiet`  
-Expected: exit code 0.
+Run: `docker compose build api web`
+Expected: both images build successfully using Python 3.12 and Node 24.
+
+- [ ] **Step 5: Verify container toolchains**
+
+Run: `docker compose run --rm api python --version`
+Expected: Python 3.12.x.
+
+Run: `docker compose run --rm api pytest --version`
+Expected: pytest version printed.
+
+Run: `docker compose run --rm web node --version`
+Expected: Node v24.x.
+
+Run: `docker compose run --rm web npm --version`
+Expected: npm version printed.
 
 - [ ] **Step 6: Commit**
 
@@ -138,7 +143,6 @@ git commit -m "chore: scaffold local decision memory runtime"
 ### Task 2: Create the FastAPI Composition Root and Error Contract (1.5 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/__init__.py`
 - Create: `api/src/decision_memory/main.py`
 - Create: `api/src/decision_memory/config.py`
 - Create: `api/src/decision_memory/errors.py`
@@ -165,7 +169,7 @@ def test_unknown_route_uses_stable_error_shape() -> None:
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/unit/test_app.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_app.py -v`
 Expected: FAIL because `decision_memory.main` is missing.
 
 - [ ] **Step 3: Implement settings, request IDs, health, and exception handlers**
@@ -178,7 +182,7 @@ Expected: FAIL because `decision_memory.main` is missing.
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `pytest tests/unit/test_app.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_app.py -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
@@ -215,7 +219,7 @@ async def test_fake_generation_validates_response_model() -> None:
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/unit/test_provider_fakes.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_provider_fakes.py -v`
 Expected: FAIL because provider modules are missing.
 
 - [ ] **Step 3: Implement provider protocols and deterministic fakes**
@@ -228,10 +232,15 @@ Use `httpx.AsyncClient` against `/api/embed` and `/api/chat`, request JSON/schem
 
 - [ ] **Step 5: Run unit and opt-in contract tests**
 
-Run: `pytest tests/unit/test_provider_fakes.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_provider_fakes.py -v`
 Expected: PASS.
 
-Run: `OLLAMA_CONTRACT_TESTS=1 pytest tests/contract/test_ollama_provider.py -v` with Ollama available.  
+Run: `docker compose up -d ollama --wait`
+Run: `docker compose exec ollama sh -lc 'ollama pull "$OLLAMA_GENERATION_MODEL"'`
+Run: `docker compose exec ollama sh -lc 'ollama pull "$OLLAMA_EMBEDDING_MODEL"'`
+Expected: the Ollama service is healthy and both configured models are available before the contract test.
+
+Run: `docker compose run --rm -e OLLAMA_CONTRACT_TESTS=1 api pytest tests/contract/test_ollama_provider.py -v` with the Ollama service healthy.
 Expected: PASS; without the environment flag, tests SKIP.
 
 - [ ] **Step 6: Commit**
@@ -268,8 +277,8 @@ Also assert that passages require a document-version ID and that pgvector plus t
 
 - [ ] **Step 2: Verify failure against the test database**
 
-Run: `docker compose up -d db`  
-Run: `pytest tests/integration/test_schema.py -v`  
+Run: `docker compose up -d db --wait`
+Run: `docker compose run --rm api pytest tests/integration/test_schema.py -v`
 Expected: FAIL because models/migration are missing.
 
 - [ ] **Step 3: Implement models and migration**
@@ -278,8 +287,8 @@ Create all P0 entities from the spec: workspace, document, document version, pas
 
 - [ ] **Step 4: Apply migration and verify**
 
-Run: `alembic upgrade head`  
-Run: `pytest tests/integration/test_schema.py -v`  
+Run: `docker compose run --rm api alembic upgrade head`
+Run: `docker compose run --rm api pytest tests/integration/test_schema.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -317,7 +326,7 @@ def test_chunks_have_reproducible_hashes() -> None:
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/unit/test_text_parsers.py tests/unit/test_chunking.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_text_parsers.py tests/unit/test_chunking.py -v`
 Expected: FAIL because parsers are missing.
 
 - [ ] **Step 3: Implement normalized blocks and boundary-aware chunking**
@@ -326,7 +335,7 @@ Define `ParsedBlock`, `ParsedDocument`, and `PassageDraft`. Normalize line endin
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `pytest tests/unit/test_text_parsers.py tests/unit/test_chunking.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_text_parsers.py tests/unit/test_chunking.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -361,7 +370,7 @@ async def test_missing_owner_remains_none() -> None:
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/unit/test_decision_extractor.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_decision_extractor.py -v`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement schema-constrained extraction**
@@ -370,7 +379,7 @@ Create decision/status/relation Pydantic schemas, delimit passages as untrusted 
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `pytest tests/unit/test_decision_extractor.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_decision_extractor.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -409,7 +418,7 @@ async def test_failed_reindex_keeps_previous_version_active(ingestion_service, d
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/unit/test_metadata_extractor.py tests/integration/test_ingestion_service.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_metadata_extractor.py tests/integration/test_ingestion_service.py -v`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the staged pipeline**
@@ -418,7 +427,7 @@ Persist an ingestion job, stage immutable version/file metadata, parse the docum
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `pytest tests/unit/test_metadata_extractor.py tests/integration/test_ingestion_service.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_metadata_extractor.py tests/integration/test_ingestion_service.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -443,7 +452,7 @@ Test one and multiple valid uploads returning `202`, invalid extension returning
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/integration/test_documents_api.py -v`  
+Run: `docker compose run --rm api pytest tests/integration/test_documents_api.py -v`
 Expected: FAIL with missing routes.
 
 - [ ] **Step 3: Implement upload safety and background dispatch**
@@ -452,7 +461,7 @@ Sanitize display names, generate storage names, validate extension plus media ty
 
 - [ ] **Step 4: Verify API behavior**
 
-Run: `pytest tests/integration/test_documents_api.py -v`  
+Run: `docker compose run --rm api pytest tests/integration/test_documents_api.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -491,7 +500,7 @@ Seed active and retired versions. Assert only active passages appear; explicit p
 
 - [ ] **Step 3: Verify failure**
 
-Run: `pytest tests/unit/test_rrf.py tests/integration/test_hybrid_retrieval.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_rrf.py tests/integration/test_hybrid_retrieval.py -v`
 Expected: FAIL.
 
 - [ ] **Step 4: Implement query analysis, repositories, RRF, and trace persistence**
@@ -500,7 +509,7 @@ Use deterministic extraction for explicit filters first; use a structured genera
 
 - [ ] **Step 5: Verify passing behavior**
 
-Run: `pytest tests/unit/test_rrf.py tests/integration/test_hybrid_retrieval.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_rrf.py tests/integration/test_hybrid_retrieval.py -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -535,7 +544,7 @@ def test_verifier_rejects_stale_citation() -> None:
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/unit/test_answer_verifier.py tests/integration/test_questions_api.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_answer_verifier.py tests/integration/test_questions_api.py -v`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the answer contract and evidence-pack builder**
@@ -548,7 +557,7 @@ Validate passage existence/version, quote substring, offsets, hash, claim citati
 
 - [ ] **Step 5: Verify passing behavior**
 
-Run: `pytest tests/unit/test_answer_verifier.py tests/integration/test_questions_api.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_answer_verifier.py tests/integration/test_questions_api.py -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit the first complete backend vertical slice**
@@ -576,7 +585,7 @@ Assert PDF blocks preserve page numbers, DOCX blocks preserve paragraph ranges, 
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/unit/test_pdf_parser.py tests/unit/test_docx_parser.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_pdf_parser.py tests/unit/test_docx_parser.py -v`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement safe format adapters**
@@ -585,7 +594,7 @@ Use pypdf to read embedded text page by page and python-docx to read paragraphs 
 
 - [ ] **Step 4: Verify all parser tests**
 
-Run: `pytest tests/unit/test_text_parsers.py tests/unit/test_pdf_parser.py tests/unit/test_docx_parser.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_text_parsers.py tests/unit/test_pdf_parser.py tests/unit/test_docx_parser.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -614,7 +623,7 @@ Encode this P0 rule in the test: user-confirmed `supersedes` is authoritative do
 
 - [ ] **Step 3: Verify failure**
 
-Run: `pytest tests/integration/test_decisions_api.py -v`  
+Run: `docker compose run --rm api pytest tests/integration/test_decisions_api.py -v`
 Expected: FAIL.
 
 - [ ] **Step 4: Implement correction/revision/relationship services and routes**
@@ -623,7 +632,7 @@ Patch only allowed fields, create one field-level revision per changed field, re
 
 - [ ] **Step 5: Verify passing behavior**
 
-Run: `pytest tests/integration/test_decisions_api.py -v`  
+Run: `docker compose run --rm api pytest tests/integration/test_decisions_api.py -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -649,7 +658,7 @@ Assert chronological ordering, fallback document dates interleaved with known de
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/unit/test_timeline_service.py tests/integration/test_timelines_api.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_timeline_service.py tests/integration/test_timelines_api.py -v`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement topic matching and deterministic relation expansion**
@@ -658,7 +667,7 @@ Use normalized topic equality plus hybrid candidate IDs and expand stored relati
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `pytest tests/unit/test_timeline_service.py tests/integration/test_timelines_api.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_timeline_service.py tests/integration/test_timelines_api.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -694,7 +703,7 @@ Assert `pending → running → completed`, progress counters, isolated per-ques
 
 - [ ] **Step 3: Verify failure**
 
-Run: `pytest tests/unit/test_evaluation_metrics.py tests/integration/test_evaluation_runs.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_evaluation_metrics.py tests/integration/test_evaluation_runs.py -v`
 Expected: FAIL.
 
 - [ ] **Step 4: Implement metrics and background run service**
@@ -703,7 +712,7 @@ Load versioned JSON fixtures, execute each question through the selected retriev
 
 - [ ] **Step 5: Verify passing behavior**
 
-Run: `pytest tests/unit/test_evaluation_metrics.py tests/integration/test_evaluation_runs.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_evaluation_metrics.py tests/integration/test_evaluation_runs.py -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -741,7 +750,7 @@ it("renders all primary navigation destinations", () => {
 
 - [ ] **Step 2: Verify failure**
 
-Run: `npm test -- --run src/app/App.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/app/App.test.tsx`
 Expected: FAIL because the app is missing.
 
 - [ ] **Step 3: Implement the shell, routes, typed client, and error boundary**
@@ -750,7 +759,7 @@ Create routes for `/`, `/ask`, `/timeline`, `/decisions/:id`, and `/evaluation`.
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `npm test -- --run src/app/App.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/app/App.test.tsx`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -774,7 +783,7 @@ Test supported file accept list, upload progress, polling pending/running jobs, 
 
 - [ ] **Step 2: Verify failure**
 
-Run: `npm test -- --run src/pages/Workspace.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/pages/Workspace.test.tsx`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement upload/list/detail/status behavior**
@@ -783,7 +792,7 @@ Use a 2-second poll only while jobs are non-terminal; stop polling after complet
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `npm test -- --run src/pages/Workspace.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/pages/Workspace.test.tsx`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -807,7 +816,7 @@ Cover supported, partial, abstained, and conflicted answers; exact citation quot
 
 - [ ] **Step 2: Verify failure**
 
-Run: `npm test -- --run src/pages/Ask.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/pages/Ask.test.tsx`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the question and evidence experience**
@@ -816,7 +825,7 @@ Render model output only through typed fields, never raw HTML. Number citations 
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `npm test -- --run src/pages/Ask.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/pages/Ask.test.tsx`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -842,7 +851,7 @@ Test supported correction with evidence selection, unsupported warning, immutabl
 
 - [ ] **Step 2: Verify failure**
 
-Run: `npm test -- --run src/pages/DecisionDetail.test.tsx src/pages/Timeline.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/pages/DecisionDetail.test.tsx src/pages/Timeline.test.tsx`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement both screens**
@@ -851,7 +860,7 @@ Require explicit confirmation before saving unsupported corrections. Display use
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `npm test -- --run src/pages/DecisionDetail.test.tsx src/pages/Timeline.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/pages/DecisionDetail.test.tsx src/pages/Timeline.test.tsx`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -875,7 +884,7 @@ Test starting semantic/hybrid runs, progress polling, aggregate metric definitio
 
 - [ ] **Step 2: Verify failure**
 
-Run: `npm test -- --run src/pages/Evaluation.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/pages/Evaluation.test.tsx`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the dashboard**
@@ -884,7 +893,7 @@ Present semantic and hybrid runs side by side only after both use the same datas
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `npm test -- --run src/pages/Evaluation.test.tsx`  
+Run: `docker compose run --rm web npm test -- --run src/pages/Evaluation.test.tsx`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -912,12 +921,15 @@ Assert exactly 20 unique question IDs, at least four abstention cases, at least 
 
 - [ ] **Step 2: Verify failure**
 
-Run: `pytest tests/unit/test_evaluation_fixture.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_evaluation_fixture.py -v`
 Expected: FAIL because fixtures are absent.
 
 - [ ] **Step 3: Write one internally consistent fictional project history**
 
 The documents must contain exact, recoverable evidence for proposed June authentication, May postponement, Priya ownership, authorization-audit reason, July internal beta revision, public rollout remaining postponed, one deliberately conflicting owner/status statement, unrelated decisions, and unsupported topics. Generate DOCX/PDF fixtures from reviewed source text and retain the source-generation script or Markdown alongside them for auditability.
+
+Run: `docker compose run --rm api python ../scripts/build_sample_documents.py`
+Expected: the DOCX and PDF fixtures are generated under `/workspace/sample_data/atlas` without requiring host Python.
 
 - [ ] **Step 4: Author 20 gold questions and validate them**
 
@@ -925,7 +937,7 @@ Each entry includes ID, question, expected atomic claims, expected passage/docum
 
 - [ ] **Step 5: Verify passing fixtures**
 
-Run: `pytest tests/unit/test_evaluation_fixture.py -v`  
+Run: `docker compose run --rm api pytest tests/unit/test_evaluation_fixture.py -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -939,6 +951,7 @@ git commit -m "test: add Atlas project benchmark corpus"
 
 **Files:**
 - Create: `scripts/smoke.sh`
+- Create: `scripts/smoke.py`
 - Create: `README.md`
 - Modify: `.env.example`
 - Modify: `Makefile`
@@ -946,50 +959,58 @@ git commit -m "test: add Atlas project benchmark corpus"
 
 - [ ] **Step 1: Write the smoke script before running it**
 
-The script must start Compose, wait for health, migrate, upload the two Markdown fixtures containing the earlier and later authentication decisions, poll both to completion, ask the authentication question, and assert a citation. It must then list the two extracted decisions, call `POST /decisions/{id}/relations` to confirm the later decision `supersedes` the earlier one, request the timeline, assert the authoritative superseded event, and exit nonzero on any failure. It may use fake providers in CI and real Ollama in the recorded local demo.
+`scripts/smoke.sh` must use only shell built-ins plus Docker Compose. It starts database and Ollama with `docker compose up -d db ollama --wait`; unless `SMOKE_PROVIDER_MODE=fake`, it idempotently pulls both configured models through `docker compose exec ollama sh -lc`. It applies migrations before API startup through `docker compose run --rm api alembic upgrade head`, then starts API/web with `docker compose up -d api web --wait`, and finally runs `docker compose run --rm api python ../scripts/smoke.py`. `scripts/smoke.py` uses Python's standard HTTP/JSON libraries from inside the Compose network; it must not require host `curl`, `jq`, Python, or Node.
+
+The containerized smoke client uploads the two Markdown fixtures containing the earlier and later authentication decisions, polls both to completion, asks the authentication question, and asserts a citation. It then lists the two extracted decisions, calls `POST /decisions/{id}/relations` to confirm the later decision `supersedes` the earlier one, requests the timeline, asserts the authoritative superseded event, and exits nonzero on any failure. It may use fake providers in CI and real Ollama in the recorded local demo.
 
 - [ ] **Step 2: Run the complete deterministic test suite**
 
-Run: `pytest -m 'not ollama' --cov=decision_memory --cov-report=term-missing`  
+Run: `docker compose run --rm api pytest -m 'not ollama' --cov=decision_memory --cov-report=term-missing`
 Expected: PASS with no unexpected skip.
 
-Run: `npm test -- --run`  
+Run: `docker compose run --rm web npm test -- --run`
 Expected: PASS.
 
-Run: `npm run build`  
+Run: `docker compose run --rm web npm run build`
 Expected: production frontend build succeeds.
 
 - [ ] **Step 3: Run migration and Compose verification**
 
-Run: `docker compose config --quiet`  
-Run: `docker compose build`  
-Run: `docker compose up -d`  
-Run: `docker compose exec api alembic upgrade head`  
+Run: `docker compose config --quiet`
+Run: `docker compose build`
+Run: `docker compose up -d db ollama --wait`
+Run: `docker compose run --rm api alembic upgrade head`
+Run: `docker compose up -d api web --wait`
 Expected: all services healthy and migration succeeds.
 
 - [ ] **Step 4: Run the smoke test**
 
-Run: `bash scripts/smoke.sh`  
+Run: `bash scripts/smoke.sh`
 Expected: `SMOKE PASS: upload -> index -> ask -> citation -> timeline`.
 
 - [ ] **Step 5: Run the real local evaluation**
 
-Start Ollama with configured embedding/generation models, ingest the complete Atlas corpus, run semantic-only and hybrid benchmarks, and save actual output through the application. Verify hybrid top-five hit rate is at least 80%; if it is not, debug chunking/query/fusion using traces before tuning thresholds.
+Run: `docker compose up -d ollama`
+Run: `docker compose exec ollama sh -lc 'ollama pull "$OLLAMA_GENERATION_MODEL"'`
+Run: `docker compose exec ollama sh -lc 'ollama pull "$OLLAMA_EMBEDDING_MODEL"'`
+Expected: both configured models are present in the Ollama volume.
+
+Using the containerized application, ingest the complete Atlas corpus, run semantic-only and hybrid benchmarks, and save actual output through the application. Verify hybrid top-five hit rate is at least 80%; if it is not, debug chunking/query/fusion using traces before tuning thresholds.
 
 - [ ] **Step 6: Finish the README**
 
-Document setup, architecture diagram, module boundaries, provider swapping, data model/versioning, supported formats, security boundaries, evaluation definitions and actual results, trade-offs, limitations, troubleshooting, and the exact 3–5 minute demo flow. Add a manual audit table for all local-judge disagreements in the approximately 20-question dataset, recording question ID, claim, judge result, human result, and resolution. Do not report invented metrics.
+Document Git and Docker Desktop as the only required host installations; all Python/Node/database/model commands must use Compose. Document setup, architecture diagram, module boundaries, provider swapping, data model/versioning, supported formats, security boundaries, evaluation definitions and actual results, trade-offs, limitations, troubleshooting, and the exact 3–5 minute demo flow. Add a manual audit table for all local-judge disagreements in the approximately 20-question dataset, recording question ID, claim, judge result, human result, and resolution. Do not report invented metrics.
 
 - [ ] **Step 7: Final verification and repository audit**
 
-Run: `git diff --check`  
-Run: `git status --short`  
+Run: `git diff --check`
+Run: `git status --short`
 Expected: no formatting errors; only intended documentation/result changes remain.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add scripts/smoke.sh README.md .env.example Makefile
+git add scripts/smoke.sh scripts/smoke.py README.md .env.example Makefile
 git commit -m "docs: complete local MVP verification and demo"
 ```
 
