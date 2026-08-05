@@ -38,7 +38,7 @@ decision_assistant/
 │   ├── alembic/
 │   │   ├── env.py
 │   │   └── versions/0001_initial.py
-│   ├── src/decision_memory/
+│   ├── src/decision_assistant/
 │   │   ├── main.py                      # FastAPI composition root
 │   │   ├── config.py                    # Pydantic settings
 │   │   ├── db.py                        # Async engine/session lifecycle
@@ -89,7 +89,7 @@ decision_assistant/
 - Create: `api/pyproject.toml`
 - Create: `api/Dockerfile`
 - Create: `api/.dockerignore`
-- Create: `api/src/decision_memory/__init__.py`
+- Create: `api/src/decision_assistant/__init__.py`
 - Create: `web/package.json`
 - Create: `web/Dockerfile`
 - Create: `web/.dockerignore`
@@ -102,7 +102,7 @@ Expected: FAIL because `compose.yaml` does not exist.
 
 - [ ] **Step 2: Create the minimal project manifests**
 
-Use `python:3.12-slim` as the API build base, `node:24-bookworm-slim` as the web build/development base, `pgvector/pgvector:pg16` for `db`, and `ollama/ollama` for `ollama`. Add health checks, named volumes for database/model/upload data, the API root bind mount at `/workspace` with workdir `/workspace/api` and `PYTHONPATH=/workspace/api/src`, the web bind mount at `/app`, and named volume `web_node_modules:/app/node_modules`. The web image installs the committed lockfile dependencies so Docker copies them into the initially empty named volume. Run `uvicorn decision_memory.main:app --host 0.0.0.0 --port 8000 --workers 1` for the API. Configure health-gated `depends_on` conditions for database/model consumers and use an evaluation path such as `/workspace/evaluation/questions.json`. Pass the configured generation and embedding model names to both the API and Ollama services so model-pull commands do not depend on exported host variables. Pin Python dependencies exactly in `pyproject.toml` and commit the npm lockfile.
+Use `python:3.12-slim` as the API build base, `node:24-bookworm-slim` as the web build/development base, `pgvector/pgvector:pg16` for `db`, and `ollama/ollama` for `ollama`. Add health checks, named volumes for database/model/upload data, the API root bind mount at `/workspace` with workdir `/workspace/api` and `PYTHONPATH=/workspace/api/src`, the web bind mount at `/app`, and named volume `web_node_modules:/app/node_modules`. The web image installs the committed lockfile dependencies so Docker copies them into the initially empty named volume. Run `uvicorn decision_assistant.main:app --host 0.0.0.0 --port 8000 --workers 1` for the API. Configure health-gated `depends_on` conditions for database/model consumers and use an evaluation path such as `/workspace/evaluation/questions.json`. Pass the configured generation and embedding model names to both the API and Ollama services so model-pull commands do not depend on exported host variables. Pin Python dependencies exactly in `pyproject.toml` and commit the npm lockfile.
 
 `api/pyproject.toml` must define runtime dependencies for FastAPI, Uvicorn, Pydantic Settings, SQLAlchemy async, asyncpg, Alembic, pgvector, httpx, python-multipart, pypdf, and python-docx; development dependencies include pytest, pytest-asyncio, and pytest-cov.
 
@@ -143,16 +143,16 @@ git commit -m "chore: scaffold local decision memory runtime"
 ### Task 2: Create the FastAPI Composition Root and Error Contract (1.5 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/main.py`
-- Create: `api/src/decision_memory/config.py`
-- Create: `api/src/decision_memory/errors.py`
+- Create: `api/src/decision_assistant/main.py`
+- Create: `api/src/decision_assistant/config.py`
+- Create: `api/src/decision_assistant/errors.py`
 - Test: `api/tests/unit/test_app.py`
 
 - [ ] **Step 1: Write failing health and error tests**
 
 ```python
 from fastapi.testclient import TestClient
-from decision_memory.main import create_app
+from decision_assistant.main import create_app
 
 
 def test_health_reports_ready() -> None:
@@ -170,7 +170,7 @@ def test_unknown_route_uses_stable_error_shape() -> None:
 - [ ] **Step 2: Verify failure**
 
 Run: `docker compose run --rm api pytest tests/unit/test_app.py -v`
-Expected: FAIL because `decision_memory.main` is missing.
+Expected: FAIL because `decision_assistant.main` is missing.
 
 - [ ] **Step 3: Implement settings, request IDs, health, and exception handlers**
 
@@ -188,16 +188,16 @@ Expected: 2 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/decision_memory api/tests/unit/test_app.py
+git add api/src/decision_assistant api/tests/unit/test_app.py
 git commit -m "feat: add API composition root and error contract"
 ```
 
 ### Task 3: Define Provider Interfaces, Fakes, and Ollama Adapters (2 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/providers/base.py`
-- Create: `api/src/decision_memory/providers/fakes.py`
-- Create: `api/src/decision_memory/providers/ollama.py`
+- Create: `api/src/decision_assistant/providers/base.py`
+- Create: `api/src/decision_assistant/providers/fakes.py`
+- Create: `api/src/decision_assistant/providers/ollama.py`
 - Test: `api/tests/unit/test_provider_fakes.py`
 - Test: `api/tests/contract/test_ollama_provider.py`
 
@@ -246,15 +246,15 @@ Expected: PASS; without the environment flag, tests SKIP.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add api/src/decision_memory/providers api/tests/unit/test_provider_fakes.py api/tests/contract/test_ollama_provider.py
+git add api/src/decision_assistant/providers api/tests/unit/test_provider_fakes.py api/tests/contract/test_ollama_provider.py
 git commit -m "feat: add model provider contracts and Ollama adapters"
 ```
 
 ### Task 4: Add the Versioned PostgreSQL Schema (2.5 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/db.py`
-- Create: `api/src/decision_memory/models.py`
+- Create: `api/src/decision_assistant/db.py`
+- Create: `api/src/decision_assistant/models.py`
 - Create: `api/alembic.ini`
 - Create: `api/alembic/env.py`
 - Create: `api/alembic/versions/0001_initial.py`
@@ -294,15 +294,15 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/decision_memory/db.py api/src/decision_memory/models.py api/alembic.ini api/alembic api/tests/conftest.py api/tests/integration/test_schema.py
+git add api/src/decision_assistant/db.py api/src/decision_assistant/models.py api/alembic.ini api/alembic api/tests/conftest.py api/tests/integration/test_schema.py
 git commit -m "feat: add versioned decision memory schema"
 ```
 
 ### Task 5: Parse Markdown and Text with Stable Locators (1.5 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/ingestion/parsers.py`
-- Create: `api/src/decision_memory/ingestion/chunking.py`
+- Create: `api/src/decision_assistant/ingestion/parsers.py`
+- Create: `api/src/decision_assistant/ingestion/chunking.py`
 - Test: `api/tests/unit/test_text_parsers.py`
 - Test: `api/tests/unit/test_chunking.py`
 - Create: `api/tests/fixtures/meeting.md`
@@ -341,15 +341,15 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/decision_memory/ingestion api/tests/unit api/tests/fixtures/meeting.md
+git add api/src/decision_assistant/ingestion api/tests/unit api/tests/fixtures/meeting.md
 git commit -m "feat: parse and chunk text documents with stable locators"
 ```
 
 ### Task 6: Implement Decision Extraction and Evidence Alignment (2 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/decisions/schemas.py`
-- Create: `api/src/decision_memory/decisions/extractor.py`
+- Create: `api/src/decision_assistant/decisions/schemas.py`
+- Create: `api/src/decision_assistant/decisions/extractor.py`
 - Test: `api/tests/unit/test_decision_extractor.py`
 
 - [ ] **Step 1: Write failing extraction tests**
@@ -385,17 +385,17 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/decision_memory/decisions api/tests/unit/test_decision_extractor.py
+git add api/src/decision_assistant/decisions api/tests/unit/test_decision_extractor.py
 git commit -m "feat: extract decisions with aligned evidence"
 ```
 
 ### Task 7: Build Transactional, Version-Safe Ingestion (3 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/ingestion/service.py`
-- Create: `api/src/decision_memory/ingestion/jobs.py`
-- Create: `api/src/decision_memory/ingestion/metadata.py`
-- Create: `api/src/decision_memory/workspace/service.py`
+- Create: `api/src/decision_assistant/ingestion/service.py`
+- Create: `api/src/decision_assistant/ingestion/jobs.py`
+- Create: `api/src/decision_assistant/ingestion/metadata.py`
+- Create: `api/src/decision_assistant/workspace/service.py`
 - Test: `api/tests/unit/test_metadata_extractor.py`
 - Test: `api/tests/integration/test_ingestion_service.py`
 
@@ -433,17 +433,17 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/decision_memory/ingestion api/src/decision_memory/workspace api/tests/unit/test_metadata_extractor.py api/tests/integration/test_ingestion_service.py
+git add api/src/decision_assistant/ingestion api/src/decision_assistant/workspace api/tests/unit/test_metadata_extractor.py api/tests/integration/test_ingestion_service.py
 git commit -m "feat: add transactional version-safe ingestion"
 ```
 
 ### Task 8: Expose Document Upload and Status APIs (2 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/documents/schemas.py`
-- Create: `api/src/decision_memory/documents/service.py`
-- Create: `api/src/decision_memory/documents/router.py`
-- Modify: `api/src/decision_memory/main.py`
+- Create: `api/src/decision_assistant/documents/schemas.py`
+- Create: `api/src/decision_assistant/documents/service.py`
+- Create: `api/src/decision_assistant/documents/router.py`
+- Modify: `api/src/decision_assistant/main.py`
 - Test: `api/tests/integration/test_documents_api.py`
 
 - [ ] **Step 1: Write failing API tests**
@@ -467,19 +467,19 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/decision_memory/documents api/src/decision_memory/main.py api/tests/integration/test_documents_api.py
+git add api/src/decision_assistant/documents api/src/decision_assistant/main.py api/tests/integration/test_documents_api.py
 git commit -m "feat: add document upload and indexing status API"
 ```
 
 ### Task 9: Implement Hybrid Retrieval, RRF, and Traces (3 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/retrieval/schemas.py`
-- Create: `api/src/decision_memory/retrieval/rrf.py`
-- Create: `api/src/decision_memory/retrieval/repository.py`
-- Create: `api/src/decision_memory/retrieval/service.py`
-- Create: `api/src/decision_memory/retrieval/router.py`
-- Modify: `api/src/decision_memory/main.py`
+- Create: `api/src/decision_assistant/retrieval/schemas.py`
+- Create: `api/src/decision_assistant/retrieval/rrf.py`
+- Create: `api/src/decision_assistant/retrieval/repository.py`
+- Create: `api/src/decision_assistant/retrieval/service.py`
+- Create: `api/src/decision_assistant/retrieval/router.py`
+- Modify: `api/src/decision_assistant/main.py`
 - Test: `api/tests/unit/test_rrf.py`
 - Test: `api/tests/integration/test_hybrid_retrieval.py`
 
@@ -515,18 +515,18 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add api/src/decision_memory/retrieval api/src/decision_memory/main.py api/tests/unit/test_rrf.py api/tests/integration/test_hybrid_retrieval.py
+git add api/src/decision_assistant/retrieval api/src/decision_assistant/main.py api/tests/unit/test_rrf.py api/tests/integration/test_hybrid_retrieval.py
 git commit -m "feat: add traceable hybrid retrieval"
 ```
 
 ### Task 10: Generate, Verify, and Abstain from Answers (3 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/answering/schemas.py`
-- Create: `api/src/decision_memory/answering/verifier.py`
-- Create: `api/src/decision_memory/answering/service.py`
-- Create: `api/src/decision_memory/answering/router.py`
-- Modify: `api/src/decision_memory/main.py`
+- Create: `api/src/decision_assistant/answering/schemas.py`
+- Create: `api/src/decision_assistant/answering/verifier.py`
+- Create: `api/src/decision_assistant/answering/service.py`
+- Create: `api/src/decision_assistant/answering/router.py`
+- Modify: `api/src/decision_assistant/main.py`
 - Test: `api/tests/unit/test_answer_verifier.py`
 - Test: `api/tests/integration/test_questions_api.py`
 
@@ -563,7 +563,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit the first complete backend vertical slice**
 
 ```bash
-git add api/src/decision_memory/answering api/src/decision_memory/main.py api/tests
+git add api/src/decision_assistant/answering api/src/decision_assistant/main.py api/tests
 git commit -m "feat: answer questions with verified evidence"
 ```
 
@@ -572,7 +572,7 @@ git commit -m "feat: answer questions with verified evidence"
 ### Task 11: Add PDF and DOCX Parsing (2 hours)
 
 **Files:**
-- Modify: `api/src/decision_memory/ingestion/parsers.py`
+- Modify: `api/src/decision_assistant/ingestion/parsers.py`
 - Create: `api/tests/unit/test_pdf_parser.py`
 - Create: `api/tests/unit/test_docx_parser.py`
 - Create: `api/tests/fixtures/text.pdf`
@@ -600,17 +600,17 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/decision_memory/ingestion/parsers.py api/tests/unit/test_pdf_parser.py api/tests/unit/test_docx_parser.py api/tests/fixtures
+git add api/src/decision_assistant/ingestion/parsers.py api/tests/unit/test_pdf_parser.py api/tests/unit/test_docx_parser.py api/tests/fixtures
 git commit -m "feat: ingest PDF and DOCX sources safely"
 ```
 
 ### Task 12: Add Decision Correction and Relationship APIs (2.5 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/decisions/service.py`
-- Create: `api/src/decision_memory/decisions/router.py`
-- Modify: `api/src/decision_memory/decisions/schemas.py`
-- Modify: `api/src/decision_memory/main.py`
+- Create: `api/src/decision_assistant/decisions/service.py`
+- Create: `api/src/decision_assistant/decisions/router.py`
+- Modify: `api/src/decision_assistant/decisions/schemas.py`
+- Modify: `api/src/decision_assistant/main.py`
 - Test: `api/tests/integration/test_decisions_api.py`
 
 - [ ] **Step 1: Write failing correction tests**
@@ -638,17 +638,17 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add api/src/decision_memory/decisions api/src/decision_memory/main.py api/tests/integration/test_decisions_api.py
+git add api/src/decision_assistant/decisions api/src/decision_assistant/main.py api/tests/integration/test_decisions_api.py
 git commit -m "feat: add evidence-safe decision corrections"
 ```
 
 ### Task 13: Build Deterministic Decision Timelines (1.5 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/timelines/schemas.py`
-- Create: `api/src/decision_memory/timelines/service.py`
-- Create: `api/src/decision_memory/timelines/router.py`
-- Modify: `api/src/decision_memory/main.py`
+- Create: `api/src/decision_assistant/timelines/schemas.py`
+- Create: `api/src/decision_assistant/timelines/service.py`
+- Create: `api/src/decision_assistant/timelines/router.py`
+- Modify: `api/src/decision_assistant/main.py`
 - Test: `api/tests/unit/test_timeline_service.py`
 - Test: `api/tests/integration/test_timelines_api.py`
 
@@ -673,18 +673,18 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/decision_memory/timelines api/src/decision_memory/main.py api/tests/unit/test_timeline_service.py api/tests/integration/test_timelines_api.py
+git add api/src/decision_assistant/timelines api/src/decision_assistant/main.py api/tests/unit/test_timeline_service.py api/tests/integration/test_timelines_api.py
 git commit -m "feat: add cited decision timelines"
 ```
 
 ### Task 14: Implement Evaluation Metrics and Run Lifecycle (2.5 hours)
 
 **Files:**
-- Create: `api/src/decision_memory/evaluation/schemas.py`
-- Create: `api/src/decision_memory/evaluation/metrics.py`
-- Create: `api/src/decision_memory/evaluation/service.py`
-- Create: `api/src/decision_memory/evaluation/router.py`
-- Modify: `api/src/decision_memory/main.py`
+- Create: `api/src/decision_assistant/evaluation/schemas.py`
+- Create: `api/src/decision_assistant/evaluation/metrics.py`
+- Create: `api/src/decision_assistant/evaluation/service.py`
+- Create: `api/src/decision_assistant/evaluation/router.py`
+- Modify: `api/src/decision_assistant/main.py`
 - Test: `api/tests/unit/test_evaluation_metrics.py`
 - Test: `api/tests/integration/test_evaluation_runs.py`
 
@@ -718,7 +718,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add api/src/decision_memory/evaluation api/src/decision_memory/main.py api/tests
+git add api/src/decision_assistant/evaluation api/src/decision_assistant/main.py api/tests
 git commit -m "feat: add reproducible evaluation runs"
 ```
 
@@ -965,7 +965,7 @@ The containerized smoke client uploads the two Markdown fixtures containing the 
 
 - [ ] **Step 2: Run the complete deterministic test suite**
 
-Run: `docker compose run --rm api pytest -m 'not ollama' --cov=decision_memory --cov-report=term-missing`
+Run: `docker compose run --rm api pytest -m 'not ollama' --cov=decision_assistant --cov-report=term-missing`
 Expected: PASS with no unexpected skip.
 
 Run: `docker compose run --rm web npm test -- --run`
