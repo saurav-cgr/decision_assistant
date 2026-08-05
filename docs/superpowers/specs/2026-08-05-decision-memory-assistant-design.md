@@ -101,11 +101,15 @@ Stores the single workspace name, creation time, and active embedding profile.
 
 ### Document
 
-Stores filename, media type, title, document date, participants, source type, project, SHA-256 checksum, file path, ingestion status, active version, timestamps, and structured error details.
+Represents the stable logical document. It stores the workspace ID, display filename, media type, active version ID, and timestamps. Only the active version participates in normal retrieval.
+
+### DocumentVersion
+
+Owns one immutable uploaded revision of a document. It stores the document ID, monotonically increasing version number, title, document date, participants, source type, project, SHA-256 checksum, stored file path, lifecycle state (`staging`, `active`, `retired`, or `failed`), timestamps, and structured error details. `Document.active_version_id` is updated in the same transaction that activates a completed version; at most one version per document is active.
 
 ### Passage
 
-Stores document ID, stable sequence number, normalized content, character offsets within the normalized document, a content hash, format-specific locator, PostgreSQL search vector, embedding, and timestamps.
+Belongs to a `DocumentVersion`. It stores a stable sequence number within that version, normalized content, character offsets within the normalized document, a content hash, format-specific locator, PostgreSQL search vector, embedding, and timestamps. Passage IDs never span versions.
 
 The locator is typed data:
 
@@ -115,11 +119,11 @@ The locator is typed data:
 
 ### Decision
 
-Stores statement, effective date, owner, status (`active`, `proposed`, `rejected`, or `superseded`), reasons, alternatives, project, feature/topic, extraction confidence, provenance (`extracted` or `user_corrected`), `user_edited`, review state, and timestamps.
+Belongs to the `DocumentVersion` from which it originated. It stores statement, effective date, owner, status (`active`, `proposed`, `rejected`, or `superseded`), reasons, alternatives, project, feature/topic, extraction confidence, provenance (`extracted` or `user_corrected`), aggregate review state, `user_edited`, retirement state, and timestamps.
 
 ### DecisionEvidence
 
-Associates a decision with one or more passages and exact offsets inside each passage. It identifies the primary evidence passage and preserves the evidence content hash used when the association was created.
+Associates a whole decision or a named decision field with one or more passages and exact offsets inside each passage. It stores the field name when applicable, evidence-support state (`supported`, `unsupported`, or `needs_review`), identifies the primary evidence passage, and preserves the evidence content hash used when the association was created. The latest field-level associations determine which corrected values may enter an evidence pack.
 
 ### DecisionRelation
 
@@ -127,7 +131,7 @@ Links two decisions using `supersedes`, `revises`, or `relates_to`. It stores wh
 
 ### DecisionRevision
 
-Records field-level before and after values for manual corrections. This provides a small audit trail without adding user identity or collaboration concepts.
+Records field-level before and after values for manual corrections, the evidence passages selected for the correction, and the resulting evidence-support state. This provides a small audit trail without adding user identity or collaboration concepts.
 
 ### IngestionJob
 
@@ -140,7 +144,7 @@ Stores request ID, normalized question, extracted filters, candidates and scores
 ### Evaluation records
 
 - `EvaluationQuestion`: question, expected answer summary, expected documents/passages, expected status, answer-or-abstain expectation, and tags.
-- `EvaluationRun`: strategy, configuration snapshot, dataset version, model profile, start/end times, and aggregate metrics.
+- `EvaluationRun`: strategy, status (`pending`, `running`, `completed`, or `failed`), completed/total question counts, structured failure, configuration snapshot, dataset version, model and judge profiles, start/end times, and aggregate metrics.
 - `EvaluationResult`: retrieved ranks, generated output, citation checks, expected-versus-actual values, latency, and failure reason.
 
 ## 6. Document Ingestion
@@ -171,9 +175,9 @@ The MVP does not attempt layout reconstruction. PDF tables and multi-column layo
 
 ### 6.3 Idempotency and document changes
 
-The checksum makes repeated uploads idempotent. A modified document is processed into a staged version; its passages and automatically extracted decisions become active only after the complete pipeline succeeds. A failed re-index leaves the previous active version searchable.
+The checksum makes repeated uploads idempotent. A modified document creates a `staging` `DocumentVersion`; all new passages, decisions, evidence, and relationships reference that version. After every stage succeeds, one transaction retires the prior version, activates the staged version, and updates `Document.active_version_id`. A failed re-index marks only the staged version failed and leaves the prior version searchable.
 
-Automatically extracted records from the replaced version may be retired. User-corrected decisions are retained and marked `needs_review` when their cited content hash no longer matches the new source. They are never silently overwritten.
+Automatically extracted decisions belonging to the replaced version are retired with it. User-corrected decisions remain visible in history but become `needs_review` and are excluded from answers and authoritative timelines until their evidence is re-associated with active-version passages. They are never silently overwritten. Retired versions are retained for the MVP so revision history and old citations remain inspectable; automatic retention cleanup is out of scope.
 
 Because FastAPI background tasks are not durable, an API restart marks stale `running` jobs as failed/interrupted. The UI exposes a retry action. The API runs as one worker in the MVP to avoid duplicated in-process jobs.
 
@@ -183,7 +187,9 @@ The generation provider receives one document section at a time plus a strict re
 
 Validation rejects records when their evidence quote cannot be aligned to an exact passage. Missing optional fields remain null or empty; the system does not infer an owner or date without evidence. Document date may be used as a clearly identified fallback for timeline ordering, not represented as a known decision date.
 
-Users inspect and correct records from the Decision Detail screen. They can edit structured fields and relationships, but the source passage remains immutable. Corrections create `DecisionRevision` records and set `user_edited`.
+Users inspect and correct records from the Decision Detail screen. They can edit structured fields and relationships, but the source passage remains immutable. A correction may retain existing evidence or select one or more active-version passages. The server validates citation existence, offsets, and hashes, then creates a `DecisionRevision` and sets `user_edited`.
+
+A user may deliberately save a correction without supporting evidence, but it is labeled `unsupported`. Unsupported and `needs_review` fields remain visible as human notes but are excluded from evidence-backed answers and authoritative timeline transitions. Supported corrections may be used in answers with their selected passages; the UI identifies them as user-corrected interpretations rather than source text.
 
 ## 8. Hybrid Retrieval
 
@@ -194,7 +200,7 @@ The question service identifies requested facets such as what, why, who, when, c
 ### 8.2 Candidate retrieval
 
 - Vector search returns the top 20 passages using cosine similarity.
-- PostgreSQL full-text search returns the top 20 passages using document-language text search and ranking.
+- PostgreSQL full-text search returns the top 20 passages using the configured English text-search dictionary and ranking. Per-document language detection is out of scope.
 - Structured decision fields are searched and their evidence passages added as candidates.
 - Explicit metadata filters are applied before ranking.
 
@@ -202,7 +208,7 @@ The question service identifies requested facets such as what, why, who, when, c
 
 Reciprocal Rank Fusion combines the ranked lists using a documented, configurable constant. Duplicate passages are merged by passage ID. Related decisions and limited neighboring passage context are added after fusion, then an evidence pack is created within the generation context budget.
 
-An optional `Reranker` interface is defined but no additional reranking model is required for the MVP. The evaluation dashboard compares semantic-only retrieval with hybrid retrieval using identical questions and filters.
+No reranking model or interface is implemented in the MVP. The evaluation dashboard compares semantic-only retrieval with hybrid retrieval using identical questions and filters; reranking is considered only after measured results justify it.
 
 ### 8.4 Retrieval trace
 
@@ -219,7 +225,7 @@ The generation model receives only the question, selected evidence pack, and res
 - Unsupported question facets
 - A confidence category based on evidence coverage, not a fabricated numeric probability
 
-A deterministic structural verifier confirms that every citation resolves, quoted text exactly matches stored content, offsets are valid, passage hashes match, and central claims include at least one citation. Lightweight field checks confirm that cited passages contain expected explicit entities or dates when those are claimed. Semantic entailment is not treated as perfectly deterministic; evaluation fixtures measure faithfulness and expose failures.
+A deterministic structural verifier confirms that every citation resolves to an active-version passage, quoted text exactly matches stored content, offsets are valid, passage hashes match, and central claims include at least one citation. Lightweight field checks confirm that cited passages contain expected explicit entities or dates when those are claimed. Unsupported and `needs_review` corrected fields cannot enter the evidence pack. Semantic entailment is not treated as perfectly deterministic; evaluation fixtures measure faithfulness and expose failures.
 
 For a multi-part question, the response may answer supported facets and explicitly abstain from unsupported facets. It fully abstains when no central claim has sufficient evidence. Evidence thresholds are calibrated against the versioned evaluation set and saved with the run configuration.
 
@@ -299,12 +305,12 @@ Approximately 20 versioned questions include expected answer summaries, expected
 
 ### Metrics
 
-- Top-five retrieval hit rate
-- Mean Reciprocal Rank
-- Citation correctness
-- Answer faithfulness
-- Abstention accuracy
-- End-to-end and stage latency
+- **Top-five retrieval hit rate:** fraction of answerable questions for which at least one expected passage, or expected document when passage-level gold is unavailable, appears in the top five.
+- **Mean Reciprocal Rank:** mean reciprocal position of the first expected relevant result, with zero for a miss.
+- **Citation correctness:** fraction of answer citations that pass structural validation and point to a gold-relevant passage/document. Structural validity is also reported separately.
+- **Answer faithfulness:** fraction of generated atomic claims judged supported by their cited passages using a versioned evaluation prompt, fixed local judge profile, temperature-zero settings, and stored judge output. The final README result includes a manual audit of judge disagreements across the small dataset.
+- **Abstention accuracy:** classification accuracy against the expected answer-versus-abstain label; partial abstentions are scored per expected question facet.
+- **Latency:** median and p95 end-to-end time plus retrieval, generation, and verification stage timings.
 
 Hybrid and semantic-only strategies run against the same dataset, embedding profile, and generation profile. Each aggregate result links to per-question traces. The README contains measured results, not placeholder values.
 
@@ -339,6 +345,30 @@ Tests do not require live model output except for explicitly marked local-provid
 - Tests, README, demo script, and final polish: 4 hours
 
 If time runs short, preserve ingestion correctness, hybrid retrieval, citations, abstention, one supersession timeline, and evaluation. Reduce visual polish and secondary filtering before reducing evidence guarantees.
+
+### 16.1 Scope priorities
+
+**P0 — required for the 50-hour definition of done:**
+
+- One workspace and one fixed English retrieval configuration
+- Basic extraction for all four supported formats, with page/paragraph/line anchors and explicit parser errors
+- One version-safe upload/re-index path
+- Structured decision extraction and editing of the core fields
+- Vector search, full-text search, RRF, and an inspectable text-based retrieval trace
+- Evidence-backed answers with structural citation checks, conflicts, and partial/full abstention
+- One reliable topic timeline with explicit supersession
+- Approximately 20 evaluation fixtures, semantic-only versus hybrid comparison, required metrics, and per-question diagnostics
+- The five functional screens, Docker Compose, core deterministic tests, one integration happy path, and one end-to-end smoke path
+
+**P1 — include only if P0 is verified early:**
+
+- Automatic cross-document relationship suggestions beyond relationships returned during extraction
+- Rich correction-history visualization beyond a basic revision list
+- Advanced filtering combinations and trace visual polish
+- Broader parser handling for complex DOCX tables or difficult PDF layouts
+- Additional component and integration edge-case coverage beyond the named reliability paths
+
+If the project exceeds the time box, P1 is omitted and documented. P0 evidence guarantees, evaluation integrity, and runnable setup are not traded for cosmetic completeness.
 
 ## 17. Key Trade-offs and Limitations
 
