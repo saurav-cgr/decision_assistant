@@ -32,6 +32,6 @@ dev = [
 packages = ["src/decision_assistant"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra --import-mode=importlib"
 asyncio_mode = "auto"
 testpaths = ["tests"]
