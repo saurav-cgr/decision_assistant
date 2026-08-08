@@ -4,7 +4,7 @@
 
 **Goal:** Build a local-first application that ingests project documents, extracts correctable decisions, answers questions with exact citations, displays supersession timelines, and measures hybrid retrieval quality.
 
-**Architecture:** A React/TypeScript frontend calls a single-worker FastAPI modular monolith. PostgreSQL with pgvector stores versioned documents, passages, decisions, traces, and evaluations; Ollama is accessed only through generation and embedding provider interfaces. Development tools, dependency installation, tests, builds, migrations, and application services run in Docker so the host requires only Git and Docker Desktop. Implementation proceeds test-first and establishes a Markdown vertical slice before adding PDF/DOCX parsing and the complete UI.
+**Architecture:** A React/TypeScript frontend calls a single-worker FastAPI modular monolith. Public business endpoints use a major-version URL namespace beginning at `/api/v1`; infrastructure health and generated OpenAPI documentation remain unversioned. PostgreSQL with pgvector stores versioned documents, passages, decisions, traces, and evaluations; Ollama is accessed only through generation and embedding provider interfaces. Development tools, dependency installation, tests, builds, migrations, and application services run in Docker so the host requires only Git and Docker Desktop. Implementation proceeds test-first and establishes a Markdown vertical slice before adding PDF/DOCX parsing and the complete UI.
 
 **Tech Stack:** Docker Compose, Python 3.12 container, FastAPI, Pydantic 2, SQLAlchemy 2 async, Alembic, PostgreSQL 16, pgvector, httpx, pypdf, python-docx, pytest, Node.js 24 container, React 19, TypeScript, Vite, React Router, Vitest, Testing Library, Ollama container.
 
@@ -15,6 +15,7 @@
 - Use `@superpowers:test-driven-development` for every behavior change.
 - Use `@superpowers:verification-before-completion` before claiming a task or milestone complete.
 - Keep FastAPI at one worker because MVP jobs are in-process background tasks.
+- Starting with Task 8A, prefix every public business router with `/api/v1`. Task 8 is the already-completed unversioned RED baseline that Task 8A migrates. Keep `/health`, `/docs`, and `/openapi.json` unversioned. Do not add unversioned compatibility aliases because no external client exists yet; introduce `/api/v2` only for a future breaking public-contract change.
 - Keep evidence text untrusted and isolated from model instructions.
 - Complete P0 tasks in order. Do not begin the optional P1 task until the final P0 verification passes.
 - Run every Python, pytest, Alembic, Node, npm, and Vite command through Docker from the repository root. Do not depend on host Python, Node, npm, PostgreSQL, or Ollama.
@@ -45,7 +46,7 @@ decision_assistant/
 │   │   ├── errors.py                    # Stable application/API errors
 │   │   ├── models.py                    # SQLAlchemy persistence model
 │   │   ├── workspace/service.py
-│   │   ├── documents/{router,schemas,service}.py
+│   │   ├── documents/{router,schemas,service,storage}.py
 │   │   ├── ingestion/{jobs,parsers,chunking,service}.py
 │   │   ├── decisions/{router,schemas,extractor,service}.py
 │   │   ├── providers/{base,fakes,ollama}.py
@@ -471,6 +472,55 @@ git add api/src/decision_assistant/documents api/src/decision_assistant/main.py 
 git commit -m "feat: add document upload and indexing status API"
 ```
 
+### Task 8A: Version the Public API Under `/api/v1` (0.5 hours)
+
+**Files:**
+- Modify: `api/src/decision_assistant/documents/router.py`
+- Modify: `api/tests/integration/test_documents_api.py`
+- Modify: `api/tests/unit/test_app.py`
+
+- [ ] **Step 1: Write failing API namespace tests**
+
+Assert that document operations live under `/api/v1/documents`, the old unversioned `/documents` route returns `404`, `/health` remains available without a version, and generated OpenAPI paths expose only versioned business routes.
+
+```python
+def test_public_business_routes_use_v1_namespace() -> None:
+    app = create_app()
+    client = TestClient(app)
+    paths = app.openapi()["paths"]
+
+    assert "/api/v1/documents" in paths
+    assert "/documents" not in paths
+    assert "/health" in paths
+    assert "/api/v1/health" not in paths
+    assert all(path == "/health" or path.startswith("/api/v1/") for path in paths)
+    assert client.get("/documents").status_code == 404
+    assert client.get("/health").status_code == 200
+    assert client.get("/docs").status_code == 200
+    assert client.get("/openapi.json").status_code == 200
+```
+
+- [ ] **Step 2: Verify namespace tests fail**
+
+Run: `docker compose run --rm api pytest tests/unit/test_app.py tests/integration/test_documents_api.py -v`
+Expected: FAIL because document routes still use the unversioned `/documents` prefix.
+
+- [ ] **Step 3: Move document routes to the versioned prefix**
+
+Change the documents router prefix to `/api/v1/documents` and update all document API tests. Do not create redirects or duplicate unversioned routes. Keep `/health`, `/docs`, and `/openapi.json` unchanged. Every later business router in this plan must register below `/api/v1`.
+
+- [ ] **Step 4: Verify versioned API behavior and regressions**
+
+Run: `docker compose run --rm api pytest tests/unit tests/integration -v`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add api/src/decision_assistant/documents/router.py api/tests/unit/test_app.py api/tests/integration/test_documents_api.py
+git commit -m "feat: version public API under v1"
+```
+
 ### Task 9: Implement Hybrid Retrieval, RRF, and Traces (3 hours)
 
 **Files:**
@@ -496,7 +546,7 @@ def test_rrf_merges_duplicates_and_preserves_rank_sources() -> None:
 
 - [ ] **Step 2: Write PostgreSQL retrieval tests**
 
-Seed active and retired versions. Assert only active passages appear; explicit person/date/project/document-type filters apply before ranking; semantic and English FTS each return top 20; hybrid trace stores both lists, fused scores, selected evidence, settings, and timings. Add an API assertion that `GET /retrieval-traces/{id}` returns the stored trace and an unknown ID returns the stable `not_found` error.
+Seed active and retired versions. Assert only active passages appear; explicit person/date/project/document-type filters apply before ranking; semantic and English FTS each return top 20; hybrid trace stores both lists, fused scores, selected evidence, settings, and timings. Add an API assertion that `GET /api/v1/retrieval-traces/{id}` returns the stored trace and an unknown ID returns the stable `not_found` error.
 
 - [ ] **Step 3: Verify failure**
 
@@ -505,7 +555,7 @@ Expected: FAIL.
 
 - [ ] **Step 4: Implement query analysis, repositories, RRF, and trace persistence**
 
-Use deterministic extraction for explicit filters first; use a structured generation call only for intent facets that cannot alter restrictive filters. Search passage vectors, English `tsvector`, and structured decision fields; merge by passage ID and add bounded neighbors after fusion. Register the retrieval router in `create_app()` and expose both the internal search endpoint used by tests and `GET /retrieval-traces/{id}` used by the Ask developer panel.
+Use deterministic extraction for explicit filters first; use a structured generation call only for intent facets that cannot alter restrictive filters. Search passage vectors, English `tsvector`, and structured decision fields; merge by passage ID and add bounded neighbors after fusion. Register the retrieval router below `/api/v1` in `create_app()` and expose both the internal search endpoint used by tests and `GET /api/v1/retrieval-traces/{id}` used by the Ask developer panel.
 
 - [ ] **Step 5: Verify passing behavior**
 
@@ -736,6 +786,7 @@ git commit -m "feat: add reproducible evaluation runs"
 - Create: `web/src/styles.css`
 - Create: `web/src/test/setup.ts`
 - Test: `web/src/app/App.test.tsx`
+- Test: `web/src/api/client.test.ts`
 
 - [ ] **Step 1: Write the failing navigation/error test**
 
@@ -748,18 +799,20 @@ it("renders all primary navigation destinations", () => {
 });
 ```
 
+Also mock `fetch` in `web/src/api/client.test.ts` and assert that listing documents targets `/api/v1/documents`. Browser routes remain `/`, `/ask`, `/timeline`, `/decisions/:id`, and `/evaluation` without an API version prefix.
+
 - [ ] **Step 2: Verify failure**
 
-Run: `docker compose run --rm web npm test -- --run src/app/App.test.tsx`
+Run: `docker compose run --rm web npm test -- --run src/app/App.test.tsx src/api/client.test.ts`
 Expected: FAIL because the app is missing.
 
 - [ ] **Step 3: Implement the shell, routes, typed client, and error boundary**
 
-Create routes for `/`, `/ask`, `/timeline`, `/decisions/:id`, and `/evaluation`. The client parses the stable API error shape and preserves request IDs. Use accessible semantic navigation and responsive CSS; do not add a component framework.
+Create browser routes for `/`, `/ask`, `/timeline`, `/decisions/:id`, and `/evaluation`. Configure the shared API client with `/api/v1` as the base path for every business request; do not version browser routes. The client parses the stable API error shape and preserves request IDs. Use accessible semantic navigation and responsive CSS; do not add a component framework.
 
 - [ ] **Step 4: Verify passing behavior**
 
-Run: `docker compose run --rm web npm test -- --run src/app/App.test.tsx`
+Run: `docker compose run --rm web npm test -- --run src/app/App.test.tsx src/api/client.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -961,7 +1014,7 @@ git commit -m "test: add Atlas project benchmark corpus"
 
 `scripts/smoke.sh` must use only shell built-ins plus Docker Compose. It starts database and Ollama with `docker compose up -d db ollama --wait`; unless `SMOKE_PROVIDER_MODE=fake`, it idempotently pulls both configured models through `docker compose exec ollama sh -lc`. It applies migrations before API startup through `docker compose run --rm api alembic upgrade head`, then starts API/web with `docker compose up -d api web --wait`, and finally runs `docker compose run --rm api python ../scripts/smoke.py`. `scripts/smoke.py` uses Python's standard HTTP/JSON libraries from inside the Compose network; it must not require host `curl`, `jq`, Python, or Node.
 
-The containerized smoke client uploads the two Markdown fixtures containing the earlier and later authentication decisions, polls both to completion, asks the authentication question, and asserts a citation. It then lists the two extracted decisions, calls `POST /decisions/{id}/relations` to confirm the later decision `supersedes` the earlier one, requests the timeline, asserts the authoritative superseded event, and exits nonzero on any failure. It may use fake providers in CI and real Ollama in the recorded local demo.
+Define one `/api/v1` base constant in `scripts/smoke.py`. The containerized smoke client uses `POST /api/v1/documents/upload` for both Markdown fixtures, polls through `/api/v1/documents/{id}`, calls `POST /api/v1/questions`, lists `/api/v1/decisions`, calls `POST /api/v1/decisions/{id}/relations` to confirm the later decision `supersedes` the earlier one, and requests `/api/v1/timelines?topic=authentication`. It asserts a citation and the authoritative superseded event, exiting nonzero on failure. Infrastructure readiness alone uses unversioned `GET /health`. The smoke may use fake providers in CI and real Ollama in the recorded local demo.
 
 - [ ] **Step 2: Run the complete deterministic test suite**
 

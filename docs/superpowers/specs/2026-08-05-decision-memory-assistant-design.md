@@ -245,19 +245,21 @@ Model-inferred, unconfirmed relationships appear as `possible revision`; they do
 
 ## 11. API Surface
 
-- `POST /documents`: upload one or more supported documents.
-- `GET /documents`: list documents and ingestion states.
-- `GET /documents/{id}`: return metadata, source content, passages, and error details.
-- `POST /documents/{id}/reindex`: retry or reprocess a document.
-- `GET /decisions`: filter/search decisions.
-- `GET /decisions/{id}`: return the structured record, revisions, relations, and evidence.
-- `PATCH /decisions/{id}`: correct fields or review state.
-- `POST /decisions/{id}/relations`: create or confirm a relation.
-- `POST /questions`: retrieve evidence, generate, verify, and return the answer plus trace ID.
-- `GET /retrieval-traces/{id}`: return the developer trace.
-- `GET /timelines?topic=...`: return a cited ordered timeline.
-- `POST /evaluations/runs`: start a benchmark run for a named strategy.
-- `GET /evaluations/runs/{id}`: return status, aggregate metrics, and per-question results.
+- `POST /api/v1/documents/upload`: upload one or more supported documents.
+- `GET /api/v1/documents`: list documents and ingestion states.
+- `GET /api/v1/documents/{id}`: return metadata, source content, passages, and error details.
+- `POST /api/v1/documents/{id}/retry`: retry a failed document ingestion.
+- `GET /api/v1/decisions`: filter/search decisions.
+- `GET /api/v1/decisions/{id}`: return the structured record, revisions, relations, and evidence.
+- `PATCH /api/v1/decisions/{id}`: correct fields or review state.
+- `POST /api/v1/decisions/{id}/relations`: create or confirm a relation.
+- `POST /api/v1/questions`: retrieve evidence, generate, verify, and return the answer plus trace ID.
+- `GET /api/v1/retrieval-traces/{id}`: return the developer trace.
+- `GET /api/v1/timelines?topic=...`: return a cited ordered timeline.
+- `POST /api/v1/evaluations/runs`: start a benchmark run for a named strategy.
+- `GET /api/v1/evaluations/runs/{id}`: return status, aggregate metrics, and per-question results.
+
+All public business endpoints use major-version URL prefix `/api/v1`. Infrastructure endpoints `/health`, `/docs`, and `/openapi.json` remain unversioned. No unversioned compatibility aliases are exposed because no external client predates this contract. Compatible additions remain in v1; a future breaking request or response contract requires `/api/v2`.
 
 All errors use a consistent response with a stable code, user-readable message, request ID, retryability, and optional field details.
 

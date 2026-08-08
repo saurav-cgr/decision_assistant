@@ -22,7 +22,7 @@ from decision_assistant.providers.ollama import (
     OllamaGenerationProvider,
 )
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 
 def get_runtime_settings(request: Request) -> Settings:

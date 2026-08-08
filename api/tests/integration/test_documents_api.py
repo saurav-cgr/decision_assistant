@@ -73,7 +73,7 @@ async def test_single_upload_is_sanitized_and_accepted(
     client, dispatcher, settings = documents_api
 
     response = await client.post(
-        "/documents/upload",
+        "/api/v1/documents/upload",
         files={"files": ("../../meeting.md", b"# Architecture\n", "text/markdown")},
         headers={"x-request-id": "upload-1"},
     )
@@ -99,7 +99,7 @@ async def test_multiple_valid_uploads_return_one_result_each(
     client, dispatcher, _ = documents_api
 
     response = await client.post(
-        "/documents/upload",
+        "/api/v1/documents/upload",
         files=[
             ("files", ("one.md", b"# One\n", "text/markdown")),
             ("files", ("two.txt", b"Decision two\n", "text/plain")),
@@ -121,7 +121,7 @@ async def test_invalid_extension_returns_per_file_error(
     client, dispatcher, _ = documents_api
 
     response = await client.post(
-        "/documents/upload",
+        "/api/v1/documents/upload",
         files={"files": ("malware.exe", b"unsafe", "application/octet-stream")},
     )
 
@@ -139,7 +139,7 @@ async def test_excessive_size_returns_per_file_error(
     client, dispatcher, settings = documents_api
 
     response = await client.post(
-        "/documents/upload",
+        "/api/v1/documents/upload",
         files={
             "files": (
                 "large.txt",
@@ -163,7 +163,7 @@ async def test_mixed_upload_rejects_only_invalid_files(
     client, dispatcher, _ = documents_api
 
     response = await client.post(
-        "/documents/upload",
+        "/api/v1/documents/upload",
         files=[
             ("files", ("valid.md", b"# Valid\n", "text/markdown")),
             ("files", ("invalid.exe", b"bad", "application/octet-stream")),
@@ -184,7 +184,7 @@ async def test_document_listing_exposes_job_status_progress_and_error(
 ) -> None:
     client, _, _ = documents_api
     upload = await client.post(
-        "/documents/upload",
+        "/api/v1/documents/upload",
         files={"files": ("meeting.md", b"# Meeting\n", "text/markdown")},
     )
     job_id = upload.json()["results"][0]["job_id"]
@@ -196,7 +196,7 @@ async def test_document_listing_exposes_job_status_progress_and_error(
     job.error = {"code": "provider_unavailable"}
     await db_session.flush()
 
-    response = await client.get("/documents")
+    response = await client.get("/api/v1/documents")
 
     assert response.status_code == 200
     item = response.json()["items"][0]
@@ -213,7 +213,7 @@ async def test_document_detail_returns_active_passages(
 ) -> None:
     client, _, _ = documents_api
     upload = await client.post(
-        "/documents/upload",
+        "/api/v1/documents/upload",
         files={"files": ("meeting.md", b"# Meeting\n", "text/markdown")},
     )
     document_id = upload.json()["results"][0]["document_id"]
@@ -241,7 +241,7 @@ async def test_document_detail_returns_active_passages(
     )
     await db_session.flush()
 
-    response = await client.get(f"/documents/{document.id}")
+    response = await client.get(f"/api/v1/documents/{document.id}")
 
     assert response.status_code == 200
     detail = response.json()
@@ -262,7 +262,7 @@ async def test_failed_document_can_be_retried(
 ) -> None:
     client, dispatcher, _ = documents_api
     upload = await client.post(
-        "/documents/upload",
+        "/api/v1/documents/upload",
         files={"files": ("meeting.md", b"# Meeting\n", "text/markdown")},
     )
     result = upload.json()["results"][0]
@@ -273,7 +273,7 @@ async def test_failed_document_can_be_retried(
     await db_session.flush()
 
     response = await client.post(
-        f'/documents/{result["document_id"]}/retry',
+        f'/api/v1/documents/{result["document_id"]}/retry',
         headers={"x-request-id": "retry-1"},
     )
 
