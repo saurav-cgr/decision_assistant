@@ -1,0 +1,192 @@
+from dataclasses import dataclass
+from time import perf_counter
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from decision_assistant.errors import ApplicationError
+from decision_assistant.models import Passage, RetrievalTrace
+from decision_assistant.providers.base import EmbeddingProvider
+from decision_assistant.retrieval.repository import RankedPassage, RetrievalRepository
+from decision_assistant.retrieval.rrf import reciprocal_rank_fusion
+from decision_assistant.retrieval.schemas import (
+    RetrievalResult,
+    RetrievalSearchRequest,
+    RetrievalSearchResponse,
+    RetrievalTraceResponse,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalConfig:
+    semantic_limit: int = 20
+    keyword_limit: int = 20
+    decision_limit: int = 20
+    rrf_k: int = 60
+    top_k: int = 5
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "semantic_limit": self.semantic_limit,
+            "keyword_limit": self.keyword_limit,
+            "decision_limit": self.decision_limit,
+            "rrf_k": self.rrf_k,
+            "top_k": self.top_k,
+        }
+
+
+class RetrievalNotFound(ApplicationError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="not_found",
+            message="Retrieval trace not found",
+            status_code=404,
+            retryable=False,
+        )
+
+
+class HybridRetrievalService:
+    def __init__(
+        self,
+        *,
+        session: AsyncSession,
+        embedding_provider: EmbeddingProvider,
+        config: RetrievalConfig | None = None,
+    ) -> None:
+        self._session = session
+        self._embedding_provider = embedding_provider
+        self._config = config or RetrievalConfig()
+        self._repository = RetrievalRepository(session)
+
+    async def search(
+        self,
+        request: RetrievalSearchRequest,
+        *,
+        request_id: str,
+    ) -> RetrievalSearchResponse:
+        total_started = perf_counter()
+        normalized_question = request.question.lower()
+        embedding = (await self._embedding_provider.embed([normalized_question]))[0]
+
+        semantic_started = perf_counter()
+        semantic = await self._repository.semantic_search(
+            embedding,
+            request.filters,
+            limit=self._config.semantic_limit,
+        )
+        semantic_ms = _elapsed_ms(semantic_started)
+
+        keyword_started = perf_counter()
+        keyword = await self._repository.keyword_search(
+            normalized_question,
+            request.filters,
+            limit=self._config.keyword_limit,
+        )
+        keyword_ms = _elapsed_ms(keyword_started)
+
+        decision_started = perf_counter()
+        decision = await self._repository.decision_search(
+            normalized_question,
+            request.filters,
+            limit=self._config.decision_limit,
+        )
+        decision_ms = _elapsed_ms(decision_started)
+
+        fusion_started = perf_counter()
+        candidates = {
+            "semantic": semantic,
+            "keyword": keyword,
+            "decision": decision,
+        }
+        fused = reciprocal_rank_fusion(
+            {
+                source: [item.passage.id for item in ranked]
+                for source, ranked in candidates.items()
+            },
+            k=self._config.rrf_k,
+        )
+        selected = fused[: self._config.top_k]
+        fusion_ms = _elapsed_ms(fusion_started)
+
+        passage_by_id: dict[UUID, Passage] = {
+            item.passage.id: item.passage
+            for ranked in candidates.values()
+            for item in ranked
+        }
+        filters = request.filters.model_dump(mode="json", exclude_none=True)
+        timings = {
+            "semantic_ms": semantic_ms,
+            "keyword_ms": keyword_ms,
+            "decision_ms": decision_ms,
+            "fusion_ms": fusion_ms,
+            "total_ms": _elapsed_ms(total_started),
+        }
+        trace = RetrievalTrace(
+            request_id=request_id,
+            normalized_question=normalized_question,
+            filters=filters,
+            semantic_candidates=_candidate_trace(semantic),
+            keyword_candidates=_candidate_trace(keyword),
+            decision_candidates=_candidate_trace(decision),
+            fused_results=[
+                {
+                    "passage_id": str(item.id),
+                    "score": item.score,
+                    "source_ranks": item.source_ranks,
+                }
+                for item in fused
+            ],
+            selected_passage_ids=[str(item.id) for item in selected],
+            timings=timings,
+            configuration=self._config.as_dict(),
+        )
+        self._session.add(trace)
+        await self._session.flush()
+
+        return RetrievalSearchResponse(
+            trace_id=trace.id,
+            results=[
+                RetrievalResult(
+                    passage_id=item.id,
+                    content=passage_by_id[item.id].content,
+                    locator=passage_by_id[item.id].locator,
+                    fused_score=item.score,
+                    source_ranks=item.source_ranks,
+                )
+                for item in selected
+            ],
+        )
+
+    async def get_trace(self, trace_id: UUID) -> RetrievalTraceResponse:
+        trace = await self._session.get(RetrievalTrace, trace_id)
+        if trace is None:
+            raise RetrievalNotFound()
+        return RetrievalTraceResponse(
+            id=trace.id,
+            request_id=trace.request_id,
+            normalized_question=trace.normalized_question,
+            filters=trace.filters,
+            semantic_candidates=trace.semantic_candidates,
+            keyword_candidates=trace.keyword_candidates,
+            decision_candidates=trace.decision_candidates,
+            fused_results=trace.fused_results,
+            selected_passage_ids=trace.selected_passage_ids,
+            timings=trace.timings,
+            configuration=trace.configuration,
+            created_at=trace.created_at,
+        )
+
+
+def _candidate_trace(candidates: list[RankedPassage]) -> list[dict[str, object]]:
+    return [
+        {
+            "passage_id": str(candidate.passage.id),
+            "rank": rank,
+            "raw_score": candidate.raw_score,
+        }
+        for rank, candidate in enumerate(candidates, start=1)
+    ]
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((perf_counter() - started) * 1_000, 3)
