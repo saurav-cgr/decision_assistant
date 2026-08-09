@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
+from decision_assistant.answering.router import router as answering_router
 from decision_assistant.config import Settings, get_settings
 from decision_assistant.documents.router import router as documents_router
 from decision_assistant.errors import ApplicationError, ErrorResponse
@@ -47,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     app = FastAPI(title="Decision Assistant API")
     app.state.settings = resolved_settings
+    app.include_router(answering_router)
     app.include_router(documents_router)
     app.include_router(retrieval_router)
 
