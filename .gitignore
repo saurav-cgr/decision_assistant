@@ -10,4 +10,5 @@ __pycache__/
 api/.venv/
 web/node_modules/
 web/dist/
+web/*.tsbuildinfo
 uploads/

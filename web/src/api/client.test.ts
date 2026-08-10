@@ -1,0 +1,55 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("Decision Assistant API client", () => {
+  it("lists documents through the versioned business API", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const clientModule = "./client";
+    const { listDocuments } = await import(/* @vite-ignore */ clientModule);
+
+    await listDocuments();
+
+    const [requestedUrl] = fetchMock.mock.calls[0];
+    expect(String(requestedUrl)).toMatch(/\/api\/v1\/documents$/);
+  });
+
+  it("preserves the stable API error and request ID", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "retry_not_available",
+          message: "No failed ingestion to retry",
+          request_id: "request-123",
+          retryable: false,
+          details: { document_id: "document-1" },
+        }),
+        {
+          status: 409,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const clientModule = "./client";
+    const { listDocuments } = await import(/* @vite-ignore */ clientModule);
+
+    await expect(listDocuments()).rejects.toMatchObject({
+      name: "ApiClientError",
+      status: 409,
+      code: "retry_not_available",
+      message: "No failed ingestion to retry",
+      requestId: "request-123",
+      retryable: false,
+      details: { document_id: "document-1" },
+    });
+  });
+});
