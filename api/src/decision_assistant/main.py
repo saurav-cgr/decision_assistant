@@ -14,6 +14,7 @@ from decision_assistant.config import Settings, get_settings
 from decision_assistant.decisions.router import router as decisions_router
 from decision_assistant.documents.router import router as documents_router
 from decision_assistant.errors import ApplicationError, ErrorResponse
+from decision_assistant.evaluation.router import router as evaluation_router
 from decision_assistant.retrieval.router import router as retrieval_router
 from decision_assistant.timelines.router import router as timelines_router
 
@@ -53,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(answering_router)
     app.include_router(decisions_router)
     app.include_router(documents_router)
+    app.include_router(evaluation_router)
     app.include_router(retrieval_router)
     app.include_router(timelines_router)
 
