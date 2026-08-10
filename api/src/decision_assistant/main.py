@@ -11,6 +11,7 @@ from starlette.responses import Response
 
 from decision_assistant.answering.router import router as answering_router
 from decision_assistant.config import Settings, get_settings
+from decision_assistant.decisions.router import router as decisions_router
 from decision_assistant.documents.router import router as documents_router
 from decision_assistant.errors import ApplicationError, ErrorResponse
 from decision_assistant.retrieval.router import router as retrieval_router
@@ -49,6 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Decision Assistant API")
     app.state.settings = resolved_settings
     app.include_router(answering_router)
+    app.include_router(decisions_router)
     app.include_router(documents_router)
     app.include_router(retrieval_router)
 
