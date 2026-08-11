@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a local-first application that ingests project documents, extracts correctable decisions, answers questions with exact citations, displays supersession timelines, and measures hybrid retrieval quality.
+**Goal:** Build a local-data-first application that ingests project documents, extracts correctable decisions, answers questions with exact citations, displays supersession timelines, and measures hybrid retrieval quality.
 
-**Architecture:** A React/TypeScript frontend calls a single-worker FastAPI modular monolith. Public business endpoints use a major-version URL namespace beginning at `/api/v1`; infrastructure health and generated OpenAPI documentation remain unversioned. PostgreSQL with pgvector stores versioned documents, passages, decisions, traces, and evaluations; Ollama is accessed only through generation and embedding provider interfaces. Development tools, dependency installation, tests, builds, migrations, and application services run in Docker so the host requires only Git and Docker Desktop. Implementation proceeds test-first and establishes a Markdown vertical slice before adding PDF/DOCX parsing and the complete UI.
+**Architecture:** A React/TypeScript frontend calls a single-worker FastAPI modular monolith. Public business endpoints use a major-version URL namespace beginning at `/api/v1`; infrastructure health and generated OpenAPI documentation remain unversioned. PostgreSQL with pgvector stores versioned documents, passages, decisions, traces, and evaluations. Gemini is the default external generation and embedding provider behind application-owned interfaces; deterministic fakes keep normal tests provider-independent, and Ollama remains an optional adapter rather than a required runtime. Development tools, dependency installation, tests, builds, migrations, and application services run in Docker. The host requires Git, Docker Desktop, network access for live inference, and a user-supplied Gemini API key.
 
-**Tech Stack:** Docker Compose, Python 3.12 container, FastAPI, Pydantic 2, SQLAlchemy 2 async, Alembic, PostgreSQL 16, pgvector, httpx, pypdf, python-docx, pytest, Node.js 24 container, React 19, TypeScript, Vite, React Router, Vitest, Testing Library, Ollama container.
+**Tech Stack:** Docker Compose, Python 3.12 container, FastAPI, Pydantic 2, SQLAlchemy 2 async, Alembic, PostgreSQL 16, pgvector, Google Gen AI Python SDK, httpx, pypdf, python-docx, pytest, Node.js 24 container, React 19, TypeScript, Vite, React Router, Vitest, and Testing Library. Ollama is retained only as an optional Compose profile/provider adapter.
 
 ---
 
@@ -21,6 +21,13 @@
 - Run every Python, pytest, Alembic, Node, npm, and Vite command through Docker from the repository root. Do not depend on host Python, Node, npm, PostgreSQL, or Ollama.
 - Bind-mount the repository root at `/workspace` in the API development container with workdir `/workspace/api` and `PYTHONPATH=/workspace/api/src`, so imports always resolve live source rather than the package snapshot built into the image. Bind-mount `web/` at `/app` and mount a named `web_node_modules` volume at `/app/node_modules`, so the source mount does not hide image-installed dependencies. This gives API/evaluation commands access to `sample_data/`, `evaluation/`, and `scripts/` without host runtimes or stale code.
 - Commit after every task using the stated commit message.
+- Never commit `GEMINI_API_KEY`; pass it only to the API container through an ignored `.env` file. Tests and logs must not print it.
+- Use deterministic fake providers for the default test suite and backend vertical-slice integration path. Live Gemini contract, smoke, and evaluation commands are opt-in and must fail clearly on missing credentials or exhausted free-tier quota.
+- Treat an embedding profile as `(provider, model, dimension, adapter_config_version)`. Never compare vectors from different profiles; a profile change requires re-indexing all active documents.
+
+## Approved Provider Amendment — 2026-08-11
+
+Tasks 1–20 record the implementation sequence already completed with Ollama as the initial adapter. Task 21A migrates the default runtime to Gemini before Task 21's live smoke, evaluation, README, and demo work resumes. Where Task 21's earlier wording conflicts with Task 21A, Task 21A is authoritative.
 
 ## Repository Structure
 
@@ -28,7 +35,7 @@
 decision_assistant/
 ├── .env.example                         # Local configuration contract
 ├── .gitignore
-├── compose.yaml                         # Web, API, PostgreSQL/pgvector, Ollama
+├── compose.yaml                         # Web, API, PostgreSQL; optional Ollama profile
 ├── Makefile                             # Common local commands
 ├── README.md                            # Setup, architecture, results, limitations
 ├── api/
@@ -49,7 +56,7 @@ decision_assistant/
 │   │   ├── documents/{router,schemas,service,storage}.py
 │   │   ├── ingestion/{jobs,parsers,chunking,service}.py
 │   │   ├── decisions/{router,schemas,extractor,service}.py
-│   │   ├── providers/{base,fakes,ollama}.py
+│   │   ├── providers/{base,fakes,factory,gemini,ollama}.py
 │   │   ├── retrieval/{router,schemas,rrf,repository,service}.py
 │   │   ├── answering/{router,schemas,verifier,service}.py
 │   │   ├── timelines/{router,schemas,service}.py
@@ -1000,6 +1007,132 @@ git add sample_data evaluation scripts/build_sample_documents.py api/tests/unit/
 git commit -m "test: add Atlas project benchmark corpus"
 ```
 
+### Task 21A: Migrate the Default Model Runtime to Gemini (4.5 hours)
+
+**Files:**
+- Modify: `api/pyproject.toml`
+- Modify: `api/src/decision_assistant/config.py`
+- Modify: `api/src/decision_assistant/models.py`
+- Modify: `api/src/decision_assistant/providers/base.py`
+- Modify: `api/src/decision_assistant/providers/fakes.py`
+- Create: `api/src/decision_assistant/providers/gemini.py`
+- Create: `api/src/decision_assistant/providers/factory.py`
+- Modify: `api/src/decision_assistant/ingestion/metadata.py`
+- Modify: `api/src/decision_assistant/decisions/extractor.py`
+- Modify: `api/src/decision_assistant/{documents,retrieval,answering,evaluation}/router.py`
+- Modify: `api/src/decision_assistant/ingestion/service.py`
+- Modify: `api/src/decision_assistant/retrieval/{repository,service}.py`
+- Create: `api/src/decision_assistant/workspace/embedding_migration.py`
+- Create: `api/src/decision_assistant/commands/reindex_embeddings.py`
+- Create: `api/alembic/versions/0002_passage_embedding_profile.py`
+- Create: `api/tests/unit/test_gemini_provider.py`
+- Create: `api/tests/unit/test_provider_factory.py`
+- Create: `api/tests/contract/test_gemini_provider.py`
+- Create: `api/tests/integration/test_embedding_migration.py`
+- Create: `api/tests/smoke_app.py`
+- Create: `api/tests/support/smoke_provider.py`
+- Create: `compose.smoke.yaml`
+- Modify: affected provider, ingestion, retrieval, evaluation, health, and smoke tests
+- Modify: `compose.yaml`
+- Modify: `.env.example`
+- Modify: `scripts/smoke.sh`
+
+- [ ] **Step 1: Write failing embedding-purpose and Gemini adapter tests**
+
+Extend the provider contract with an `EmbeddingPurpose` enum containing `DOCUMENT` and `QUERY`, a complete `EmbeddingProfile`, and a `GenerationProfile`. Require every embedding call to declare its purpose. Before implementing it, add tests proving:
+
+- ingestion requests document-purpose embeddings;
+- retrieval and semantic evaluation request query-purpose embeddings;
+- the Gemini adapter reports profile `{provider: "gemini", model: "gemini-embedding-2", dimension: 768, adapter_config_version: "retrieval-prefix-v1"}`;
+- the generation profile records model, Developer API version, pinned SDK version, temperature, JSON-schema mode, and prompt-contract version;
+- for `gemini-embedding-2`, document inputs become `title: none | text: ...`, query inputs become `task: search result | query: ...`, and mocked SDK requests omit unsupported `EmbedContentConfig.task_type`;
+- requests contain at most 32 embedding inputs, preserve ordering, reject oversize inputs rather than truncate, and split larger application batches deterministically;
+- returned vector count/order, finite numeric values, declared profile, and every vector dimension are validated;
+- any configured embedding dimension other than the schema's fixed 768 is rejected before a provider call;
+- structured generation passes the supplied Pydantic JSON schema and validates the response;
+- short-lived 429 responses with a usable retry window, timeouts, and transient 5xx failures receive bounded retries;
+- missing/rejected credentials, exhausted quota, unsupported schemas, other 4xx responses, malformed JSON, and schema-invalid output map to distinct sanitized error codes;
+- oversize generation input is rejected as `provider_input_too_large`; metadata uses a documented bounded sample and decision extraction splits passages into ordered prompt-budgeted batches rather than relying on adapter truncation;
+- neither exceptions nor captured logs contain `GEMINI_API_KEY`.
+
+Mock the Gemini SDK/client in unit tests. No unit test may use the network.
+Register one `live_provider` pytest marker and apply it to both Gemini and optional Ollama network contract tests. The deterministic suite excludes that marker rather than accumulating expected skips.
+
+- [ ] **Step 2: Run the focused tests and verify RED**
+
+Run: `docker compose run --rm api pytest tests/unit/test_gemini_provider.py tests/unit/test_provider_factory.py tests/unit/test_provider_fakes.py -v`
+Expected: FAIL because the Gemini adapter, provider factory, and embedding-purpose contract do not exist.
+
+- [ ] **Step 3: Implement the Gemini adapters and centralized provider factory**
+
+Pin `google-genai==2.13.0` and configure the Gemini Developer API `v1beta`. Add settings:
+
+```text
+GENERATION_PROVIDER=gemini
+EMBEDDING_PROVIDER=gemini
+GEMINI_API_KEY=
+GEMINI_GENERATION_MODEL=gemini-2.5-flash-lite
+GEMINI_EMBEDDING_MODEL=gemini-embedding-2
+GEMINI_EMBEDDING_DIMENSION=768
+GEMINI_EMBEDDING_CONFIG_VERSION=retrieval-prefix-v1
+GEMINI_GENERATION_PROMPT_VERSION=gemini-json-v1
+GEMINI_EMBEDDING_BATCH_SIZE=32
+GEMINI_MAX_PROMPT_CHARACTERS=100000
+```
+
+Store the key as `SecretStr | None`. Do not validate it while constructing the application so `/health` and deterministic tests remain available; fail with `provider_configuration_invalid` when a live Gemini provider is requested without a key.
+
+Implement async Gemini generation with temperature zero, JSON response MIME type, the supplied JSON schema, a 100,000-character prompt ceiling, bounded retries, and Pydantic validation. Metadata generation receives an explicit bounded beginning-of-document sample; decision extraction partitions passages into deterministic ordered batches within the ceiling and merges results before evidence alignment. Implement batched embeddings with explicit document/query purpose, a maximum of 32 inputs per provider request, no silent truncation, and 768 output dimensions. For `gemini-embedding-2`, apply the versioned prompt formatting inside the adapter and omit unsupported `task_type` so domain services remain provider-neutral. Preserve input order and reject cardinality, non-finite value, and dimension mismatches. Reject non-768 provider configuration because the MVP database column is fixed `vector(768)`.
+
+Create one provider factory/composition dependency and replace concrete `Ollama*Provider` construction in routers. All domain services continue to receive only `EmbeddingProvider` or `GenerationProvider`.
+
+- [ ] **Step 4: Add atomic embedding-only migration and retrieval gating**
+
+Write failing integration tests proving:
+
+1. every newly created `Passage` stores the provider's validated embedding profile;
+2. source upload idempotency remains checksum-based and a provider change does not create a `DocumentVersion`;
+3. configured profile, `Workspace.embedding_profile` corpus-active profile, and derived migration-pending state are distinct;
+4. an empty corpus is not migration-pending and first successful ingestion initializes the corpus-active profile;
+5. retrieval fails with stable code `embedding_reindex_required` when any active passage has a different/missing profile or the non-empty workspace corpus-active profile differs;
+6. every vector SQL query joins only active document versions and includes the configured passage-profile predicate;
+7. the migration command embeds all snapshotted active passages before one atomic vector/profile cutover;
+8. a failed batch or snapshot drift leaves every previous vector/profile unchanged;
+9. the workspace advisory lock is held from snapshot through provider calls and cutover, and ingestion acquires the same lock before activation;
+10. decisions, evidence, relations, revisions, user corrections, passage IDs, offsets, and hashes are unchanged after migration.
+
+Add a nullable JSONB `Passage.embedding_profile` column through Alembic so existing rows are explicitly detected as legacy/mismatched; application validation requires it for every newly created passage. Implement `python -m decision_assistant.commands.reindex_embeddings`: acquire the workspace guard, snapshot active passage/version identities, request and validate all vectors in bounded batches, then atomically re-verify the snapshot and update active passage vectors/profiles plus `Workspace.embedding_profile`. Abort without writes on any failure or drift. Never create a document version or rewrite source-derived records during this operation.
+
+- [ ] **Step 5: Make Gemini the default Docker runtime**
+
+Pass Gemini configuration only to the API container. Remove the API's required dependency on Ollama and place the Ollama service/model volume behind an optional `ollama` Compose profile. `docker compose up -d --wait` must start only database, API, and web by default.
+
+Keep `/health` as process/database liveness. Add `/ready`: return 200 only when the selected providers' required configuration is present and embedding migration is not pending; return a sanitized 503 without calling the provider otherwise. This checks configuration presence, not remote credential validity. Provider-dependent endpoints/jobs return stable configuration, authentication, rate-limit, quota, schema, unavailable, or invalid-response codes as designed.
+
+Add a test-only Compose override whose API command loads `tests.smoke_app`. It overrides the centralized provider dependency with a prompt-aware deterministic smoke provider for the two fixed Atlas smoke documents; production settings cannot select this provider. `SMOKE_PROVIDER_MODE=fake` runs the complete Compose HTTP flow without network access. `SMOKE_PROVIDER_MODE=gemini` requires a key, uses the production app, and never prints the key. Remove all model pulls.
+
+- [ ] **Step 6: Run unit, migration, and opt-in contract verification**
+
+Run: `docker compose run --rm api pytest -m 'not live_provider' -v`
+Expected: PASS without a Gemini key or network access.
+
+Run: `SMOKE_PROVIDER_MODE=fake bash scripts/smoke.sh`
+Expected: deterministic Compose `upload -> index -> ask -> citation -> timeline` passes through the real API/database layers and mocked provider boundary.
+
+Run: `docker compose up -d db --wait`
+Run: `docker compose run --rm api alembic upgrade head`
+Expected: migration succeeds against both a fresh database and the existing development database.
+
+Run: `docker compose run --rm -e GEMINI_CONTRACT_TESTS=1 api pytest tests/contract/test_gemini_provider.py -v`
+Expected: with `GEMINI_API_KEY` supplied to Compose, generation returns schema-valid output and embedding returns exactly 768 finite values; without the opt-in flag, tests SKIP. Missing credentials or quota exhaustion is skipped/inconclusive, never PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add api compose.yaml .env.example scripts/smoke.sh
+git commit -m "feat: use Gemini model providers by default"
+```
+
 ### Task 21: Complete Docker Smoke Test, Documentation, and Demo (3 hours)
 
 **Files:**
@@ -1012,13 +1145,13 @@ git commit -m "test: add Atlas project benchmark corpus"
 
 - [ ] **Step 1: Write the smoke script before running it**
 
-`scripts/smoke.sh` must use only shell built-ins plus Docker Compose. It starts database and Ollama with `docker compose up -d db ollama --wait`; unless `SMOKE_PROVIDER_MODE=fake`, it idempotently pulls both configured models through `docker compose exec ollama sh -lc`. It applies migrations before API startup through `docker compose run --rm api alembic upgrade head`, then starts API/web with `docker compose up -d api web --wait`, and finally runs `docker compose run --rm api python ../scripts/smoke.py`. `scripts/smoke.py` uses Python's standard HTTP/JSON libraries from inside the Compose network; it must not require host `curl`, `jq`, Python, or Node.
+`scripts/smoke.sh` must use only shell built-ins plus Docker Compose. It starts the database, applies migrations, starts API/web, and runs `scripts/smoke.py` from the API container. Fake mode adds `compose.smoke.yaml` and requires no network/key. Gemini mode uses the production app, checks for a key without printing it, and preflights `/ready`. `scripts/smoke.py` uses Python's standard HTTP/JSON libraries from inside the Compose network; it must not require host `curl`, `jq`, Python, Node, or Ollama.
 
-Define one `/api/v1` base constant in `scripts/smoke.py`. The containerized smoke client uses `POST /api/v1/documents/upload` for both Markdown fixtures, polls through `/api/v1/documents/{id}`, calls `POST /api/v1/questions`, lists `/api/v1/decisions`, calls `POST /api/v1/decisions/{id}/relations` to confirm the later decision `supersedes` the earlier one, and requests `/api/v1/timelines?topic=authentication`. It asserts a citation and the authoritative superseded event, exiting nonzero on failure. Infrastructure readiness alone uses unversioned `GET /health`. The smoke may use fake providers in CI and real Ollama in the recorded local demo.
+Define one `/api/v1` base constant in `scripts/smoke.py`. Upload the two Markdown fixtures sequentially for deterministic fake response ordering, poll through `/api/v1/documents/{id}`, call `POST /api/v1/questions`, list `/api/v1/decisions`, confirm the later decision `supersedes` the earlier one, and request `/api/v1/timelines?topic=authentication`. Assert a citation and authoritative superseded event. Fake mode is the deterministic CI Compose smoke; Gemini mode is the live acceptance and recorded demo.
 
 - [ ] **Step 2: Run the complete deterministic test suite**
 
-Run: `docker compose run --rm api pytest -m 'not ollama' --cov=decision_assistant --cov-report=term-missing`
+Run: `docker compose run --rm api pytest -m 'not live_provider' --cov=decision_assistant --cov-report=term-missing`
 Expected: PASS with no unexpected skip.
 
 Run: `docker compose run --rm web npm test -- --run`
@@ -1031,28 +1164,31 @@ Expected: production frontend build succeeds.
 
 Run: `docker compose config --quiet`
 Run: `docker compose build`
-Run: `docker compose up -d db ollama --wait`
+Run: `docker compose up -d db --wait`
 Run: `docker compose run --rm api alembic upgrade head`
 Run: `docker compose up -d api web --wait`
 Expected: all services healthy and migration succeeds.
 
-- [ ] **Step 4: Run the smoke test**
+- [ ] **Step 4: Run deterministic and live smoke acceptance**
 
-Run: `bash scripts/smoke.sh`
+Run: `SMOKE_PROVIDER_MODE=fake bash scripts/smoke.sh`
+Expected: deterministic `SMOKE PASS: upload -> index -> ask -> citation -> timeline`.
+
+Run: `SMOKE_PROVIDER_MODE=gemini bash scripts/smoke.sh`
 Expected: `SMOKE PASS: upload -> index -> ask -> citation -> timeline`.
 
-- [ ] **Step 5: Run the real local evaluation**
+The live command passes only after the complete real Gemini flow succeeds. Missing credentials or quota exhaustion is reported as skipped/inconclusive and does not satisfy final acceptance.
 
-Run: `docker compose up -d ollama`
-Run: `docker compose exec ollama sh -lc 'ollama pull "$OLLAMA_GENERATION_MODEL"'`
-Run: `docker compose exec ollama sh -lc 'ollama pull "$OLLAMA_EMBEDDING_MODEL"'`
-Expected: both configured models are present in the Ollama volume.
+- [ ] **Step 5: Run the live Gemini evaluation**
+
+Run: `docker compose run --rm -e GEMINI_CONTRACT_TESTS=1 api pytest tests/contract/test_gemini_provider.py -v`
+Expected: live Gemini generation and 768-dimensional embedding contracts pass using the uncommitted API key.
 
 Using the containerized application, ingest the complete Atlas corpus, run semantic-only and hybrid benchmarks, and save actual output through the application. Verify hybrid top-five hit rate is at least 80%; if it is not, debug chunking/query/fusion using traces before tuning thresholds.
 
 - [ ] **Step 6: Finish the README**
 
-Document Git and Docker Desktop as the only required host installations; all Python/Node/database/model commands must use Compose. Document setup, architecture diagram, module boundaries, provider swapping, data model/versioning, supported formats, security boundaries, evaluation definitions and actual results, trade-offs, limitations, troubleshooting, and the exact 3–5 minute demo flow. Add a manual audit table for all local-judge disagreements in the approximately 20-question dataset, recording question ID, claim, judge result, human result, and resolution. Do not report invented metrics.
+Document Git and Docker Desktop as the only required host installations, plus the required free-tier Gemini API key and network access for live inference; all Python/Node/database commands must use Compose. Document setup, architecture diagram, module boundaries, provider swapping, embedding-profile migration, data transfer/privacy boundaries, data model/versioning, supported formats, evaluation definitions and actual results, free-tier quota limitations, troubleshooting, and the exact 3–5 minute demo flow. Add a manual audit table for all judge disagreements in the approximately 20-question dataset, recording question ID, claim, judge result, human result, and resolution. Do not report invented metrics.
 
 - [ ] **Step 7: Final verification and repository audit**
 
@@ -1069,7 +1205,7 @@ git commit -m "docs: complete local MVP verification and demo"
 
 ## P1 Boundary
 
-P1 enhancements are not part of this implementation plan. After P0 verification, any measured enhancement requires its own focused plan containing the failing benchmark/test, exact affected files, and expected metric change. Do not spend the 5.5-hour P0 contingency on speculative P1 work.
+P1 enhancements are not part of this implementation plan. After P0 verification, any measured enhancement requires its own focused plan containing the failing benchmark/test, exact affected files, and expected metric change. Do not spend the remaining 1-hour P0 contingency on speculative P1 work.
 
 ## Milestone Checkpoints
 
@@ -1077,8 +1213,9 @@ P1 enhancements are not part of this implementation plan. After P0 verification,
 2. **Backend vertical slice:** Tasks 5–10; Markdown upload through verified answer and trace works.
 3. **Complete domain:** Tasks 11–14; all formats, corrections, timeline, and evaluation work.
 4. **Complete product:** Tasks 15–20; all five screens and benchmark corpus work.
-5. **Portfolio handoff:** Task 21; Docker, metrics, README, and demo are verified.
+5. **Provider migration:** Task 21A; Gemini is the default, embedding spaces are protected, and deterministic tests remain offline.
+6. **Portfolio handoff:** Task 21; Docker, metrics, README, and demo are verified.
 
 Stop at each checkpoint, run its named tests, and review elapsed time against the 50-hour budget. Omit P1 if the P0 forecast exceeds the remaining budget.
 
-The 21 P0 tasks are budgeted at approximately 44.5 hours, leaving 5.5 hours for integration/debugging contingency inside the 50-hour limit.
+The original 21 P0 tasks were budgeted at approximately 44.5 hours. The approved Gemini migration adds an estimated 4.5 hours, reducing the original integration/debugging contingency from 5.5 to 1 hour while remaining inside the 50-hour limit.

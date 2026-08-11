@@ -1,9 +1,9 @@
 # Decision Memory Assistant — MVP Design
 
 **Date:** 2026-08-05  
-**Status:** Approved for implementation planning  
+**Status:** Approved; inference-provider amendment approved 2026-08-11
 **Delivery budget:** Approximately 50 focused hours  
-**Primary objective:** Produce a portfolio-quality AI engineering project that demonstrates architectural judgment, evidence-grounded generation, retrieval evaluation, and local-first operation.
+**Primary objective:** Produce a portfolio-quality AI engineering project that demonstrates architectural judgment, evidence-grounded generation, retrieval evaluation, and privacy-aware provider abstraction.
 
 ## 1. Product Summary
 
@@ -26,11 +26,11 @@ The MVP serves one local workspace and one user. It is designed as a modular mon
 - Show retrieval traces for learning and debugging.
 - Display explicitly linked, chronological decision timelines.
 - Evaluate retrieval and answer behavior on approximately 20 curated questions.
-- Run locally through Docker Compose with Ollama behind provider interfaces.
+- Run application services and persistent data locally through Docker Compose while using Gemini behind generation and embedding provider interfaces.
 
 ### Definition of done
 
-- A clean Docker Compose installation starts the frontend, API, PostgreSQL with pgvector, and Ollama integration.
+- A clean Docker Compose installation starts the frontend, API, and PostgreSQL with pgvector; a user-supplied Gemini API key enables model calls.
 - Included sample documents can be indexed locally.
 - Expected evidence appears in the top five hybrid results for at least 80% of answerable evaluation questions.
 - Answers contain citations that resolve to exact stored source passages.
@@ -62,14 +62,25 @@ Image-only PDFs are rejected with an `ocr_not_supported` error. Password-protect
 
 ### 4.1 Deployment topology
 
-Docker Compose runs four components:
+Docker Compose runs three required local components:
 
 1. **Web:** React and TypeScript single-page application.
 2. **API:** Python and FastAPI modular monolith, running as one worker for the MVP.
 3. **Database:** PostgreSQL with the pgvector extension.
-4. **Model runtime:** Ollama for local generation and embeddings.
 
-Uploaded source files and database data use local Docker volumes. The browser communicates only with FastAPI. FastAPI owns ingestion orchestration, domain rules, retrieval, answer construction, evaluation, and provider calls.
+Gemini is an external managed dependency used for generation and embeddings. Uploaded source files, extracted text, embeddings, and database data use local Docker volumes as the application's primary persistence. Google also processes transmitted request content according to its applicable terms; the design does not claim that transmitted copies remain only on the local machine. The browser communicates only with FastAPI. FastAPI owns ingestion orchestration, domain rules, retrieval, answer construction, evaluation, provider calls, and secret isolation.
+
+#### 4.1.1 Gemini transmission inventory
+
+- **Metadata extraction:** when deterministic parsing leaves fields missing, an explicit bounded beginning-of-document sample and names of the missing fields are sent for structured completion.
+- **Decision extraction:** normalized passage batches, passage IDs, and extraction instructions are sent. This can cover the complete document across multiple requests.
+- **Document embeddings:** every normalized passage is sent with document-retrieval formatting.
+- **Question retrieval:** the user's question is sent with query-retrieval formatting to obtain its vector.
+- **Answer generation:** the question, selected evidence passages, passage IDs, supported corrected fields, and response schema are sent.
+- **Evaluation:** benchmark questions, selected evidence, generated claims, expected/judge prompt material, and configuration identifiers needed by the generation/judge call are sent.
+- **Not sent intentionally:** original binary files, local storage paths, database credentials, the Gemini API key in request content, unrelated passages during answering, or application telemetry.
+
+Provider request/response metadata may still be processed or retained by Google under its terms. This MVP is approved only for the fictional Atlas corpus and other non-confidential demo content.
 
 ### 4.2 Backend modules
 
@@ -83,21 +94,27 @@ The API is divided into modules with explicit contracts:
 - `answering`: evidence-pack construction, structured generation, citation validation, conflicts, and abstention.
 - `timelines`: topic matching, relationship expansion, chronological ordering, and timeline DTOs.
 - `evaluation`: benchmark fixtures, runs, metrics, per-question diagnostics, and strategy comparison.
-- `providers`: generation and embedding interfaces plus Ollama adapters and deterministic test fakes.
+- `providers`: generation and embedding interfaces, centralized provider construction, Gemini adapters, optional Ollama adapters, and deterministic test fakes.
 
-Domain modules may depend on shared database and provider interfaces, but they do not call Ollama or issue cross-module queries through UI-specific code. API routes are thin adapters over application services.
+Domain modules may depend on shared database and provider interfaces, but they do not import a concrete model adapter or issue cross-module queries through UI-specific code. API routes are thin adapters over application services. A composition-root factory selects providers from validated settings so ingestion, retrieval, answering, and evaluation use one consistent provider configuration.
 
 ### 4.3 Provider contracts
 
-`EmbeddingProvider` accepts normalized texts and returns vectors plus embedding profile metadata. `GenerationProvider` accepts a prompt and response schema and returns validated structured output. The stored embedding profile includes provider, model, and vector dimension; changing it requires a full passage re-embedding operation.
+`EmbeddingProvider` accepts an ordered, non-empty list of normalized texts plus an explicit purpose (`document` or `query`) and returns the same number of vectors in input order. For `gemini-embedding-2`, Google's Developer API does not support `EmbedContentConfig.task_type`; the adapter must omit that field. The supported mapping is therefore versioned prompt formatting: document input becomes `title: none | text: {content}` and query input becomes `task: search result | query: {content}` under `retrieval-prefix-v1`. Mocked request tests assert both the formatted `contents` and absence of `task_type`. The adapter sends at most 32 passage inputs per request; normal ingestion chunks are at most 1,500 characters, safely below the model's 8,192-token per-input limit. It never silently truncates. Every returned vector must contain exactly 768 finite, non-boolean numeric values.
 
-The initial adapters use Ollama. Hosted providers can later implement the same contracts without changing ingestion, retrieval, answering, or evaluation services.
+`GenerationProvider` accepts a prompt and Pydantic response model and exposes a generation profile. The pinned MVP profile is provider `gemini`, model `gemini-2.5-flash-lite`, Google Gen AI SDK `2.13.0`, Gemini Developer API `v1beta`, temperature `0`, JSON-schema response mode, and prompt-contract version `gemini-json-v1`. The adapter sends the response model's JSON schema and then performs local Pydantic validation; if the service rejects a supported schema, the call fails rather than falling back to unconstrained text. Provider prompts are bounded by a configured 100,000-character budget and are never silently truncated. Metadata extraction uses an explicit bounded beginning-of-document sample when deterministic fields are missing; decision extraction partitions passages into ordered batches within the prompt budget.
+
+Configuration snapshots store the full embedding profile `(provider, model, dimension, adapter_config_version)` and generation profile `(provider, model, API version, SDK version, temperature, schema mode, prompt_contract_version)`. Gemini is the default provider for both contracts. Embeddings use `gemini-embedding-2` with 768 output dimensions, preserving the existing fixed `vector(768)` column while changing the embedding space. The MVP rejects any configured adapter dimension other than 768 as `provider_configuration_invalid`.
+
+Stable provider error codes are `provider_configuration_invalid`, `provider_authentication_failed`, `provider_rate_limited`, `provider_quota_exhausted`, `provider_unavailable`, `provider_input_too_large`, `provider_schema_unsupported`, and `provider_response_invalid`. A short rate limit with a usable `Retry-After`, timeout, or transient 5xx is retryable within the bounded request budget. Invalid configuration/credentials, exhausted daily quota, oversize input, unsupported schema, and invalid output are non-retryable for the current operation. Provider messages are sanitized before persistence or logging.
+
+The optional Ollama adapter remains a demonstration of substitutability, but Ollama is not required for the default Compose startup, smoke test, or recorded demo.
 
 ## 5. Data Model
 
 ### Workspace
 
-Stores the single workspace name, creation time, and active embedding profile.
+Stores the single workspace name, creation time, and corpus-active embedding profile. The configured profile comes from runtime settings. When there are no active passages, `migration_pending` is false regardless of the stored corpus profile; the first successful ingestion sets the corpus-active profile to the configured profile. For a non-empty corpus, `migration_pending` is derived when the configured profile differs from the corpus-active profile or any active passage lacks the configured profile.
 
 ### Document
 
@@ -109,7 +126,7 @@ Owns one immutable uploaded revision of a document. It stores the document ID, m
 
 ### Passage
 
-Belongs to a `DocumentVersion`. It stores a stable sequence number within that version, normalized content, character offsets within the normalized document, a content hash, format-specific locator, PostgreSQL search vector, embedding, and timestamps. Passage IDs never span versions.
+Belongs to a `DocumentVersion`. It stores a stable sequence number within that version, normalized content, character offsets within the normalized document, a content hash, format-specific locator, PostgreSQL search vector, embedding, embedding profile, and timestamps. Passage IDs never span versions. The embedding and embedding profile are derived, replaceable data; changing them does not change source identity, locators, decisions, evidence, or correction history.
 
 The locator is typed data:
 
@@ -167,23 +184,37 @@ The MVP does not attempt layout reconstruction. PDF tables and multi-column layo
 5. Normalize whitespace without losing locator mappings.
 6. Extract document title, date, participants, source type, and project metadata using deterministic signals followed by structured model extraction where needed.
 7. Create passage-sized chunks using headings/paragraph boundaries with bounded overlap.
-8. Generate embeddings in batches.
+8. Generate document-purpose Gemini embeddings in bounded batches; validate cardinality, order, profile, dimension, and finite values before creating passages.
 9. Extract decisions through schema-constrained generation.
 10. Validate statuses, dates, evidence spans, and referenced passages.
 11. Infer candidate decision relationships and flag uncertain ones for review.
-12. Commit the new active document version transactionally and mark the job completed.
+12. Commit the new active document version transactionally, set the workspace corpus-active profile when all active passages share it, and mark the job completed.
 
 ### 6.3 Idempotency and document changes
 
-The checksum makes repeated uploads idempotent. A modified document creates a `staging` `DocumentVersion`; all new passages, decisions, evidence, and relationships reference that version. After every stage succeeds, one transaction retires the prior version, activates the staged version, and updates `Document.active_version_id`. A failed re-index marks only the staged version failed and leaves the prior version searchable.
+The checksum makes repeated source uploads idempotent. An identical checksum is skipped because embedding migration is a separate derived-data operation. A modified document creates a `staging` `DocumentVersion`; all new passages, decisions, evidence, and relationships reference that version. After every stage succeeds, one transaction retires the prior version, activates the staged version, and updates `Document.active_version_id`. A failed source re-index marks only the staged version failed and leaves the prior version searchable when its embedding profile matches the corpus-active profile.
 
 Automatically extracted decisions belonging to the replaced version are retired with it. User-corrected decisions remain visible in history but become `needs_review` and are excluded from answers and authoritative timelines until their evidence is re-associated with active-version passages. They are never silently overwritten. Retired versions are retained for the MVP so revision history and old citations remain inspectable; automatic retention cleanup is out of scope.
 
 Because FastAPI background tasks are not durable, an API restart marks stale `running` jobs as failed/interrupted. The UI exposes a retry action. The API runs as one worker in the MVP to avoid duplicated in-process jobs.
 
+### 6.4 Embedding-profile migration
+
+Embedding migration never creates a `DocumentVersion` and never re-runs parsing, metadata extraction, decision extraction, evidence alignment, or relationship inference. Therefore user corrections, evidence associations, passage IDs, offsets, hashes, revisions, and authoritative timeline state remain unchanged.
+
+Three states are explicit:
+
+- **Configured profile:** requested by environment settings for new calls.
+- **Corpus-active profile:** stored on `Workspace.embedding_profile` and shared by every searchable active passage.
+- **Migration pending:** configured and corpus-active profiles differ, or an active passage has a missing/different profile.
+
+On startup, the API succeeds even when migration is pending, but semantic/hybrid retrieval and evaluation return `embedding_reindex_required`. Keyword-only inspection, source viewing, and correction workflows remain available. Every vector query both joins through the active `DocumentVersion` and filters `Passage.embedding_profile` to the configured profile; the pre-query gate rejects the operation if any active passage is mismatched, so partial-corpus vector search is impossible.
+
+The MVP exposes a containerized embedding-migration command. It acquires a workspace-scoped advisory guard before reading the active-passage snapshot and holds it through all provider calls and final cutover; ingestion obtains the same guard before source activation, so active membership cannot change during migration. The command obtains and validates Gemini embeddings in bounded batches and stages them in process memory for this small single-workspace corpus. Only after every batch succeeds does one database transaction verify the snapshotted passage/version identities, update active passage vectors/profiles, and flip `Workspace.embedding_profile`. Snapshot drift aborts without writes. Any failure discards staged results and leaves the old corpus-active vectors/profile intact. Tests prove that decision records and user corrections are byte-for-byte unchanged across migration.
+
 ## 7. Decision Extraction
 
-The generation provider receives one document section at a time plus a strict response schema. Each extracted decision includes its statement, date, owner, status, reasons, alternatives, topic, evidence quote, and candidate relationship to earlier decisions.
+The generation provider receives one ordered, prompt-budgeted passage batch at a time plus a strict response schema. Batch results are merged deterministically before evidence alignment. Each extracted decision includes its statement, date, owner, status, reasons, alternatives, topic, evidence quote, and candidate relationship to earlier decisions.
 
 Validation rejects records when their evidence quote cannot be aligned to an exact passage. Missing optional fields remain null or empty; the system does not infer an owner or date without evidence. Document date may be used as a clearly identified fallback for timeline ordering, not represented as a known decision date.
 
@@ -199,7 +230,7 @@ The question service identifies requested facets such as what, why, who, when, c
 
 ### 8.2 Candidate retrieval
 
-- Vector search returns the top 20 passages using cosine similarity.
+- Vector search embeds the question with query purpose and returns the top 20 passages using cosine similarity.
 - PostgreSQL full-text search returns the top 20 passages using the configured English text-search dictionary and ranking. Per-document language detection is out of scope.
 - Structured decision fields are searched and their evidence passages added as candidates.
 - Explicit metadata filters are applied before ranking.
@@ -259,7 +290,7 @@ Model-inferred, unconfirmed relationships appear as `possible revision`; they do
 - `POST /api/v1/evaluations/runs`: start a benchmark run for a named strategy.
 - `GET /api/v1/evaluations/runs/{id}`: return status, aggregate metrics, and per-question results.
 
-All public business endpoints use major-version URL prefix `/api/v1`. Infrastructure endpoints `/health`, `/docs`, and `/openapi.json` remain unversioned. No unversioned compatibility aliases are exposed because no external client predates this contract. Compatible additions remain in v1; a future breaking request or response contract requires `/api/v2`.
+All public business endpoints use major-version URL prefix `/api/v1`. Infrastructure endpoints `/health`, `/ready`, `/docs`, and `/openapi.json` remain unversioned. No unversioned compatibility aliases are exposed because no external client predates this contract. Compatible additions remain in v1; a future breaking request or response contract requires `/api/v2`.
 
 All errors use a consistent response with a stable code, user-readable message, request ID, retryability, and optional field details.
 
@@ -291,13 +322,17 @@ The frontend polls ingestion and evaluation job endpoints. WebSockets are intent
 
 - Upload validation occurs before a job is created.
 - Each background stage is persisted with status and timestamps.
-- Provider calls use bounded timeouts and limited exponential retries for transient failures.
+- Provider calls use bounded timeouts and limited exponential retries with jitter for timeouts, rate limits, and transient server failures.
+- API startup does not require a Gemini key. Unversioned `GET /health` is process/database liveness and remains successful in provider-degraded or migration-pending states. Unversioned `GET /ready` reports HTTP 200 only when the database is available, the selected providers have the required configuration (a key for Gemini), and no embedding migration is pending; otherwise it returns a sanitized HTTP 503 status without making a provider call. It checks configuration presence, not remote credential validity. Compose uses `/health` so the setup UI remains reachable; live smoke preflight uses `/ready`.
+- A provider-dependent endpoint or ingestion job requested without a key fails with non-retryable `provider_configuration_invalid`; rejected credentials use `provider_authentication_failed`. The job/error remains inspectable and retryable only after configuration changes. API keys and raw provider response bodies are never logged.
+- Bounded per-minute throttling uses `provider_rate_limited` and may retry when `Retry-After` fits the request budget. Exhausted daily/project quota uses non-retryable-for-this-operation `provider_quota_exhausted`; the UI advises waiting for reset or changing provider/tier.
 - Schema-invalid model output is retried once with a validation repair prompt, then recorded as `model_output_invalid`.
 - One document failure does not block other documents.
 - Database activation of a new document version is transactional.
 - Provider unavailability results in an explicit retryable error; it never falls back to unsupported answers.
 - Request IDs connect API errors, jobs, retrieval traces, answer traces, and evaluation results.
 - Logs are structured and local. No external telemetry service is required.
+- CI uses deterministic fake providers and mocked-transport Gemini contract tests. A separately marked live-provider acceptance path requires an explicit Gemini API key; quota failure is reported as skipped/inconclusive, never as a pass.
 
 ## 14. Evaluation and Testing
 
@@ -310,7 +345,7 @@ Approximately 20 versioned questions include expected answer summaries, expected
 - **Top-five retrieval hit rate:** fraction of answerable questions for which at least one expected passage, or expected document when passage-level gold is unavailable, appears in the top five.
 - **Mean Reciprocal Rank:** mean reciprocal position of the first expected relevant result, with zero for a miss.
 - **Citation correctness:** fraction of answer citations that pass structural validation and point to a gold-relevant passage/document. Structural validity is also reported separately.
-- **Answer faithfulness:** fraction of generated atomic claims judged supported by their cited passages using a versioned evaluation prompt, fixed local judge profile, temperature-zero settings, and stored judge output. The final README result includes a manual audit of judge disagreements across the small dataset.
+- **Answer faithfulness:** fraction of generated atomic claims judged supported by their cited passages using a versioned evaluation prompt, fixed judge profile, temperature-zero settings, and stored judge output. The final README result includes a manual audit of judge disagreements across the small dataset.
 - **Abstention accuracy:** classification accuracy against the expected answer-versus-abstain label; partial abstentions are scored per expected question facet.
 - **Latency:** median and p95 end-to-end time plus retrieval, generation, and verification stage timings.
 
@@ -320,13 +355,13 @@ Hybrid and semantic-only strategies run against the same dataset, embedding prof
 
 - Unit: metadata parsing, chunking, locator mapping, RRF, evidence alignment, citation validation, abstention rules, and timeline ordering.
 - Integration: PostgreSQL full-text/vector queries, staged ingestion transactions, re-index preservation, and API endpoints.
-- Provider contract: Ollama adapters plus deterministic fake generation and embedding providers.
+- Provider contract: mocked-transport Gemini request mapping, purpose formatting, schema handling, cardinality/order/profile/dimension/finite-value validation, retry/error classification, and secret redaction; optional Ollama contracts; deterministic fake generation and embedding providers.
 - Frontend component: upload/status states, answer citations, conflicts, errors, polling, corrections, and timeline rendering.
-- Smoke: Docker Compose upload → index → ask → cited answer → timeline.
+- Smoke: a fake-provider Docker Compose upload → index → ask → cited answer → timeline path runs deterministically; a separate live Gemini acceptance repeats the full cited-answer flow.
 
-Tests do not require live model output except for explicitly marked local-provider smoke tests. Deterministic fakes keep the main suite repeatable.
+Tests do not require live model output except for the explicitly marked Gemini acceptance. Mocked-transport tests validate the real adapter contract without network access. The live acceptance passes only after a real upload → Gemini embedding/extraction → question → cited answer → timeline flow. Missing credentials or quota exhaustion marks that check skipped/inconclusive and cannot satisfy the definition of done.
 
-## 15. Security and Local-First Boundaries
+## 15. Security and Data Boundaries
 
 - Filenames are sanitized and uploads receive generated storage names.
 - File type, media type, and size are validated.
@@ -334,7 +369,10 @@ Tests do not require live model output except for explicitly marked local-provid
 - Extracted document text is untrusted evidence, never system instructions.
 - Model prompts clearly delimit evidence and prohibit following instructions found inside documents.
 - The API binds locally by default; there is no authentication and it must not be exposed publicly.
-- No source content or telemetry leaves the machine when local Ollama providers are selected.
+- The Gemini API key is supplied through an uncommitted environment file, passed only to the API container, redacted from logs/errors, and never returned to the browser.
+- Gemini embedding sends every normalized document chunk and query text to Google. Metadata/decision extraction can send the complete normalized document across requests. Answering and evaluation send questions, selected evidence, and judge material as listed in §4.1.1. Users must not ingest confidential material unless they accept Google's applicable data terms.
+- The free tier is appropriate for the fictional Atlas portfolio corpus, not a privacy guarantee or production availability commitment. Quotas and terms may change.
+- Source files, PostgreSQL data, and generated embeddings remain locally persisted; the application is therefore local-data-first, not fully offline or fully local-inference.
 
 ## 16. Delivery Allocation
 
@@ -377,7 +415,9 @@ If the project exceeds the time box, P1 is omitted and documented. P0 evidence g
 - A modular monolith makes boundaries visible without consuming the week on distributed operations.
 - FastAPI background tasks are sufficient for a single-worker demo but are not durable job infrastructure.
 - RRF is transparent and deterministic; an additional reranking model is deferred until evaluation proves it necessary.
-- Local models protect data and demonstrate provider abstraction but may be slower and less capable than hosted models.
+- Gemini removes the local model download and CPU bottleneck and improves demo reliability, but introduces network, quota, vendor, and data-governance dependencies.
+- Retaining provider interfaces and the optional Ollama adapter demonstrates substitutability without making local inference part of the default runtime.
+- Changing embedding provider, model, or retrieval-instruction version at 768 dimensions requires the atomic embedding migration; mixed embedding spaces are rejected. A different vector dimension is outside the MVP and requires an explicit pgvector/Alembic schema migration plus full re-index before an adapter can be enabled.
 - Exact source anchors are reliable for normalized extracted text, not pixel-perfect PDF coordinates.
 - PDF layout, tables, and multi-column text may degrade extraction quality.
 - Relationship inference is assistive; only explicit or user-confirmed links drive authoritative supersession behavior.
@@ -385,4 +425,4 @@ If the project exceeds the time box, P1 is omitted and documented. P0 evidence g
 
 ## 18. Implementation Planning Constraints
 
-The implementation plan must maintain module boundaries, introduce provider fakes before model-dependent orchestration, and build one end-to-end vertical slice early. It must avoid microservices, external integrations, OCR, queues, and unmeasured framework abstractions. Each milestone must leave the repository runnable and testable.
+The implementation plan must maintain module boundaries, keep deterministic provider fakes for model-independent orchestration, and preserve the existing end-to-end vertical slice. Gemini is the one approved external model integration; unrelated hosted connectors remain out of scope. The implementation must avoid microservices, OCR, queues, and unmeasured framework abstractions. Each milestone must leave the repository runnable and testable.
