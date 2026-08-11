@@ -1,6 +1,8 @@
 import type {
   ApiErrorPayload,
   DocumentListResponse,
+  QuestionResponse,
+  RetrievalTraceResponse,
   RetryResponse,
   UploadBatchResponse,
 } from "./types";
@@ -45,6 +47,20 @@ export async function apiRequest<T>(
 
 export function listDocuments(): Promise<DocumentListResponse> {
   return apiRequest<DocumentListResponse>("/documents");
+}
+
+export function answerQuestion(question: string): Promise<QuestionResponse> {
+  return apiRequest<QuestionResponse>("/questions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+}
+
+export function getRetrievalTrace(traceId: string): Promise<RetrievalTraceResponse> {
+  return apiRequest<RetrievalTraceResponse>(
+    `/retrieval-traces/${encodeURIComponent(traceId)}`,
+  );
 }
 
 export function documentDetailUrl(documentId: string): string {

@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 
 import { AppShell } from "../components/AppShell";
+import { Ask } from "../pages/Ask";
 import { Workspace } from "../pages/Workspace";
 
 type PlaceholderPageProps = {
@@ -34,16 +35,7 @@ export function AppRoutes() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Workspace />} />
-        <Route
-          path="ask"
-          element={
-            <PlaceholderPage
-              eyebrow="Evidence-backed answers"
-              title="Ask"
-              description="Ask what changed, why it changed, and who owned the call."
-            />
-          }
-        />
+        <Route path="ask" element={<Ask />} />
         <Route
           path="timeline"
           element={

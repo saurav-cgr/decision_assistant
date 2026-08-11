@@ -183,6 +183,11 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
         assert supported.status_code == 200
         assert supported.json()["state"] == "answered"
         assert supported.json()["citations"][0]["quote"] == quote
+        assert supported.json()["citations"][0]["document_id"] == str(
+            dispatch["document_id"]
+        )
+        assert supported.json()["citations"][0]["document_name"] == "meeting.md"
+        assert supported.json()["citations"][0]["locator"] == passage.locator
         assert unsupported.status_code == 200
         assert unsupported.json()["state"] == "abstained"
         assert unsupported.json()["citations"] == []

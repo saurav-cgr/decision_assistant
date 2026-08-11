@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.answering.schemas import (
     AnswerState,
+    Citation,
     ConfidenceCategory,
     DecisionFieldEvidence,
     EvidenceConflict,
@@ -17,6 +18,7 @@ from decision_assistant.answering.schemas import (
     GeneratedAnswer,
     QuestionRequest,
     QuestionResponse,
+    SourceCitation,
 )
 from decision_assistant.answering.verifier import AnswerVerifier
 from decision_assistant.models import (
@@ -136,11 +138,47 @@ class AnswerService:
             state=verification.state,
             confidence=generated.confidence,
             claims=generated.claims,
-            citations=generated.citations,
+            citations=await self._source_citations(generated.citations),
             conflicts=verification.conflicts,
             unsupported_facets=verification.unsupported_facets,
             trace_id=retrieval.trace_id,
         )
+
+    async def _source_citations(
+        self,
+        citations: list[Citation],
+    ) -> list[SourceCitation]:
+        if not citations:
+            return []
+        passage_ids = [citation.passage_id for citation in citations]
+        rows = (
+            await self._session.execute(
+                select(Passage, Document)
+                .join(
+                    DocumentVersion,
+                    DocumentVersion.id == Passage.document_version_id,
+                )
+                .join(Document, Document.id == DocumentVersion.document_id)
+                .where(
+                    Passage.id.in_(passage_ids),
+                    DocumentVersion.state == "active",
+                    Document.active_version_id == DocumentVersion.id,
+                )
+            )
+        ).all()
+        source_by_passage = {
+            passage.id: (passage, document) for passage, document in rows
+        }
+        return [
+            SourceCitation(
+                **citation.model_dump(),
+                document_id=source_by_passage[citation.passage_id][1].id,
+                document_name=source_by_passage[citation.passage_id][1].display_name,
+                locator=source_by_passage[citation.passage_id][0].locator,
+            )
+            for citation in citations
+            if citation.passage_id in source_by_passage
+        ]
 
     async def _load_active_passages(
         self,

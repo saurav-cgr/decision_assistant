@@ -1,6 +1,6 @@
 from enum import StrEnum
 from hashlib import sha256
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -38,6 +38,12 @@ class Citation(AnswerModel):
         if self.end_offset - self.start_offset != len(self.quote):
             raise ValueError("citation offsets must span the quote length")
         return self
+
+
+class SourceCitation(Citation):
+    document_id: UUID
+    document_name: str
+    locator: dict[str, Any]
 
 
 class AnswerClaim(AnswerModel):
@@ -129,7 +135,7 @@ class QuestionResponse(AnswerModel):
     state: AnswerState
     confidence: ConfidenceCategory
     claims: list[AnswerClaim] = Field(default_factory=list)
-    citations: list[Citation] = Field(default_factory=list)
+    citations: list[SourceCitation] = Field(default_factory=list)
     conflicts: list[EvidenceConflict] = Field(default_factory=list)
     unsupported_facets: list[str] = Field(default_factory=list)
     trace_id: UUID
