@@ -1,4 +1,9 @@
-import type { ApiErrorPayload, DocumentListResponse } from "./types";
+import type {
+  ApiErrorPayload,
+  DocumentListResponse,
+  RetryResponse,
+  UploadBatchResponse,
+} from "./types";
 
 const configuredOrigin = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const API_V1 = `${configuredOrigin.replace(/\/$/, "")}/api/v1`;
@@ -42,22 +47,63 @@ export function listDocuments(): Promise<DocumentListResponse> {
   return apiRequest<DocumentListResponse>("/documents");
 }
 
+export function documentDetailUrl(documentId: string): string {
+  return `${API_V1}/documents/${encodeURIComponent(documentId)}`;
+}
+
+export function retryDocument(documentId: string): Promise<RetryResponse> {
+  return apiRequest<RetryResponse>(
+    `/documents/${encodeURIComponent(documentId)}/retry`,
+    { method: "POST" },
+  );
+}
+
+export function uploadDocuments(
+  files: File[],
+  onProgress: (progress: number) => void,
+): Promise<UploadBatchResponse> {
+  const body = new FormData();
+  for (const file of files) {
+    body.append("files", file);
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_V1}/documents/upload`);
+    request.setRequestHeader("accept", "application/json");
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+    request.addEventListener("load", () => {
+      const payload = parseJson(request.responseText);
+      if (request.status >= 200 && request.status < 300) {
+        resolve(payload as UploadBatchResponse);
+        return;
+      }
+      reject(
+        new ApiClientError(request.status, normalizeApiError(payload, request.status)),
+      );
+    });
+    request.addEventListener("error", () => {
+      reject(
+        new ApiClientError(0, {
+          code: "network_error",
+          message: "The API could not be reached",
+          request_id: "unavailable",
+          retryable: true,
+          details: null,
+        }),
+      );
+    });
+    request.send(body);
+  });
+}
+
 async function parseApiError(response: Response): Promise<ApiErrorPayload> {
   try {
-    const payload = (await response.json()) as Partial<ApiErrorPayload>;
-    if (
-      typeof payload.code === "string" &&
-      typeof payload.message === "string" &&
-      typeof payload.request_id === "string"
-    ) {
-      return {
-        code: payload.code,
-        message: payload.message,
-        request_id: payload.request_id,
-        retryable: payload.retryable === true,
-        details: payload.details ?? null,
-      };
-    }
+    return normalizeApiError(await response.json(), response.status);
   } catch {
     // Fall through to stable client-side fallback.
   }
@@ -66,6 +112,40 @@ async function parseApiError(response: Response): Promise<ApiErrorPayload> {
     message: `Request failed with HTTP ${response.status}`,
     request_id: response.headers.get("x-request-id") ?? "unavailable",
     retryable: response.status >= 500,
+    details: null,
+  };
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeApiError(payload: unknown, status: number): ApiErrorPayload {
+  if (payload && typeof payload === "object") {
+    const candidate = payload as Partial<ApiErrorPayload>;
+    if (
+      typeof candidate.code === "string" &&
+      typeof candidate.message === "string" &&
+      typeof candidate.request_id === "string"
+    ) {
+      return {
+        code: candidate.code,
+        message: candidate.message,
+        request_id: candidate.request_id,
+        retryable: candidate.retryable === true,
+        details: candidate.details ?? null,
+      };
+    }
+  }
+  return {
+    code: "http_error",
+    message: `Request failed with HTTP ${status}`,
+    request_id: "unavailable",
+    retryable: status >= 500,
     details: null,
   };
 }

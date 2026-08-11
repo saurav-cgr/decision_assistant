@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 
 import { AppShell } from "../components/AppShell";
+import { Workspace } from "../pages/Workspace";
 
 type PlaceholderPageProps = {
   eyebrow: string;
@@ -32,16 +33,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route
-          index
-          element={
-            <PlaceholderPage
-              eyebrow="Source library"
-              title="Workspace"
-              description="Index project records and inspect every extracted decision."
-            />
-          }
-        />
+        <Route index element={<Workspace />} />
         <Route
           path="ask"
           element={

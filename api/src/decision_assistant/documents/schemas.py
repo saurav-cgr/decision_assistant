@@ -43,6 +43,13 @@ class DocumentListItem(ApiModel):
     stage: str | None
     progress: int | None
     error: dict[str, Any] | None
+    title: str | None
+    document_date: date | None
+    participants: list[str]
+    source_type: str | None
+    project: str | None
+    modification_state: Literal["new", "unchanged", "modified"] | None
+    decision_count: int
 
 
 class DocumentListResponse(ApiModel):

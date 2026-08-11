@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from datetime import date
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -13,7 +14,13 @@ from decision_assistant.config import Settings
 from decision_assistant.documents.router import get_document_service
 from decision_assistant.documents.service import DocumentService
 from decision_assistant.main import create_app
-from decision_assistant.models import Document, DocumentVersion, IngestionJob, Passage
+from decision_assistant.models import (
+    Decision,
+    Document,
+    DocumentVersion,
+    IngestionJob,
+    Passage,
+)
 
 
 class RecordingDispatcher:
@@ -207,7 +214,7 @@ async def test_document_listing_exposes_job_status_progress_and_error(
 
 
 @pytest.mark.asyncio
-async def test_document_detail_returns_active_passages(
+async def test_document_detail_and_listing_return_active_extraction(
     documents_api: tuple[httpx.AsyncClient, RecordingDispatcher, Settings],
     db_session: AsyncSession,
 ) -> None:
@@ -225,19 +232,30 @@ async def test_document_detail_returns_active_passages(
     assert version is not None
     version.state = "active"
     version.title = "Meeting"
+    version.document_date = date(2026, 7, 15)
+    version.participants = ["Asha", "Mateo"]
+    version.source_type = "meeting_notes"
+    version.project = "Atlas"
     version.normalized_content = "Authentication was postponed."
     document.active_version_id = version.id
-    db_session.add(
-        Passage(
-            document_version_id=version.id,
-            sequence_number=0,
-            content="Authentication was postponed.",
-            start_offset=0,
-            end_offset=30,
-            content_hash="a" * 64,
-            locator={"kind": "lines", "start": 1, "end": 1},
-            embedding=[0.0] * 768,
-        )
+    db_session.add_all(
+        [
+            Passage(
+                document_version_id=version.id,
+                sequence_number=0,
+                content="Authentication was postponed.",
+                start_offset=0,
+                end_offset=30,
+                content_hash="a" * 64,
+                locator={"kind": "lines", "start": 1, "end": 1},
+                embedding=[0.0] * 768,
+            ),
+            Decision(
+                document_version_id=version.id,
+                statement="Authentication was postponed.",
+                status="active",
+            ),
+        ]
     )
     await db_session.flush()
 
@@ -253,6 +271,18 @@ async def test_document_detail_returns_active_passages(
             "locator": {"kind": "lines", "start": 1, "end": 1},
         }
     ]
+
+    listing = await client.get("/api/v1/documents")
+
+    assert listing.status_code == 200
+    summary = listing.json()["items"][0]
+    assert summary["title"] == "Meeting"
+    assert summary["document_date"] == "2026-07-15"
+    assert summary["participants"] == ["Asha", "Mateo"]
+    assert summary["source_type"] == "meeting_notes"
+    assert summary["project"] == "Atlas"
+    assert summary["modification_state"] == "new"
+    assert summary["decision_count"] == 1
 
 
 @pytest.mark.asyncio

@@ -28,6 +28,7 @@ from decision_assistant.documents.storage import (
 )
 from decision_assistant.errors import ApplicationError
 from decision_assistant.models import (
+    Decision,
     Document,
     DocumentVersion,
     IngestionJob,
@@ -43,7 +44,6 @@ SUPPORTED_MEDIA_TYPES = {
         {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
     ),
 }
-
 
 class IngestionDispatcher(Protocol):
     async def dispatch(
@@ -267,6 +267,28 @@ class DocumentService:
                 .order_by(IngestionJob.created_at.desc(), IngestionJob.id.desc())
                 .limit(1)
             )
+            version = (
+                await self._session.get(DocumentVersion, document.active_version_id)
+                if document.active_version_id is not None
+                else None
+            )
+            decision_count = (
+                await self._session.scalar(
+                    select(func.count())
+                    .select_from(Decision)
+                    .where(
+                        Decision.document_version_id == version.id,
+                        Decision.retired.is_(False),
+                    )
+                )
+                if version is not None
+                else 0
+            )
+            modification_state = None
+            if job is not None and job.stage == "unchanged":
+                modification_state = "unchanged"
+            elif version is not None:
+                modification_state = "modified" if version.version_number > 1 else "new"
             items.append(
                 DocumentListItem(
                     id=document.id,
@@ -277,6 +299,13 @@ class DocumentService:
                     stage=job.stage if job is not None else None,
                     progress=job.progress if job is not None else None,
                     error=job.error if job is not None else None,
+                    title=version.title if version is not None else None,
+                    document_date=version.document_date if version is not None else None,
+                    participants=version.participants if version is not None else [],
+                    source_type=version.source_type if version is not None else None,
+                    project=version.project if version is not None else None,
+                    modification_state=modification_state,
+                    decision_count=decision_count or 0,
                 )
             )
         return DocumentListResponse(items=items)
