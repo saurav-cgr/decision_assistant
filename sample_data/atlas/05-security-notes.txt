@@ -1,0 +1,29 @@
+---
+title: Atlas Security Review Notes
+date: 2026-06-28
+participants: [Jonah Reed, Priya Nair, Dana Wu]
+source_type: security_review
+project: Atlas
+---
+
+Atlas Security Review Notes
+
+Authorization audit requirement
+
+Decision: Every role grant, role removal, and permission override must record actor, subject, previous value, new value, and timestamp before authentication can reach customers. Status: active. Jonah Reed owns security acceptance.
+
+Reason: Login logs alone show who entered Atlas but cannot explain who changed authorization. The audit must support an evidence trail for privilege escalation investigations.
+
+Alternative considered: Depend only on identity-provider login logs. Status: rejected. Those logs do not capture application-level authorization changes.
+
+Internal beta gate
+
+Decision: Security may approve an employee-only beta when the six required authorization events pass integration tests. Status: proposed. Priya Nair owns the remediation work; Jonah Reed owns approval.
+
+The gate does not authorize a public rollout. Public authentication remains postponed until the broader audit review is complete.
+
+Encryption
+
+Decision: Store uploaded source files in local object storage with server-side encryption enabled. Status: proposed. Dana Wu owns the storage spike.
+
+Alternative considered: Store file bytes directly in PostgreSQL. No decision was made; the team needs restore and portability measurements.

@@ -1,0 +1,443 @@
+{
+  "version": "atlas-v1",
+  "questions": [
+    {
+      "id": "atlas-001",
+      "question": "Why was public authentication postponed in May?",
+      "expected_answer_summary": "Public authentication was postponed from Q3 to Q4 because the authorization audit trail was incomplete and could not prove who changed permissions or when.",
+      "expected_claims": [
+        {"text": "The public authentication rollout was postponed from Q3 to Q4 2026."},
+        {"text": "The reason was an incomplete authorization audit trail that could not prove who changed permissions or when."}
+      ],
+      "expected_documents": [{"document": "01-product-plan.md"}],
+      "expected_passages": [
+        {
+          "document": "01-product-plan.md",
+          "quote": "The public authentication rollout is postponed from Q3 to Q4 2026.",
+          "locator": {"kind": "lines", "start": 13, "end": 13}
+        },
+        {
+          "document": "01-product-plan.md",
+          "quote": "The authorization audit trail is incomplete",
+          "locator": {"kind": "lines", "start": 15, "end": 15}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"decision": "answer", "reason": "answer"},
+      "tags": ["authentication", "may-postponement", "authorization-audit", "why"]
+    },
+    {
+      "id": "atlas-002",
+      "question": "Who approved the May authentication postponement, and who owned readiness?",
+      "expected_answer_summary": "Elena Park approved the postponement, and Priya Nair owned authentication readiness.",
+      "expected_claims": [
+        {"text": "Elena Park approved the May 20 authentication postponement."},
+        {"text": "Priya Nair owned authentication readiness."}
+      ],
+      "expected_documents": [{"document": "01-product-plan.md"}],
+      "expected_passages": [
+        {
+          "document": "01-product-plan.md",
+          "quote": "Elena Park approved the postponement on May 20, 2026, and Priya Nair owns authentication readiness.",
+          "locator": {"kind": "lines", "start": 13, "end": 13}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"approver": "answer", "owner": "answer"},
+      "tags": ["authentication", "may-postponement", "priya-owner", "owner"]
+    },
+    {
+      "id": "atlas-003",
+      "question": "What authentication change was proposed in June, when would it start, and who owned it?",
+      "expected_answer_summary": "The June proposal was an employee-only OpenID Connect beta starting July 15, owned by Priya Nair.",
+      "expected_claims": [
+        {"text": "The June proposal was an employee-only authentication beta using the existing OpenID Connect provider."},
+        {"text": "It was proposed to start July 15, 2026."},
+        {"text": "Priya Nair was the decision owner."}
+      ],
+      "expected_documents": [{"document": "02-architecture-sync.md"}],
+      "expected_passages": [
+        {
+          "document": "02-architecture-sync.md",
+          "quote": "Start an employee-only authentication beta on July 15, 2026, using the existing OpenID Connect provider.",
+          "locator": {"kind": "lines", "start": 13, "end": 13}
+        }
+      ],
+      "expected_status": "proposed",
+      "expectation": "answer",
+      "facets": {"decision": "answer", "date": "answer", "owner": "answer"},
+      "tags": ["authentication", "june-proposal", "priya-owner", "timeline"]
+    },
+    {
+      "id": "atlas-004",
+      "question": "Was the June authentication proposal later changed, and did that change release public authentication?",
+      "expected_answer_summary": "Yes. The July decision moved the internal beta from July 15 to July 22 and superseded the June proposal, but public rollout remained postponed to Q4.",
+      "expected_claims": [
+        {"text": "The July decision moved the internal beta from July 15 to July 22 and superseded the June proposal."},
+        {"text": "The July revision was only for the internal beta; the public rollout remained postponed to Q4."}
+      ],
+      "expected_documents": [
+        {"document": "02-architecture-sync.md"},
+        {"document": "03-auth-rollout.docx"}
+      ],
+      "expected_passages": [
+        {
+          "document": "03-auth-rollout.docx",
+          "quote": "This accepted revision supersedes the June 12 proposal to begin the internal beta on July 15.",
+          "locator": {"kind": "docx_paragraphs", "start": 15, "end": 15}
+        },
+        {
+          "document": "03-auth-rollout.docx",
+          "quote": "Public customer authentication remains postponed to Q4 2026.",
+          "locator": {"kind": "docx_paragraphs", "start": 16, "end": 16}
+        }
+      ],
+      "expected_status": "superseded",
+      "expectation": "answer",
+      "facets": {"supersession": "answer", "internal_beta": "answer", "public_rollout": "answer"},
+      "tags": ["authentication", "june-proposal", "july-beta", "public-rollout", "supersession", "timeline"]
+    },
+    {
+      "id": "atlas-005",
+      "question": "Who owns the July internal authentication beta and who owns its security approval?",
+      "expected_answer_summary": "Priya Nair owns the rollout, while Jonah Reed owns security approval.",
+      "expected_claims": [
+        {"text": "Priya Nair owns the July internal-beta rollout."},
+        {"text": "Jonah Reed owns security approval."}
+      ],
+      "expected_documents": [{"document": "03-auth-rollout.docx"}],
+      "expected_passages": [
+        {
+          "document": "03-auth-rollout.docx",
+          "quote": "Priya Nair owns the rollout, and Jonah Reed owns security approval.",
+          "locator": {"kind": "docx_paragraphs", "start": 14, "end": 14}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"rollout_owner": "answer", "security_owner": "answer"},
+      "tags": ["authentication", "july-beta", "priya-owner", "owner"]
+    },
+    {
+      "id": "atlas-006",
+      "question": "Why did the internal authentication beta move from July 15 to July 22?",
+      "expected_answer_summary": "It moved one week so all six authorization audit events could complete integration testing; the permission-override replay test was still failing.",
+      "expected_claims": [
+        {"text": "The beta moved one week so all six authorization audit events could complete integration testing."},
+        {"text": "The permission-override event still failed the replay test."}
+      ],
+      "expected_documents": [{"document": "03-auth-rollout.docx"}],
+      "expected_passages": [
+        {
+          "document": "03-auth-rollout.docx",
+          "quote": "The date moved by one week so all six authorization audit events can complete integration testing.",
+          "locator": {"kind": "docx_paragraphs", "start": 15, "end": 15}
+        },
+        {
+          "document": "03-auth-rollout.docx",
+          "quote": "the permission-override event still fails the replay test.",
+          "locator": {"kind": "docx_paragraphs", "start": 18, "end": 18}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"date_change": "answer", "remaining_failure": "answer"},
+      "tags": ["authentication", "july-beta", "authorization-audit", "why"]
+    },
+    {
+      "id": "atlas-007",
+      "question": "What must Atlas record for every authorization change before authentication reaches customers?",
+      "expected_answer_summary": "Every role grant, removal, and permission override must record actor, subject, previous value, new value, and timestamp.",
+      "expected_claims": [
+        {"text": "Role grants, role removals, and permission overrides must record actor, subject, previous value, new value, and timestamp."}
+      ],
+      "expected_documents": [{"document": "05-security-notes.txt"}],
+      "expected_passages": [
+        {
+          "document": "05-security-notes.txt",
+          "quote": "Every role grant, role removal, and permission override must record actor, subject, previous value, new value, and timestamp",
+          "locator": {"kind": "lines", "start": 13, "end": 13}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"required_events": "answer", "required_fields": "answer"},
+      "tags": ["authentication", "authorization-audit", "security"]
+    },
+    {
+      "id": "atlas-008",
+      "question": "Did the team accept identity-provider login logs as sufficient authorization evidence?",
+      "expected_answer_summary": "No. That alternative was rejected because login logs do not capture application-level authorization changes.",
+      "expected_claims": [
+        {"text": "Depending only on identity-provider login logs was rejected."},
+        {"text": "Those logs do not capture application-level authorization changes."}
+      ],
+      "expected_documents": [{"document": "05-security-notes.txt"}],
+      "expected_passages": [
+        {
+          "document": "05-security-notes.txt",
+          "quote": "Depend only on identity-provider login logs. Status: rejected.",
+          "locator": {"kind": "lines", "start": 17, "end": 17}
+        }
+      ],
+      "expected_status": "rejected",
+      "expectation": "answer",
+      "facets": {"decision": "answer", "reason": "answer"},
+      "tags": ["authentication", "authorization-audit", "alternative", "rejected"]
+    },
+    {
+      "id": "atlas-009",
+      "question": "Who owns authentication according to the July records, and do the sources agree?",
+      "expected_answer_summary": "The approved July 8 memo names Priya Nair as rollout owner, but the July 18 planning note says Marco Silva. The sources conflict, and the planning note records no approval or security evidence.",
+      "expected_claims": [
+        {"text": "The approved July 8 decision memo names Priya Nair as rollout owner."},
+        {"text": "The July 18 planning readout says Marco Silva owns the rollout."},
+        {"text": "The sources conflict, and the planning group recorded no approval or supporting security evidence for its statement."}
+      ],
+      "expected_documents": [
+        {"document": "03-auth-rollout.docx"},
+        {"document": "04-q3-planning.pdf"}
+      ],
+      "expected_passages": [
+        {
+          "document": "03-auth-rollout.docx",
+          "quote": "Priya Nair owns the rollout",
+          "locator": {"kind": "docx_paragraphs", "start": 14, "end": 14}
+        },
+        {
+          "document": "04-q3-planning.pdf",
+          "quote": "Public authentication is active for Q3 and Marco Silva owns the rollout.",
+          "locator": {"kind": "pdf_page", "page": 1}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"approved_owner": "answer", "conflicting_owner": "answer", "conflict": "answer"},
+      "tags": ["authentication", "priya-owner", "conflict", "owner"]
+    },
+    {
+      "id": "atlas-010",
+      "question": "Was public authentication active in Q3 after the July decisions, or was it still postponed?",
+      "expected_answer_summary": "The approved July 8 memo says public authentication remained postponed to Q4. A July 18 planning note claims it was active in Q3, but explicitly lacks approval and supporting security evidence, so the evidence conflicts.",
+      "expected_claims": [
+        {"text": "The approved July 8 memo keeps public customer authentication postponed to Q4."},
+        {"text": "The July 18 planning note conflicts by claiming public authentication is active in Q3."},
+        {"text": "The planning note records no approval or supporting security evidence for that claim."}
+      ],
+      "expected_documents": [
+        {"document": "03-auth-rollout.docx"},
+        {"document": "04-q3-planning.pdf"}
+      ],
+      "expected_passages": [
+        {
+          "document": "03-auth-rollout.docx",
+          "quote": "Public customer authentication remains postponed to Q4 2026.",
+          "locator": {"kind": "docx_paragraphs", "start": 16, "end": 16}
+        },
+        {
+          "document": "04-q3-planning.pdf",
+          "quote": "This statement conflicts with the approved July 8 decision memo",
+          "locator": {"kind": "pdf_page", "page": 1}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"approved_status": "answer", "conflicting_status": "answer", "conflict": "answer"},
+      "tags": ["authentication", "public-rollout", "conflict", "status"]
+    },
+    {
+      "id": "atlas-011",
+      "question": "Why was building password authentication rejected for the internal beta?",
+      "expected_answer_summary": "It was rejected because Atlas would assume new credential-storage responsibility.",
+      "expected_claims": [
+        {"text": "Building password authentication was rejected because it would create new credential-storage responsibility."}
+      ],
+      "expected_documents": [{"document": "02-architecture-sync.md"}],
+      "expected_passages": [
+        {
+          "document": "02-architecture-sync.md",
+          "quote": "The team rejected password authentication because it would create new credential-storage responsibility.",
+          "locator": {"kind": "lines", "start": 17, "end": 17}
+        }
+      ],
+      "expected_status": "rejected",
+      "expectation": "answer",
+      "facets": {"alternative": "answer", "reason": "answer"},
+      "tags": ["authentication", "alternative", "rejected"]
+    },
+    {
+      "id": "atlas-012",
+      "question": "Which search technologies did Atlas choose for the MVP, and why?",
+      "expected_answer_summary": "Atlas chose PostgreSQL full-text search and pgvector in one primary database to simplify local installation and support transactional version retirement.",
+      "expected_claims": [
+        {"text": "PostgreSQL full-text search and pgvector will share the primary MVP database."},
+        {"text": "The reason was simpler local installation and transactional document-version retirement."}
+      ],
+      "expected_documents": [{"document": "01-product-plan.md"}],
+      "expected_passages": [
+        {
+          "document": "01-product-plan.md",
+          "quote": "PostgreSQL full-text search and pgvector will share the primary database for the MVP.",
+          "locator": {"kind": "lines", "start": 23, "end": 23}
+        },
+        {
+          "document": "01-product-plan.md",
+          "quote": "One database keeps local installation simple and supports transactional document-version retirement.",
+          "locator": {"kind": "lines", "start": 25, "end": 25}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"decision": "answer", "reason": "answer"},
+      "tags": ["search", "database", "unrelated"]
+    },
+    {
+      "id": "atlas-013",
+      "question": "What was decided about Slack, Notion, and Google Drive connectors?",
+      "expected_answer_summary": "Those connectors were postponed until after the local-file MVP so evidence quality could first be established for Markdown, text, DOCX, and PDF.",
+      "expected_claims": [
+        {"text": "Slack, Notion, and Google Drive connectors were postponed until after the local-file MVP."},
+        {"text": "The team wanted to establish evidence quality for Markdown, text, DOCX, and PDF first."}
+      ],
+      "expected_documents": [{"document": "01-product-plan.md"}],
+      "expected_passages": [
+        {
+          "document": "01-product-plan.md",
+          "quote": "Slack, Notion, and Google Drive connectors are postponed until after the local-file MVP.",
+          "locator": {"kind": "lines", "start": 31, "end": 31}
+        },
+        {
+          "document": "01-product-plan.md",
+          "quote": "establish evidence quality on Markdown, text, DOCX, and PDF",
+          "locator": {"kind": "lines", "start": 33, "end": 33}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"scope": "answer", "reason": "answer"},
+      "tags": ["connectors", "scope", "unrelated"]
+    },
+    {
+      "id": "atlas-014",
+      "question": "What passage chunk size did the architecture team settle on?",
+      "expected_answer_summary": "It did not settle a final size. The team proposed experiments near 500 tokens and required benchmark evidence before fixing the value.",
+      "expected_claims": [
+        {"text": "Chunks near 500 tokens were proposed as an experimental starting point."},
+        {"text": "No final chunk size was fixed because benchmark evidence was still needed."}
+      ],
+      "expected_documents": [{"document": "02-architecture-sync.md"}],
+      "expected_passages": [
+        {
+          "document": "02-architecture-sync.md",
+          "quote": "Begin retrieval experiments with chunks near 500 tokens and preserve source boundaries.",
+          "locator": {"kind": "lines", "start": 23, "end": 23}
+        },
+        {
+          "document": "02-architecture-sync.md",
+          "quote": "The team needs benchmark evidence before fixing a final chunk size.",
+          "locator": {"kind": "lines", "start": 25, "end": 25}
+        }
+      ],
+      "expected_status": "proposed",
+      "expectation": "answer",
+      "facets": {"proposal": "answer", "final_value": "abstain"},
+      "tags": ["retrieval", "chunking", "unrelated"]
+    },
+    {
+      "id": "atlas-015",
+      "question": "Will Ollama model weights be bundled in the application images?",
+      "expected_answer_summary": "No. Atlas decided not to bundle model weights because they change independently and would make images too large; installation uses an explicit model-pull step.",
+      "expected_claims": [
+        {"text": "Ollama model weights will not be bundled in application images."},
+        {"text": "Model installation will use an explicit pull step because weights change independently and would make images too large."}
+      ],
+      "expected_documents": [{"document": "04-q3-planning.pdf"}],
+      "expected_passages": [
+        {
+          "document": "04-q3-planning.pdf",
+          "quote": "Do not bundle Ollama model weights in the application images.",
+          "locator": {"kind": "pdf_page", "page": 1}
+        },
+        {
+          "document": "04-q3-planning.pdf",
+          "quote": "Installation will use an explicit model-pull step.",
+          "locator": {"kind": "pdf_page", "page": 1}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"decision": "answer", "reason": "answer"},
+      "tags": ["ollama", "deployment", "unrelated"]
+    },
+    {
+      "id": "atlas-016",
+      "question": "What retrieval target defines success for the Atlas benchmark?",
+      "expected_answer_summary": "The expected source must appear in the top five results for at least 80 percent of answerable benchmark questions.",
+      "expected_claims": [
+        {"text": "The expected source must rank in the top five for at least 80 percent of answerable benchmark questions."}
+      ],
+      "expected_documents": [{"document": "04-q3-planning.pdf"}],
+      "expected_passages": [
+        {
+          "document": "04-q3-planning.pdf",
+          "quote": "The expected source must appear in the top five retrieval results for at least 80 percent",
+          "locator": {"kind": "pdf_page", "page": 1}
+        }
+      ],
+      "expected_status": "active",
+      "expectation": "answer",
+      "facets": {"rank": "answer", "threshold": "answer"},
+      "tags": ["evaluation", "retrieval", "unrelated"]
+    },
+    {
+      "id": "atlas-017",
+      "question": "Who owns the Atlas billing migration, and when will it launch?",
+      "expected_answer_summary": null,
+      "expected_claims": [],
+      "expected_documents": [],
+      "expected_passages": [],
+      "expected_status": null,
+      "expectation": "abstain",
+      "facets": {"owner": "abstain", "date": "abstain"},
+      "tags": ["unsupported", "abstention", "billing"]
+    },
+    {
+      "id": "atlas-018",
+      "question": "What decision did Atlas make about a native mobile application?",
+      "expected_answer_summary": null,
+      "expected_claims": [],
+      "expected_documents": [],
+      "expected_passages": [],
+      "expected_status": null,
+      "expectation": "abstain",
+      "facets": {"decision": "abstain"},
+      "tags": ["unsupported", "abstention", "mobile"]
+    },
+    {
+      "id": "atlas-019",
+      "question": "On what exact date in Q4 will public authentication launch?",
+      "expected_answer_summary": null,
+      "expected_claims": [],
+      "expected_documents": [],
+      "expected_passages": [],
+      "expected_status": null,
+      "expectation": "abstain",
+      "facets": {"quarter": "answer", "exact_date": "abstain"},
+      "tags": ["authentication", "public-rollout", "unsupported", "abstention"]
+    },
+    {
+      "id": "atlas-020",
+      "question": "Did Atlas select MinIO or Amazon S3 for object storage, and why?",
+      "expected_answer_summary": null,
+      "expected_claims": [],
+      "expected_documents": [],
+      "expected_passages": [],
+      "expected_status": null,
+      "expectation": "abstain",
+      "facets": {"vendor": "abstain", "reason": "abstain"},
+      "tags": ["unsupported", "abstention", "object-storage"]
+    }
+  ]
+}

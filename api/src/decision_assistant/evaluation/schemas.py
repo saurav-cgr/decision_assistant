@@ -15,6 +15,7 @@ class EvaluationDatasetQuestion(EvaluationModel):
     external_id: Annotated[str, Field(alias="id", min_length=1)]
     question: Annotated[str, Field(min_length=1)]
     expected_answer_summary: str | None = None
+    expected_claims: list[dict[str, Any]] = Field(default_factory=list)
     expected_documents: list[dict[str, Any]] = Field(default_factory=list)
     expected_passages: list[dict[str, Any]] = Field(default_factory=list)
     expected_status: str | None = None

@@ -12,9 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.main import create_app
 from decision_assistant.models import (
+    Document,
+    DocumentVersion,
     EvaluationQuestion,
     EvaluationResult,
     EvaluationRun,
+    Passage,
+    Workspace,
 )
 
 
@@ -165,6 +169,123 @@ class RecordingJudge:
             "supported_claims": 1,
             "total_claims": 1,
         }
+
+
+@pytest.mark.asyncio
+async def test_create_run_resolves_stable_gold_source_references(
+    db_session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    workspace = Workspace(name="Atlas", embedding_profile=None)
+    db_session.add(workspace)
+    await db_session.flush()
+    document = Document(
+        workspace_id=workspace.id,
+        display_name="meeting.md",
+        media_type="text/markdown",
+        active_version_id=None,
+    )
+    db_session.add(document)
+    await db_session.flush()
+    version = DocumentVersion(
+        document_id=document.id,
+        version_number=1,
+        title="Meeting",
+        document_date=None,
+        participants=[],
+        source_type="meeting_notes",
+        project="Atlas",
+        checksum="a" * 64,
+        storage_path="atlas/meeting.md",
+        normalized_content="Authentication remains postponed.",
+        state="active",
+        error=None,
+    )
+    db_session.add(version)
+    await db_session.flush()
+    document.active_version_id = version.id
+    passage = Passage(
+        document_version_id=version.id,
+        sequence_number=0,
+        content="Decision: Authentication remains postponed to Q4.",
+        start_offset=0,
+        end_offset=52,
+        content_hash="b" * 64,
+        locator={"kind": "lines", "start": 11, "end": 15},
+        embedding=[0.0] * 768,
+    )
+    db_session.add(passage)
+    await db_session.flush()
+
+    dataset_path = tmp_path / "stable-questions.json"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "version": "stable-v1",
+                "questions": [
+                    {
+                        "id": "stable-1",
+                        "question": "What happened to authentication?",
+                        "expected_claims": [
+                            {"text": "Authentication remains postponed to Q4."}
+                        ],
+                        "expected_documents": [{"document": "meeting.md"}],
+                        "expected_passages": [
+                            {
+                                "document": "meeting.md",
+                                "quote": "Authentication remains postponed to Q4.",
+                                "locator": {
+                                    "kind": "lines",
+                                    "start": 13,
+                                    "end": 13,
+                                },
+                            }
+                        ],
+                        "expected_status": "active",
+                        "expectation": "answer",
+                        "facets": {"decision": "answer"},
+                        "tags": ["authentication"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service_module = import_module("decision_assistant.evaluation.service")
+    schemas = import_module("decision_assistant.evaluation.schemas")
+    service = service_module.EvaluationService(
+        session=db_session,
+        dataset_path=dataset_path,
+        executor=RecordingExecutor(db_session),
+        judge=RecordingJudge(),
+    )
+
+    await service.create_run(
+        schemas.EvaluationRunRequest(
+            strategy="hybrid",
+            dataset_version="stable-v1",
+            judge_profile={"temperature": 0},
+        )
+    )
+
+    stored = await db_session.scalar(
+        select(EvaluationQuestion).where(
+            EvaluationQuestion.external_id == "stable-1"
+        )
+    )
+    assert stored is not None
+    assert stored.expected_documents == [
+        {"document": "meeting.md", "document_id": str(document.id)}
+    ]
+    assert stored.expected_passages == [
+        {
+            "document": "meeting.md",
+            "quote": "Authentication remains postponed to Q4.",
+            "locator": {"kind": "lines", "start": 13, "end": 13},
+            "document_id": str(document.id),
+            "passage_id": str(passage.id),
+        }
+    ]
 
 
 @pytest.mark.asyncio

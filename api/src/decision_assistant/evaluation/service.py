@@ -280,6 +280,9 @@ class EvaluationService:
             )
 
         retrieved_ids = [str(item) for item in execution.get("retrieved_ids", [])]
+        expected_values = self._snapshot(snapshot)
+        expected_values["expected_documents"] = question.expected_documents
+        expected_values["expected_passages"] = question.expected_passages
         return EvaluationResult(
             evaluation_run_id=run.id,
             evaluation_question_id=question.id,
@@ -299,7 +302,7 @@ class EvaluationService:
             citation_checks={
                 "checks": list(execution.get("citation_checks") or [])
             },
-            expected_values=self._snapshot(snapshot),
+            expected_values=expected_values,
             actual_values=dict(execution.get("actual_values") or {}),
             latency_ms=execution.get("latency_ms"),
             judge_prompt=judge_prompt,
@@ -383,7 +386,16 @@ class EvaluationService:
         }
 
     async def _sync_questions(self, dataset: EvaluationDataset) -> None:
+        document_cache: dict[str, Document] = {}
+        passage_cache: dict[UUID, list[Passage]] = {}
         for question in dataset.questions:
+            expected_documents, expected_passages = (
+                await self._resolve_expected_references(
+                    question,
+                    document_cache=document_cache,
+                    passage_cache=passage_cache,
+                )
+            )
             stored = await self._session.scalar(
                 select(EvaluationQuestion).where(
                     EvaluationQuestion.dataset_version == dataset.version,
@@ -393,8 +405,8 @@ class EvaluationService:
             values = {
                 "question": question.question,
                 "expected_answer_summary": question.expected_answer_summary,
-                "expected_documents": question.expected_documents,
-                "expected_passages": question.expected_passages,
+                "expected_documents": expected_documents,
+                "expected_passages": expected_passages,
                 "expected_status": question.expected_status,
                 "expectation": question.expectation,
                 "tags": question.tags,
@@ -411,6 +423,119 @@ class EvaluationService:
                 for field_name, value in values.items():
                     setattr(stored, field_name, value)
         await self._session.flush()
+
+    async def _resolve_expected_references(
+        self,
+        question: EvaluationDatasetQuestion,
+        *,
+        document_cache: dict[str, Document],
+        passage_cache: dict[UUID, list[Passage]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        documents = [dict(item) for item in question.expected_documents]
+        passages = [dict(item) for item in question.expected_passages]
+
+        for item in documents:
+            if item.get("document_id") is not None:
+                continue
+            document = await self._resolve_document(
+                item.get("document"),
+                document_cache,
+            )
+            item["document_id"] = str(document.id)
+
+        for item in passages:
+            if item.get("passage_id") is not None:
+                continue
+            document = await self._resolve_document(
+                item.get("document"),
+                document_cache,
+            )
+            if document.id not in passage_cache:
+                passage_cache[document.id] = list(
+                    await self._session.scalars(
+                        select(Passage)
+                        .join(
+                            DocumentVersion,
+                            DocumentVersion.id == Passage.document_version_id,
+                        )
+                        .where(DocumentVersion.id == document.active_version_id)
+                        .order_by(Passage.sequence_number)
+                    )
+                )
+            quote = item.get("quote")
+            locator = item.get("locator")
+            matches = [
+                passage
+                for passage in passage_cache[document.id]
+                if isinstance(quote, str)
+                and quote in passage.content
+                and isinstance(locator, dict)
+                and self._locator_covers(passage.locator, locator)
+            ]
+            if len(matches) != 1:
+                raise FatalEvaluationError(
+                    code="dataset_reference_unresolved",
+                    message=(
+                        f"Gold passage for {question.external_id} did not resolve "
+                        f"uniquely in {document.display_name}"
+                    ),
+                )
+            item["document_id"] = str(document.id)
+            item["passage_id"] = str(matches[0].id)
+
+        return documents, passages
+
+    async def _resolve_document(
+        self,
+        filename: Any,
+        cache: dict[str, Document],
+    ) -> Document:
+        if not isinstance(filename, str) or not filename:
+            raise FatalEvaluationError(
+                code="dataset_reference_invalid",
+                message="Stable gold references require a document filename",
+            )
+        if filename not in cache:
+            matches = list(
+                await self._session.scalars(
+                    select(Document).where(
+                        Document.display_name == filename,
+                        Document.active_version_id.is_not(None),
+                    )
+                )
+            )
+            if len(matches) != 1:
+                raise FatalEvaluationError(
+                    code="dataset_reference_unresolved",
+                    message=(
+                        f"Gold document reference {filename} did not resolve "
+                        "uniquely to an active document"
+                    ),
+                )
+            cache[filename] = matches[0]
+        return cache[filename]
+
+    @staticmethod
+    def _locator_covers(
+        passage_locator: Mapping[str, Any],
+        gold_locator: Mapping[str, Any],
+    ) -> bool:
+        if passage_locator.get("kind") != gold_locator.get("kind"):
+            return False
+        if gold_locator.get("kind") == "pdf_page":
+            return passage_locator.get("page") == gold_locator.get("page")
+        passage_start = passage_locator.get("start")
+        passage_end = passage_locator.get("end")
+        gold_start = gold_locator.get("start")
+        gold_end = gold_locator.get("end")
+        return (
+            isinstance(passage_start, int)
+            and isinstance(passage_end, int)
+            and isinstance(gold_start, int)
+            and isinstance(gold_end, int)
+            and passage_start <= gold_start
+            and passage_end >= gold_end
+        )
 
     def _load_dataset(self) -> EvaluationDataset:
         try:
