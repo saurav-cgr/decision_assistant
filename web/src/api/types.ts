@@ -243,3 +243,59 @@ export type TimelineResponse = {
   topic: string;
   entries: TimelineEntry[];
 };
+
+export type EvaluationStrategy = "semantic" | "hybrid";
+
+export type EvaluationRunRequest = {
+  strategy: EvaluationStrategy;
+  dataset_version: string;
+  configuration: Record<string, unknown>;
+  generation_profile: Record<string, unknown>;
+  embedding_profile: Record<string, unknown>;
+  judge_profile: Record<string, unknown>;
+};
+
+export type EvaluationResult = {
+  id: string;
+  question_id: string;
+  external_id: string;
+  retrieved_ranks: {
+    ids?: string[];
+    document_ids?: string[];
+    ranks?: Record<string, number>;
+  };
+  generated_output: Record<string, unknown> | null;
+  citation_checks: { checks?: Array<Record<string, unknown>> };
+  expected_values: Record<string, unknown>;
+  actual_values: Record<string, unknown>;
+  latency_ms: number | null;
+  judge_prompt: string | null;
+  judge_profile: Record<string, unknown> | null;
+  judge_output: Record<string, unknown> | null;
+  failure_reason: string | null;
+};
+
+export type EvaluationMetrics = {
+  top_five_hit_rate: number;
+  mean_reciprocal_rank: number;
+  citation_structural_validity: number;
+  citation_correctness: number;
+  abstention_accuracy: number;
+  facet_abstention_accuracy: number;
+  answer_faithfulness: number;
+  median_latency_ms: number;
+  p95_latency_ms: number;
+  question_failures: number;
+};
+
+export type EvaluationRun = EvaluationRunRequest & {
+  id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  completed_questions: number;
+  total_questions: number;
+  failure: Record<string, unknown> | null;
+  aggregate_metrics: EvaluationMetrics | null;
+  started_at: string | null;
+  completed_at: string | null;
+  results: EvaluationResult[];
+};

@@ -6,6 +6,8 @@ import type {
   DecisionRelation,
   DecisionRelationRequest,
   DocumentListResponse,
+  EvaluationRun,
+  EvaluationRunRequest,
   QuestionResponse,
   RetrievalTraceResponse,
   RetryResponse,
@@ -105,6 +107,22 @@ export function createDecisionRelation(
 export function getTimeline(topic: string): Promise<TimelineResponse> {
   return apiRequest<TimelineResponse>(
     `/timelines?topic=${encodeURIComponent(topic)}`,
+  );
+}
+
+export function startEvaluationRun(
+  request: EvaluationRunRequest,
+): Promise<EvaluationRun> {
+  return apiRequest<EvaluationRun>("/evaluations/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+export function getEvaluationRun(runId: string): Promise<EvaluationRun> {
+  return apiRequest<EvaluationRun>(
+    `/evaluations/runs/${encodeURIComponent(runId)}`,
   );
 }
 

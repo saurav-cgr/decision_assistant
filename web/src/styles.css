@@ -175,6 +175,7 @@ a {
 .ask-page h1,
 .decision-detail-page h1,
 .timeline-page h1,
+.evaluation-page h1,
 .error-panel h1 {
   max-width: 760px;
   margin: 0;
@@ -183,6 +184,259 @@ a {
   font-weight: 500;
   letter-spacing: -0.055em;
   line-height: 0.96;
+}
+
+.evaluation-page {
+  display: grid;
+  gap: 30px;
+}
+
+.evaluation-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 15px;
+  background: #fffefa;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.evaluation-controls > div {
+  display: grid;
+  flex: 1;
+  min-width: 180px;
+  gap: 3px;
+}
+
+.evaluation-controls > div span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.evaluation-controls button {
+  min-height: 40px;
+  padding: 9px 14px;
+  color: white;
+  background: var(--accent);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.evaluation-controls button:last-child {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.evaluation-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.configuration-warning {
+  display: grid;
+  gap: 5px;
+  padding: 16px;
+  color: #762e21;
+  background: #f8e7e1;
+  border-left: 4px solid var(--signal);
+  border-radius: 9px;
+  font-size: 0.84rem;
+}
+
+.evaluation-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+.evaluation-run {
+  min-width: 0;
+  padding: 20px;
+  background: #fffefa;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 10px 35px rgb(35 48 43 / 5%);
+}
+
+.evaluation-run__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.evaluation-run__heading h2 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.6rem;
+  font-weight: 500;
+}
+
+.run-status {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.run-status strong {
+  color: var(--accent);
+  text-transform: capitalize;
+}
+
+.run-status--failed strong {
+  color: #8b3d2e;
+}
+
+.metric-summary {
+  margin-top: 20px;
+}
+
+.metric-summary dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.metric-summary dl > div {
+  min-width: 0;
+  padding: 12px;
+  background: #f7f5ee;
+}
+
+.metric-summary dt {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.metric-summary dd {
+  margin: 5px 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.35rem;
+}
+
+.metric-summary small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+.evaluation-table-wrap {
+  margin-top: 20px;
+  overflow-x: auto;
+}
+
+.evaluation-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.evaluation-table-wrap th,
+.evaluation-table-wrap td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.evaluation-table-wrap thead th {
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.evaluation-table-wrap tbody th {
+  overflow-wrap: anywhere;
+}
+
+.evaluation-table-wrap a {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.result-flags {
+  display: grid;
+  gap: 4px;
+}
+
+.result-flags span {
+  width: fit-content;
+  padding: 3px 6px;
+  color: #8b3d2e;
+  background: #f8e7e1;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.result-flags .result-pass {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.evaluation-diagnostic {
+  margin-top: 14px;
+  padding: 14px;
+  background: #f3f1e9;
+  border-radius: 10px;
+}
+
+.evaluation-diagnostic h3,
+.evaluation-diagnostic p {
+  margin: 0;
+}
+
+.evaluation-diagnostic p {
+  margin-top: 6px;
+  color: #8b3d2e;
+}
+
+.evaluation-diagnostic dl {
+  display: flex;
+  gap: 20px;
+  margin: 12px 0;
+  font-size: 0.72rem;
+}
+
+.evaluation-diagnostic dt {
+  color: var(--muted);
+}
+
+.evaluation-diagnostic dd {
+  margin: 2px 0 0;
+  font-weight: 750;
+}
+
+.evaluation-diagnostic summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.evaluation-diagnostic pre {
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px;
+  background: #17201d;
+  border-radius: 7px;
+  color: #d9e0dc;
+  font-size: 0.62rem;
+  white-space: pre-wrap;
 }
 
 .decision-detail-page,
@@ -1175,7 +1429,8 @@ a {
 
   .decision-fields,
   .relationship-section form,
-  .timeline-form {
+  .timeline-form,
+  .evaluation-comparison {
     grid-template-columns: 1fr;
   }
 
@@ -1186,6 +1441,10 @@ a {
 
   .timeline-form button {
     width: 100%;
+  }
+
+  .evaluation-controls button {
+    flex: 1;
   }
 }
 
@@ -1205,6 +1464,10 @@ a {
 
   .revision-section li,
   .relationship-section li {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-summary dl {
     grid-template-columns: 1fr;
   }
 }

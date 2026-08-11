@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
 import { Ask } from "../pages/Ask";
 import { DecisionDetail } from "../pages/DecisionDetail";
+import { Evaluation } from "../pages/Evaluation";
 import { Timeline } from "../pages/Timeline";
 import { Workspace } from "../pages/Workspace";
 
@@ -40,16 +41,7 @@ export function AppRoutes() {
         <Route path="ask" element={<Ask />} />
         <Route path="timeline" element={<Timeline />} />
         <Route path="decisions/:id" element={<DecisionDetail />} />
-        <Route
-          path="evaluation"
-          element={
-            <PlaceholderPage
-              eyebrow="Quality lab"
-              title="Evaluation"
-              description="Compare retrieval strategies and inspect answer-quality metrics."
-            />
-          }
-        />
+        <Route path="evaluation" element={<Evaluation />} />
         <Route
           path="*"
           element={
