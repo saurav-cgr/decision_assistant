@@ -111,3 +111,135 @@ export type RetrievalTraceResponse = {
   configuration: Record<string, unknown>;
   created_at: string;
 };
+
+export type DecisionStatus = "active" | "proposed" | "rejected" | "superseded";
+export type SupportState = "supported" | "unsupported" | "needs_review";
+export type DecisionFieldName =
+  | "statement"
+  | "effective_date"
+  | "owner"
+  | "status"
+  | "reasons"
+  | "alternatives"
+  | "project"
+  | "topic";
+
+export type DecisionEvidence = {
+  passage_id: string;
+  field_name: string | null;
+  quote: string;
+  start_offset: number;
+  end_offset: number;
+  content_hash: string;
+  support_state: SupportState;
+  is_primary: boolean;
+};
+
+export type DecisionRevision = {
+  id: string;
+  field_name: string;
+  old_value: unknown;
+  new_value: unknown;
+  evidence_passage_ids: string[];
+  support_state: SupportState;
+};
+
+export type DecisionRelation = {
+  id: string;
+  source_decision_id: string;
+  target_decision_id: string;
+  relation_type: "supersedes" | "revises" | "relates_to";
+  authority: "model_inferred" | "user_confirmed";
+  confidence: "low" | "medium" | "high" | null;
+  rationale: string | null;
+};
+
+export type DecisionSummary = {
+  id: string;
+  document_version_id: string;
+  statement: string;
+  effective_date: string | null;
+  owner: string | null;
+  status: DecisionStatus;
+  reasons: string[];
+  alternatives: string[];
+  project: string | null;
+  topic: string | null;
+  extraction_confidence: number | null;
+  provenance: "extracted" | "user_corrected";
+  review_state: SupportState;
+  user_edited: boolean;
+  retired: boolean;
+};
+
+export type DecisionDetail = DecisionSummary & {
+  evidence: DecisionEvidence[];
+  revisions: DecisionRevision[];
+  relations: DecisionRelation[];
+};
+
+export type DecisionListResponse = { items: DecisionSummary[] };
+
+export type EvidenceSelection = {
+  passage_id: string;
+  start_offset: number;
+  end_offset: number;
+  content_hash: string;
+};
+
+export type DecisionCorrectionRequest = {
+  changes: Array<{
+    field_name: DecisionFieldName;
+    value: unknown;
+    support_state: "supported" | "unsupported";
+    evidence: EvidenceSelection[];
+  }>;
+};
+
+export type DecisionRelationRequest = {
+  target_decision_id: string;
+  relation_type: "supersedes" | "revises" | "relates_to";
+  rationale: string | null;
+};
+
+export type TimelineEvidence = {
+  passage_id: string;
+  document_id: string;
+  document_version_id: string;
+  quote: string;
+  start_offset: number;
+  end_offset: number;
+  content_hash: string;
+  locator: Record<string, string | number>;
+};
+
+export type TimelineRelationship = {
+  source_decision_id: string;
+  target_decision_id: string;
+  relation_type: "supersedes" | "revises" | "relates_to";
+  label: "supersedes" | "revises" | "relates_to" | "possible_revision";
+  authority: "model_inferred" | "user_confirmed";
+  confidence: "low" | "medium" | "high" | null;
+  rationale: string | null;
+};
+
+export type TimelineEntry = {
+  decision_id: string;
+  statement: string;
+  effective_date: string | null;
+  display_date: string | null;
+  date_is_fallback: boolean;
+  original_status: DecisionStatus;
+  display_status: DecisionStatus;
+  owner: string | null;
+  project: string | null;
+  topic: string | null;
+  provenance: "extracted" | "user_corrected";
+  evidence: TimelineEvidence[];
+  relationships: TimelineRelationship[];
+};
+
+export type TimelineResponse = {
+  topic: string;
+  entries: TimelineEntry[];
+};

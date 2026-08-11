@@ -173,6 +173,8 @@ a {
 .page-intro h1,
 .workspace-page h1,
 .ask-page h1,
+.decision-detail-page h1,
+.timeline-page h1,
 .error-panel h1 {
   max-width: 760px;
   margin: 0;
@@ -181,6 +183,353 @@ a {
   font-weight: 500;
   letter-spacing: -0.055em;
   line-height: 0.96;
+}
+
+.decision-detail-page,
+.timeline-page {
+  display: grid;
+  gap: 30px;
+  max-width: 920px;
+}
+
+.decision-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.decision-badges span,
+.timeline-status {
+  padding: 5px 9px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.decision-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.decision-fields div {
+  min-width: 0;
+  padding: 16px;
+  background: #fffefa;
+}
+
+.decision-fields dt {
+  color: var(--muted);
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.decision-fields dd {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.source-evidence,
+.decision-editor,
+.revision-section,
+.relationship-section,
+.timeline-results {
+  padding: clamp(20px, 4vw, 30px);
+  background: #fffefa;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+}
+
+.source-evidence blockquote {
+  margin: 18px 0 0;
+  padding: 14px 17px;
+  background: #f3f1e9;
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  line-height: 1.55;
+}
+
+.decision-editor form,
+.relationship-section form {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.decision-editor label,
+.relationship-section label,
+.timeline-form label {
+  display: grid;
+  gap: 7px;
+  color: #4f5955;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.decision-editor input,
+.decision-editor select,
+.decision-editor textarea,
+.relationship-section select,
+.relationship-section textarea,
+.timeline-form input {
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #fbfaf5;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.decision-editor textarea,
+.relationship-section textarea {
+  resize: vertical;
+}
+
+.decision-editor fieldset {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.decision-editor legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.decision-editor fieldset label {
+  display: flex;
+  grid-template-columns: auto 1fr;
+  align-items: flex-start;
+  gap: 9px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.decision-editor fieldset input {
+  width: auto;
+  margin-top: 3px;
+}
+
+.decision-editor button,
+.relationship-section button,
+.timeline-form button,
+.unsupported-confirmation button {
+  width: fit-content;
+  min-height: 40px;
+  padding: 9px 14px;
+  color: white;
+  background: var(--accent);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.decision-editor button:disabled,
+.relationship-section button:disabled,
+.timeline-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.unsupported-confirmation {
+  margin-top: 16px;
+  padding: 16px;
+  color: #762e21;
+  background: #f8e7e1;
+  border-left: 4px solid var(--signal);
+  border-radius: 9px;
+}
+
+.unsupported-confirmation p {
+  margin: 6px 0 14px;
+  line-height: 1.5;
+}
+
+.unsupported-confirmation > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.unsupported-confirmation button:last-child {
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+
+.revision-section ol,
+.relationship-section ul {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.revision-section li,
+.relationship-section li {
+  display: grid;
+  grid-template-columns: minmax(100px, auto) 1fr auto;
+  gap: 12px;
+  padding: 12px;
+  background: #f3f1e9;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.revision-section small {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.relationship-section form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.relationship-section form label:last-of-type,
+.relationship-section form button {
+  grid-column: 1 / -1;
+}
+
+.timeline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+  background: #fffefa;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.timeline-list {
+  position: relative;
+  display: grid;
+  gap: 0;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-list::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 8px;
+  width: 2px;
+  background: var(--line);
+  content: "";
+}
+
+.timeline-event article {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 15px;
+  padding-bottom: 28px;
+}
+
+.timeline-event:last-child article {
+  padding-bottom: 0;
+}
+
+.timeline-marker {
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  background: var(--accent);
+  border: 4px solid #fffefa;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.timeline-event__body {
+  min-width: 0;
+  padding: 0 0 2px;
+}
+
+.timeline-event__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.timeline-event__meta > span {
+  font-style: italic;
+}
+
+.timeline-status--rejected,
+.timeline-status--superseded {
+  color: #8b3d2e;
+  background: #f8e7e1;
+}
+
+.timeline-event h2 {
+  margin: 9px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.2rem;
+  font-weight: 500;
+}
+
+.timeline-event__body > p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.timeline-relation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #f3f1e9;
+  border-radius: 8px;
+  font-size: 0.72rem;
+}
+
+.timeline-relation--model_inferred {
+  background: #f4efd8;
+}
+
+.timeline-relation p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+}
+
+.timeline-evidence {
+  margin-top: 12px;
+}
+
+.timeline-evidence a {
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 750;
 }
 
 .ask-page {
@@ -823,6 +1172,21 @@ a {
   .trace-summary {
     grid-column: 1;
   }
+
+  .decision-fields,
+  .relationship-section form,
+  .timeline-form {
+    grid-template-columns: 1fr;
+  }
+
+  .relationship-section form label:last-of-type,
+  .relationship-section form button {
+    grid-column: 1;
+  }
+
+  .timeline-form button {
+    width: 100%;
+  }
 }
 
 @media (max-width: 480px) {
@@ -837,6 +1201,11 @@ a {
 
   .document-card__footer a {
     margin-left: 0;
+  }
+
+  .revision-section li,
+  .relationship-section li {
+    grid-template-columns: 1fr;
   }
 }
 

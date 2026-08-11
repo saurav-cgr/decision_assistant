@@ -2,6 +2,8 @@ import { Route, Routes } from "react-router-dom";
 
 import { AppShell } from "../components/AppShell";
 import { Ask } from "../pages/Ask";
+import { DecisionDetail } from "../pages/DecisionDetail";
+import { Timeline } from "../pages/Timeline";
 import { Workspace } from "../pages/Workspace";
 
 type PlaceholderPageProps = {
@@ -36,26 +38,8 @@ export function AppRoutes() {
       <Route element={<AppShell />}>
         <Route index element={<Workspace />} />
         <Route path="ask" element={<Ask />} />
-        <Route
-          path="timeline"
-          element={
-            <PlaceholderPage
-              eyebrow="Decision history"
-              title="Timeline"
-              description="Follow proposals, revisions, and superseded decisions in order."
-            />
-          }
-        />
-        <Route
-          path="decisions/:id"
-          element={
-            <PlaceholderPage
-              eyebrow="Structured record"
-              title="Decision detail"
-              description="Review fields, corrections, relationships, and exact evidence."
-            />
-          }
-        />
+        <Route path="timeline" element={<Timeline />} />
+        <Route path="decisions/:id" element={<DecisionDetail />} />
         <Route
           path="evaluation"
           element={

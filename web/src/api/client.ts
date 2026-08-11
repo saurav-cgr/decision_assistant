@@ -1,9 +1,15 @@
 import type {
   ApiErrorPayload,
+  DecisionCorrectionRequest,
+  DecisionDetail,
+  DecisionListResponse,
+  DecisionRelation,
+  DecisionRelationRequest,
   DocumentListResponse,
   QuestionResponse,
   RetrievalTraceResponse,
   RetryResponse,
+  TimelineResponse,
   UploadBatchResponse,
 } from "./types";
 
@@ -60,6 +66,45 @@ export function answerQuestion(question: string): Promise<QuestionResponse> {
 export function getRetrievalTrace(traceId: string): Promise<RetrievalTraceResponse> {
   return apiRequest<RetrievalTraceResponse>(
     `/retrieval-traces/${encodeURIComponent(traceId)}`,
+  );
+}
+
+export function getDecision(decisionId: string): Promise<DecisionDetail> {
+  return apiRequest<DecisionDetail>(`/decisions/${encodeURIComponent(decisionId)}`);
+}
+
+export function listDecisions(): Promise<DecisionListResponse> {
+  return apiRequest<DecisionListResponse>("/decisions");
+}
+
+export function correctDecision(
+  decisionId: string,
+  request: DecisionCorrectionRequest,
+): Promise<DecisionDetail> {
+  return apiRequest<DecisionDetail>(`/decisions/${encodeURIComponent(decisionId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+export function createDecisionRelation(
+  decisionId: string,
+  request: DecisionRelationRequest,
+): Promise<DecisionRelation> {
+  return apiRequest<DecisionRelation>(
+    `/decisions/${encodeURIComponent(decisionId)}/relations`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function getTimeline(topic: string): Promise<TimelineResponse> {
+  return apiRequest<TimelineResponse>(
+    `/timelines?topic=${encodeURIComponent(topic)}`,
   );
 }
 
