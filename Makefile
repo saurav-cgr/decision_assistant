@@ -13,6 +13,7 @@ logs:
 	docker compose logs -f
 
 test-api:
+	docker compose up -d db --wait
 	docker compose run --rm api pytest
 
 test-web:
