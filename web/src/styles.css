@@ -246,6 +246,17 @@ a {
   font-size: 0.84rem;
 }
 
+.evaluation-running-hint {
+  margin: 14px 0 0;
+  padding: 12px 16px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 9px;
+  font-size: 0.84rem;
+}
+
 .evaluation-comparison {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -291,6 +302,42 @@ a {
 
 .run-status--failed strong {
   color: #8b3d2e;
+}
+
+.evaluation-progress {
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.evaluation-progress strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.evaluation-progress span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.evaluation-progress__bar {
+  height: 8px;
+  margin-top: 12px;
+  overflow: hidden;
+  background: var(--line);
+  border-radius: 999px;
+}
+
+.evaluation-progress__bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.5s ease;
 }
 
 .metric-summary {

@@ -52,6 +52,11 @@ function hasFailure(result: EvaluationResult): boolean {
 
 export function EvaluationResults({ run }: EvaluationResultsProps) {
   const strategy = run.strategy.charAt(0).toUpperCase() + run.strategy.slice(1);
+  const active = run.status === "pending" || run.status === "running";
+  const progress =
+    run.total_questions > 0
+      ? Math.round((run.completed_questions / run.total_questions) * 100)
+      : 0;
 
   return (
     <section className="evaluation-run" aria-label={`${strategy} evaluation`}>
@@ -67,6 +72,26 @@ export function EvaluationResults({ run }: EvaluationResultsProps) {
           </span>
         </div>
       </div>
+
+      {active && (
+        <div className="evaluation-progress" role="status">
+          <strong>Evaluation in progress</strong>
+          <span>
+            Running the {run.total_questions}-question benchmark against{" "}
+            {run.dataset_version}. This takes a few minutes — results appear
+            here automatically when it finishes.
+          </span>
+          <div
+            className="evaluation-progress__bar"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+          >
+            <span style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
 
       {run.failure && (
         <p className="answer-error" role="alert">

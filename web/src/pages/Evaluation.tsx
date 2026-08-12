@@ -149,16 +149,28 @@ export function Evaluation() {
           onClick={() => void start("semantic")}
           disabled={Boolean(semantic && isActive(semantic))}
         >
-          Start semantic evaluation
+          {semantic && isActive(semantic)
+            ? "Semantic evaluation running…"
+            : "Start semantic evaluation"}
         </button>
         <button
           type="button"
           onClick={() => void start("hybrid")}
           disabled={Boolean(hybrid && isActive(hybrid))}
         >
-          Start hybrid evaluation
+          {hybrid && isActive(hybrid)
+            ? "Hybrid evaluation running…"
+            : "Start hybrid evaluation"}
         </button>
       </div>
+
+      {(semantic && isActive(semantic)) || (hybrid && isActive(hybrid)) ? (
+        <p className="evaluation-running-hint" role="status">
+          Evaluation in progress — a run takes a few minutes. Start buttons
+          stay disabled until the current run completes, then re-enable
+          automatically.
+        </p>
+      ) : null}
 
       {error && <p className="answer-error" role="alert">{error}</p>}
 

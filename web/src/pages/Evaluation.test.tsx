@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   getEvaluationRun: vi.fn(),
+  listEvaluationRuns: vi.fn(),
   startEvaluationRun: vi.fn(),
 }));
 
 vi.mock("../api/client", () => ({
   getEvaluationRun: api.getEvaluationRun,
+  listEvaluationRuns: api.listEvaluationRuns,
   startEvaluationRun: api.startEvaluationRun,
 }));
 
@@ -122,7 +124,10 @@ async function startBoth() {
 
 beforeEach(() => {
   api.getEvaluationRun.mockReset();
+  api.listEvaluationRuns.mockReset();
   api.startEvaluationRun.mockReset();
+  // No persisted runs by default; mount-effect history load is a no-op.
+  api.listEvaluationRuns.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -275,5 +280,35 @@ describe("Evaluation dashboard", () => {
     expect(
       screen.queryByRole("region", { name: /hybrid evaluation/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows in-progress state and disables start while a run is active", async () => {
+    const running = {
+      ...completedRun("semantic"),
+      status: "running" as const,
+      completed_questions: 7,
+      aggregate_metrics: null,
+      results: [],
+      completed_at: null,
+    };
+    api.startEvaluationRun.mockResolvedValue(running);
+    api.getEvaluationRun.mockResolvedValue(running);
+    await renderEvaluation();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /start semantic/i }));
+
+    const activeButton = await screen.findByRole("button", {
+      name: /semantic evaluation running/i,
+    });
+    expect(activeButton).toBeDisabled();
+    expect(screen.getByText("Evaluation in progress")).toBeVisible();
+    expect(screen.getByText(/7 of 20 questions/)).toBeVisible();
+    expect(
+      screen.getByText(/start buttons stay disabled until the current run/i),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /start hybrid evaluation/i }),
+    ).toBeEnabled();
   });
 });
