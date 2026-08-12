@@ -65,23 +65,27 @@ async def run_live_provider(operation: Awaitable[ResultT]) -> ResultT:
 
 
 @pytest.mark.asyncio
-async def test_configured_embedding_model_returns_768_finite_values(
+async def test_configured_embedding_model_returns_one_768_vector_per_input(
     gemini_bundle: Any,
 ) -> None:
     embeddings = await run_live_provider(
         gemini_bundle.embedding.embed(
-            ["What was decided about authentication?"],
+            [
+                "What was decided about authentication?",
+                "Why did the rollout date change?",
+            ],
             purpose=EmbeddingPurpose.QUERY,
         )
     )
 
-    assert len(embeddings) == 1
-    assert len(embeddings[0]) == 768
+    assert len(embeddings) == 2
+    assert all(len(embedding) == 768 for embedding in embeddings)
     assert all(
         isinstance(value, (int, float))
         and not isinstance(value, bool)
         and math.isfinite(value)
-        for value in embeddings[0]
+        for embedding in embeddings
+        for value in embedding
     )
 
 

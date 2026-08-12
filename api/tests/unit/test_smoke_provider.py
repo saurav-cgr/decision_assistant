@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from decision_assistant.answering.schemas import GeneratedAnswer
+from decision_assistant.answering.schemas import GeneratedAnswerCandidate
 from decision_assistant.decisions.schemas import DecisionExtractionResponse
 from decision_assistant.providers.base import EmbeddingPurpose
 from tests.support.smoke_provider import (
@@ -72,15 +72,15 @@ async def test_smoke_generation_builds_verifiable_answer_from_prompt_evidence() 
     }
     prompt = f"<evidence>{json.dumps(evidence)}</evidence>"
 
-    result = await SmokeGenerationProvider().generate(prompt, GeneratedAnswer)
+    result = await SmokeGenerationProvider().generate(
+        prompt, GeneratedAnswerCandidate
+    )
 
     assert result.confidence == "high"
     assert result.claims[0].central is True
     assert result.claims[0].passage_ids == [passage_id]
     assert result.citations[0].passage_id == passage_id
-    assert content[
-        result.citations[0].start_offset : result.citations[0].end_offset
-    ] == result.citations[0].quote
+    assert result.citations[0].quote in content
 
 
 @pytest.mark.asyncio
@@ -118,7 +118,7 @@ async def test_smoke_answer_cites_both_beta_decisions_for_conflict_verification(
 
     result = await SmokeGenerationProvider().generate(
         f"<evidence>{json.dumps(evidence)}</evidence>",
-        GeneratedAnswer,
+        GeneratedAnswerCandidate,
     )
 
     assert {citation.passage_id for citation in result.citations} == {

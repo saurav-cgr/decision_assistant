@@ -164,7 +164,9 @@ async def test_embedding_formats_by_purpose_without_unsupported_task_type(
     await embedding_provider(models).embed([text], purpose=purpose)
 
     assert models.embedding_calls[0]["model"] == EMBEDDING_MODEL
-    assert models.embedding_calls[0]["contents"] == [formatted]
+    assert models.embedding_calls[0]["contents"] == [
+        {"role": "user", "parts": [{"text": formatted}]}
+    ]
     config = config_payload(models.embedding_calls[0]["config"])
     assert config["output_dimensionality"] == DIMENSION
     assert "task_type" not in config
@@ -187,7 +189,10 @@ async def test_embedding_splits_at_32_and_preserves_application_order() -> None:
     assert [len(call["contents"]) for call in models.embedding_calls] == [32, 32, 6]
     assert [call["contents"] for call in models.embedding_calls] == [
         [
-            f"title: none | text: passage {index}"
+            {
+                "role": "user",
+                "parts": [{"text": f"title: none | text: passage {index}"}],
+            }
             for index in range(start, min(start + 32, 70))
         ]
         for start in (0, 32, 64)

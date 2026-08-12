@@ -1,4 +1,3 @@
-from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -119,8 +118,6 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
         )
         assert passage is not None
         quote = "The team proposed postponing authentication"
-        quote_start = passage.content.index(quote)
-
         answer_provider = FakeGenerationProvider(
             [
                 {
@@ -136,11 +133,6 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
                         {
                             "passage_id": str(passage.id),
                             "quote": quote,
-                            "start_offset": quote_start,
-                            "end_offset": quote_start + len(quote),
-                            "content_hash": sha256(
-                                passage.content.encode()
-                            ).hexdigest(),
                         }
                     ],
                     "conflicts": [],

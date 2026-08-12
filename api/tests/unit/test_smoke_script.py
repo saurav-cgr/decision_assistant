@@ -1,10 +1,22 @@
+import importlib.util
 import os
 from pathlib import Path
 import subprocess
 
+import pytest
+
 
 SMOKE_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "smoke.sh"
 PROJECT_ROOT = SMOKE_SCRIPT.parents[1]
+SMOKE_RUNNER = PROJECT_ROOT / "scripts" / "smoke.py"
+
+
+def _load_smoke_runner():
+    spec = importlib.util.spec_from_file_location("smoke_runner", SMOKE_RUNNER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_gemini_preflight_uses_compose_resolved_api_environment() -> None:
@@ -83,3 +95,49 @@ def test_preflight_failure_uses_unique_project_and_always_cleans_up(
     assert "run --rm --no-deps api python -c" in commands[0]
     assert "down --volumes --remove-orphans" in commands[-1]
     assert "--rmi local" in commands[-1]
+
+
+def test_wait_for_active_document_fails_immediately_on_terminal_ingestion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    smoke = _load_smoke_runner()
+    document_id = "document-1"
+    requested_urls: list[str] = []
+
+    def request_json(url: str, **_kwargs: object) -> dict[str, object]:
+        requested_urls.append(url)
+        if url.endswith(f"/documents/{document_id}"):
+            return {"active_version": None, "passages": []}
+        if url.endswith("/documents"):
+            return {
+                "items": [
+                    {
+                        "id": document_id,
+                        "status": "failed",
+                        "error": {
+                            "code": "provider_response_invalid",
+                            "message": "must not appear",
+                        },
+                    }
+                ]
+            }
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(smoke, "_request_json", request_json)
+    monkeypatch.setattr(
+        smoke.time,
+        "sleep",
+        lambda _seconds: pytest.fail("terminal failure must not poll again"),
+    )
+
+    with pytest.raises(smoke.SmokeFailure) as caught:
+        smoke._wait_for_active_document(document_id)
+
+    assert str(caught.value) == (
+        "Document document-1 ingestion failed: provider_response_invalid"
+    )
+    assert "must not appear" not in str(caught.value)
+    assert requested_urls == [
+        f"{smoke.API_V1}/documents/{document_id}",
+        f"{smoke.API_V1}/documents",
+    ]

@@ -8,7 +8,7 @@ from math import sqrt
 from typing import Any
 from uuid import UUID
 
-from decision_assistant.answering.schemas import GeneratedAnswer
+from decision_assistant.answering.schemas import GeneratedAnswerCandidate
 from decision_assistant.decisions.schemas import DecisionExtractionResponse
 from decision_assistant.providers.base import (
     EmbeddingProfile,
@@ -79,7 +79,7 @@ class SmokeGenerationProvider:
     ) -> ResponseModelT:
         if response_model is DecisionExtractionResponse:
             payload = _decision_payload(prompt)
-        elif response_model is GeneratedAnswer:
+        elif response_model is GeneratedAnswerCandidate:
             payload = _answer_payload(prompt)
         else:
             raise ProviderOutputInvalid()
@@ -151,14 +151,10 @@ def _answer_payload(prompt: str) -> dict[str, Any]:
         else:
             continue
         passage_id = UUID(passage["passage_id"])
-        start = content.index(quote)
         citations.append(
             {
                 "passage_id": str(passage_id),
                 "quote": quote,
-                "start_offset": start,
-                "end_offset": start + len(quote),
-                "content_hash": passage["content_hash"],
             }
         )
     if later_passage_id is None:

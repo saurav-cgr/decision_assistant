@@ -40,6 +40,11 @@ class Citation(AnswerModel):
         return self
 
 
+class CitationCandidate(AnswerModel):
+    passage_id: UUID
+    quote: Annotated[str, Field(min_length=1)]
+
+
 class SourceCitation(Citation):
     document_id: UUID
     document_name: str
@@ -99,6 +104,15 @@ class GeneratedAnswer(AnswerModel):
     answer: Annotated[str, Field(min_length=1)]
     claims: list[AnswerClaim] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
+    conflicts: list[EvidenceConflict] = Field(default_factory=list)
+    unsupported_facets: list[str] = Field(default_factory=list)
+    confidence: ConfidenceCategory
+
+
+class GeneratedAnswerCandidate(AnswerModel):
+    answer: Annotated[str, Field(min_length=1)]
+    claims: list[AnswerClaim] = Field(default_factory=list)
+    citations: list[CitationCandidate] = Field(default_factory=list)
     conflicts: list[EvidenceConflict] = Field(default_factory=list)
     unsupported_facets: list[str] = Field(default_factory=list)
     confidence: ConfidenceCategory

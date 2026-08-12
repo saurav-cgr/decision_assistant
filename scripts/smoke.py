@@ -145,6 +145,19 @@ def _wait_for_active_document(document_id: str) -> dict[str, Any]:
             if not isinstance(passages, list) or not passages:
                 raise SmokeFailure(f"Indexed document {document_id} has no passages")
             return detail
+        listing = _request_json(f"{API_V1}/documents")
+        items = listing.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict) or str(item.get("id")) != document_id:
+                    continue
+                if item.get("status") == "failed":
+                    error = item.get("error")
+                    code = error.get("code") if isinstance(error, dict) else None
+                    safe_code = code if isinstance(code, str) else "ingestion_failed"
+                    raise SmokeFailure(
+                        f"Document {document_id} ingestion failed: {safe_code}"
+                    )
         time.sleep(POLL_INTERVAL_SECONDS)
     raise SmokeFailure(f"Document {document_id} did not become active before timeout")
 

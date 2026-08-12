@@ -135,7 +135,10 @@ class GeminiEmbeddingProvider(_GeminiAdapter):
         if any(len(text) > self._max_input_characters for text in texts):
             raise ProviderInputTooLarge()
 
-        formatted = [_format_embedding_input(text, purpose) for text in texts]
+        formatted = [
+            _embedding_content(_format_embedding_input(text, purpose))
+            for text in texts
+        ]
         vectors: list[list[float]] = []
         for start in range(0, len(formatted), self._batch_size):
             batch = formatted[start : start + self._batch_size]
@@ -224,6 +227,12 @@ def _format_embedding_input(text: str, purpose: EmbeddingPurpose) -> str:
     if purpose is EmbeddingPurpose.QUERY:
         return f"task: search result | query: {text}"
     raise ValueError("Unsupported embedding purpose")
+
+
+def _embedding_content(text: str) -> dict[str, object]:
+    # google-genai groups a list[str] into one multi-part Content. Explicit
+    # Content objects preserve one input -> one embedding cardinality.
+    return {"role": "user", "parts": [{"text": text}]}
 
 
 def _validate_embeddings(
