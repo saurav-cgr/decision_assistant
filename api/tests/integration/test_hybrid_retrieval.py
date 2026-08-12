@@ -126,6 +126,7 @@ async def test_hybrid_retrieval_abstains_before_provider_call_when_reindex_requi
         ).search(
             RetrievalSearchRequest(question="authentication"),
             request_id="retrieval-needs-migration",
+            workspace_id=workspace.id,
         )
 
     assert error.value.code == "embedding_reindex_required"

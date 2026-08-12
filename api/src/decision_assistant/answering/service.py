@@ -87,10 +87,12 @@ class AnswerService:
         request: QuestionRequest,
         *,
         request_id: str,
+        workspace_id: UUID | None = None,
     ) -> QuestionResponse:
         retrieval = await self._retrieval_service.search(
             RetrievalSearchRequest(question=request.question),
             request_id=request_id,
+            workspace_id=workspace_id,
         )
         passage_ids = [result.passage_id for result in retrieval.results]
         passages = await self._load_active_passages(passage_ids)

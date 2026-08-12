@@ -31,6 +31,9 @@ class RecordingSession:
     async def flush(self) -> None:
         return None
 
+    async def scalar(self, *_: Any, **__: Any) -> Any:
+        return None
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(

@@ -59,6 +59,7 @@ from decision_assistant.retrieval.service import (
 from decision_assistant.workspace.embedding_migration import (
     require_current_embedding_profile,
 )
+from decision_assistant.workspace.service import WorkspaceService
 
 CLAIM_JUDGE_PROMPT_VERSION = "claim-support-v1"
 
@@ -124,7 +125,12 @@ class EvaluationService:
         )
         self._judge_profile = dict(getattr(judge, "profile", {}))
 
-    async def create_run(self, request: EvaluationRunRequest) -> EvaluationRun:
+    async def create_run(
+        self,
+        request: EvaluationRunRequest,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> EvaluationRun:
         dataset = self._load_dataset()
         if dataset.version != request.dataset_version:
             raise EvaluationApiError(
@@ -132,8 +138,13 @@ class EvaluationService:
                 "Requested evaluation dataset version is unavailable",
                 404,
             )
-        await self._sync_questions(dataset)
+        if workspace_id is None:
+            workspace_id = (
+                await WorkspaceService(self._session).get_or_create_active()
+            ).id
+        await self._sync_questions(dataset, workspace_id)
         run = EvaluationRun(
+            workspace_id=workspace_id,
             strategy=request.strategy,
             status="pending",
             completed_questions=0,
@@ -222,8 +233,13 @@ class EvaluationService:
         run.completed_at = datetime.now(timezone.utc)
         await self._session.flush()
 
-    async def get_run(self, run_id: UUID) -> EvaluationRunResponse:
-        run = await self._require_run(run_id)
+    async def get_run(
+        self,
+        run_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> EvaluationRunResponse:
+        run = await self._require_run(run_id, workspace_id)
         rows = (
             await self._session.execute(
                 select(EvaluationResult, EvaluationQuestion)
@@ -274,15 +290,17 @@ class EvaluationService:
     async def list_runs(
         self,
         *,
+        workspace_id: UUID | None = None,
         limit: int = 10,
     ) -> list[EvaluationRunSummaryResponse]:
-        runs = list(
-            await self._session.scalars(
-                select(EvaluationRun)
-                .order_by(EvaluationRun.created_at.desc())
-                .limit(limit)
+        statement = select(EvaluationRun).order_by(
+            EvaluationRun.created_at.desc()
+        ).limit(limit)
+        if workspace_id is not None:
+            statement = statement.where(
+                EvaluationRun.workspace_id == workspace_id
             )
-        )
+        runs = list(await self._session.scalars(statement))
         return [self._to_summary(run) for run in runs]
 
     @staticmethod
@@ -429,7 +447,11 @@ class EvaluationService:
             ),
         }
 
-    async def _sync_questions(self, dataset: EvaluationDataset) -> None:
+    async def _sync_questions(
+        self,
+        dataset: EvaluationDataset,
+        workspace_id: UUID,
+    ) -> None:
         document_cache: dict[str, Document] = {}
         passage_cache: dict[UUID, list[Passage]] = {}
         for question in dataset.questions:
@@ -442,6 +464,7 @@ class EvaluationService:
             )
             stored = await self._session.scalar(
                 select(EvaluationQuestion).where(
+                    EvaluationQuestion.workspace_id == workspace_id,
                     EvaluationQuestion.dataset_version == dataset.version,
                     EvaluationQuestion.external_id == question.external_id,
                 )
@@ -458,6 +481,7 @@ class EvaluationService:
             if stored is None:
                 self._session.add(
                     EvaluationQuestion(
+                        workspace_id=workspace_id,
                         external_id=question.external_id,
                         dataset_version=dataset.version,
                         **values,
@@ -639,9 +663,19 @@ class EvaluationService:
                 message="Evaluation dataset could not be loaded",
             ) from exc
 
-    async def _require_run(self, run_id: UUID) -> EvaluationRun:
+    async def _require_run(
+        self,
+        run_id: UUID,
+        workspace_id: UUID | None = None,
+    ) -> EvaluationRun:
         run = await self._session.get(EvaluationRun, run_id)
         if run is None:
+            raise EvaluationApiError(
+                "evaluation_run_not_found",
+                "Evaluation run not found",
+                404,
+            )
+        if workspace_id is not None and run.workspace_id != workspace_id:
             raise EvaluationApiError(
                 "evaluation_run_not_found",
                 "Evaluation run not found",

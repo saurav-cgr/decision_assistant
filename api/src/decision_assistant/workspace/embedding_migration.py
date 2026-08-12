@@ -140,8 +140,12 @@ async def get_embedding_corpus_state(
 async def require_current_embedding_profile(
     session: AsyncSession,
     configured_profile: EmbeddingProfile,
+    workspace_id: UUID | None = None,
 ) -> None:
-    workspace_ids = list(await session.scalars(select(Workspace.id)))
+    if workspace_id is not None:
+        workspace_ids = [workspace_id]
+    else:
+        workspace_ids = list(await session.scalars(select(Workspace.id)))
     for workspace_id in workspace_ids:
         state = await get_embedding_corpus_state(
             session,

@@ -18,6 +18,7 @@ from decision_assistant.retrieval.schemas import (
 from decision_assistant.workspace.embedding_migration import (
     require_current_embedding_profile,
 )
+from decision_assistant.workspace.service import WorkspaceService
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,12 +67,18 @@ class HybridRetrievalService:
         request: RetrievalSearchRequest,
         *,
         request_id: str,
+        workspace_id: UUID | None = None,
     ) -> RetrievalSearchResponse:
         total_started = perf_counter()
+        if workspace_id is None:
+            workspace_id = (
+                await WorkspaceService(self._session).get_or_create_active()
+            ).id
         normalized_question = request.question.lower()
         await require_current_embedding_profile(
             self._session,
             self._embedding_provider.profile,
+            workspace_id=workspace_id,
         )
         embedding = (
             await self._embedding_provider.embed(
@@ -135,6 +142,7 @@ class HybridRetrievalService:
             "total_ms": _elapsed_ms(total_started),
         }
         trace = RetrievalTrace(
+            workspace_id=workspace_id,
             request_id=request_id,
             normalized_question=normalized_question,
             filters=filters,
@@ -170,9 +178,16 @@ class HybridRetrievalService:
             ],
         )
 
-    async def get_trace(self, trace_id: UUID) -> RetrievalTraceResponse:
+    async def get_trace(
+        self,
+        trace_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> RetrievalTraceResponse:
         trace = await self._session.get(RetrievalTrace, trace_id)
-        if trace is None:
+        if trace is None or (
+            workspace_id is not None and trace.workspace_id != workspace_id
+        ):
             raise RetrievalNotFound()
         return RetrievalTraceResponse(
             id=trace.id,

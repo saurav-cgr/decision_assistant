@@ -20,7 +20,12 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import (
+    CITEXT,
+    JSONB,
+    TSVECTOR,
+    UUID as PGUUID,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 EMBEDDING_DIMENSION = 768
@@ -46,9 +51,27 @@ class TimestampMixin:
 
 class Workspace(TimestampMixin, Base):
     __tablename__ = "workspaces"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'archived')",
+            name="ck_workspaces_status",
+        ),
+        Index(
+            "uq_workspaces_one_active",
+            "is_active",
+            unique=True,
+            postgresql_where=text("is_active = true"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column(String(200), unique=True)
+    name: Mapped[str] = mapped_column(CITEXT, unique=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="active", server_default=text("'active'")
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     embedding_profile: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
@@ -349,6 +372,10 @@ class RetrievalTrace(Base):
     __tablename__ = "retrieval_traces"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        index=True,
+    )
     request_id: Mapped[str] = mapped_column(String(100), index=True)
     normalized_question: Mapped[str] = mapped_column(Text)
     filters: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -372,13 +399,18 @@ class EvaluationQuestion(TimestampMixin, Base):
             name="ck_evaluation_questions_expectation",
         ),
         UniqueConstraint(
+            "workspace_id",
             "dataset_version",
             "external_id",
-            name="uq_evaluation_questions_dataset_external_id",
+            name="uq_evaluation_questions_workspace_dataset_external_id",
         ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        index=True,
+    )
     external_id: Mapped[str] = mapped_column(String(100))
     dataset_version: Mapped[str] = mapped_column(String(100), index=True)
     question: Mapped[str] = mapped_column(Text)
@@ -409,6 +441,10 @@ class EvaluationRun(TimestampMixin, Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        index=True,
+    )
     strategy: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     completed_questions: Mapped[int] = mapped_column(Integer, default=0)

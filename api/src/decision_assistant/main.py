@@ -32,6 +32,7 @@ from decision_assistant.workspace.embedding_migration import (
     EmbeddingReindexRequired,
     require_current_embedding_profile,
 )
+from decision_assistant.workspace.router import router as workspaces_router
 
 RequestHandler = Callable[[Request], Awaitable[Response]]
 
@@ -93,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(evaluation_router)
     app.include_router(retrieval_router)
     app.include_router(timelines_router)
+    app.include_router(workspaces_router)
 
     app.add_middleware(
         CORSMiddleware,
