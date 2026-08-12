@@ -1,11 +1,11 @@
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.config import Settings
-from decision_assistant.db import get_session
+from decision_assistant.db import get_session, session_factory
 from decision_assistant.evaluation.schemas import (
     EvaluationRunRequest,
     EvaluationRunResponse,
@@ -15,41 +15,82 @@ from decision_assistant.evaluation.service import (
     GenerationClaimJudge,
     RuntimeEvaluationExecutor,
 )
-from decision_assistant.providers.ollama import (
-    OllamaEmbeddingProvider,
-    OllamaGenerationProvider,
+from decision_assistant.providers.factory import (
+    ProviderBundleFactory,
+    get_provider_bundle_factory,
 )
 
 router = APIRouter(prefix="/api/v1/evaluations", tags=["evaluations"])
 
 
-def get_evaluation_service(
-    request: Request,
-    session: Annotated[AsyncSession, Depends(get_session)],
+def _build_evaluation_service(
+    session: AsyncSession,
+    settings: Settings,
+    providers: Any,
 ) -> EvaluationService:
-    settings: Settings = request.app.state.settings
-    embedding_provider = OllamaEmbeddingProvider(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_embedding_model,
-        dimension=settings.ollama_embedding_dimension,
-        retry_count=settings.model_retry_count,
-        timeout_seconds=settings.model_timeout_seconds,
-    )
-    generation_provider = OllamaGenerationProvider(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_generation_model,
-        retry_count=settings.model_retry_count,
-        timeout_seconds=settings.model_timeout_seconds,
-    )
     return EvaluationService(
         session=session,
         dataset_path=settings.evaluation_dataset_path,
         executor=RuntimeEvaluationExecutor(
             session=session,
-            embedding_provider=embedding_provider,
-            generation_provider=generation_provider,
+            embedding_provider=providers.embedding,
+            generation_provider=providers.generation,
         ),
-        judge=GenerationClaimJudge(generation_provider),
+        judge=GenerationClaimJudge(providers.generation),
+    )
+
+
+class EvaluationBackgroundRunner:
+    def __init__(
+        self,
+        settings: Settings,
+        provider_factory: ProviderBundleFactory,
+        *,
+        session_maker: Any = session_factory,
+    ) -> None:
+        self._settings = settings
+        self._provider_factory = provider_factory
+        self._session_maker = session_maker
+
+    async def dispatch(self, run_id: UUID) -> None:
+        async with self._session_maker() as session:
+            service = _build_evaluation_service(
+                session,
+                self._settings,
+                self._provider_factory(),
+            )
+            try:
+                await service.execute_run(run_id)
+            except Exception:
+                await session.rollback()
+                raise
+            else:
+                await session.commit()
+
+
+def get_evaluation_service(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    provider_factory: Annotated[
+        ProviderBundleFactory,
+        Depends(get_provider_bundle_factory),
+    ],
+) -> EvaluationService:
+    settings: Settings = request.app.state.settings
+    providers = provider_factory()
+    return _build_evaluation_service(session, settings, providers)
+
+
+def get_evaluation_background_runner(
+    request: Request,
+    provider_factory: Annotated[
+        ProviderBundleFactory,
+        Depends(get_provider_bundle_factory),
+    ],
+) -> EvaluationBackgroundRunner:
+    return EvaluationBackgroundRunner(
+        request.app.state.settings,
+        provider_factory,
     )
 
 
@@ -62,10 +103,14 @@ async def start_run(
     payload: EvaluationRunRequest,
     background_tasks: BackgroundTasks,
     service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+    runner: Annotated[
+        EvaluationBackgroundRunner,
+        Depends(get_evaluation_background_runner),
+    ],
 ) -> EvaluationRunResponse:
     run = await service.create_run(payload)
     response = await service.get_run(run.id)
-    background_tasks.add_task(service.execute_run, run.id)
+    background_tasks.add_task(runner.dispatch, run.id)
     return response
 
 

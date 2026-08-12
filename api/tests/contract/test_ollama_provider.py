@@ -4,15 +4,20 @@ import pytest
 from pydantic import BaseModel
 
 from decision_assistant.config import get_settings
+from decision_assistant.providers.base import EmbeddingPurpose
 from decision_assistant.providers.ollama import (
     OllamaEmbeddingProvider,
     OllamaGenerationProvider,
 )
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("OLLAMA_CONTRACT_TESTS") != "1",
-    reason="Set OLLAMA_CONTRACT_TESTS=1 to use local Ollama models",
-)
+pytestmark = [
+    pytest.mark.live_provider,
+    pytest.mark.ollama,
+    pytest.mark.skipif(
+        os.getenv("OLLAMA_CONTRACT_TESTS") != "1",
+        reason="Set OLLAMA_CONTRACT_TESTS=1 to use local Ollama models",
+    ),
+]
 
 
 class ContractAnswer(BaseModel):
@@ -30,7 +35,9 @@ async def test_configured_embedding_model_returns_expected_dimension() -> None:
         retry_count=settings.model_retry_count,
     )
 
-    embeddings = await provider.embed(["authentication decision"])
+    embeddings = await provider.embed(
+        ["authentication decision"], purpose=EmbeddingPurpose.QUERY
+    )
 
     assert len(embeddings) == 1
     assert len(embeddings[0]) == settings.ollama_embedding_dimension

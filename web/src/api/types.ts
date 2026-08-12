@@ -250,9 +250,6 @@ export type EvaluationRunRequest = {
   strategy: EvaluationStrategy;
   dataset_version: string;
   configuration: Record<string, unknown>;
-  generation_profile: Record<string, unknown>;
-  embedding_profile: Record<string, unknown>;
-  judge_profile: Record<string, unknown>;
 };
 
 export type EvaluationResult = {
@@ -294,6 +291,9 @@ export type EvaluationRun = EvaluationRunRequest & {
   completed_questions: number;
   total_questions: number;
   failure: Record<string, unknown> | null;
+  generation_profile: Record<string, unknown>;
+  embedding_profile: Record<string, unknown>;
+  judge_profile: Record<string, unknown>;
   aggregate_metrics: EvaluationMetrics | null;
   started_at: string | null;
   completed_at: string | null;

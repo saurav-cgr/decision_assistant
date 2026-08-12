@@ -18,14 +18,22 @@ from decision_assistant.models import (
     RetrievalTrace,
     Workspace,
 )
+from decision_assistant.providers.base import EmbeddingPurpose
 from decision_assistant.providers.fakes import FakeEmbeddingProvider
 from decision_assistant.retrieval.router import get_retrieval_service
+from decision_assistant.retrieval.repository import RetrievalRepository
 from decision_assistant.retrieval.schemas import RetrievalFilters, RetrievalSearchRequest
 from decision_assistant.retrieval.service import HybridRetrievalService
+from decision_assistant.workspace.embedding_migration import EmbeddingReindexRequired
+
+EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
 
 
 async def create_workspace(session: AsyncSession) -> Workspace:
-    workspace = Workspace(name=f"Retrieval {uuid4()}", embedding_profile=None)
+    workspace = Workspace(
+        name=f"Retrieval {uuid4()}",
+        embedding_profile=EMBEDDING_PROFILE,
+    )
     session.add(workspace)
     await session.flush()
     return workspace
@@ -87,6 +95,7 @@ async def create_passage(
         content_hash=sha256(content.encode()).hexdigest(),
         locator={"kind": "lines", "start": sequence_number + 1, "end": sequence_number + 1},
         embedding=embedding,
+        embedding_profile=EMBEDDING_PROFILE,
     )
     session.add(passage)
     await session.flush()
@@ -94,11 +103,100 @@ async def create_passage(
 
 
 @pytest.mark.asyncio
+async def test_hybrid_retrieval_abstains_before_provider_call_when_reindex_required(
+    db_session: AsyncSession,
+) -> None:
+    embedding_provider = FakeEmbeddingProvider(dimension=768)
+    workspace = await create_workspace(db_session)
+    _, version = await create_version(db_session, workspace, name="legacy.md")
+    passage = await create_passage(
+        db_session,
+        version,
+        sequence_number=0,
+        content="Legacy authentication decision.",
+        embedding=[0.0] * 768,
+    )
+    passage.embedding_profile = None
+    await db_session.flush()
+
+    with pytest.raises(EmbeddingReindexRequired) as error:
+        await HybridRetrievalService(
+            session=db_session,
+            embedding_provider=embedding_provider,
+        ).search(
+            RetrievalSearchRequest(question="authentication"),
+            request_id="retrieval-needs-migration",
+        )
+
+    assert error.value.code == "embedding_reindex_required"
+    assert embedding_provider.purposes == []
+
+
+@pytest.mark.asyncio
+async def test_vector_query_filters_active_versions_by_configured_passage_profile(
+    db_session: AsyncSession,
+) -> None:
+    workspace = await create_workspace(db_session)
+    _, active_version = await create_version(
+        db_session,
+        workspace,
+        name="profile-filter.md",
+    )
+    matching = await create_passage(
+        db_session,
+        active_version,
+        sequence_number=0,
+        content="Matching profile.",
+        embedding=[1.0] + ([0.0] * 767),
+    )
+    mismatched = await create_passage(
+        db_session,
+        active_version,
+        sequence_number=1,
+        content="Mismatched profile.",
+        embedding=[1.0] + ([0.0] * 767),
+    )
+    mismatched.embedding_profile = {
+        **EMBEDDING_PROFILE,
+        "adapter_config_version": "legacy-v0",
+    }
+    _, retired_version = await create_version(
+        db_session,
+        workspace,
+        name="retired-profile.md",
+        state="retired",
+    )
+    retired = await create_passage(
+        db_session,
+        retired_version,
+        sequence_number=0,
+        content="Retired profile.",
+        embedding=[1.0] + ([0.0] * 767),
+    )
+    await db_session.flush()
+
+    results = await RetrievalRepository(db_session).semantic_search(
+        [1.0] + ([0.0] * 767),
+        RetrievalFilters(),
+        embedding_profile=EMBEDDING_PROFILE,
+        limit=10,
+    )
+
+    assert [result.passage.id for result in results] == [matching.id]
+    assert mismatched.id not in {result.passage.id for result in results}
+    assert retired.id not in {result.passage.id for result in results}
+
+
+@pytest.mark.asyncio
 async def test_hybrid_retrieval_caps_sources_and_excludes_retired_versions(
     db_session: AsyncSession,
 ) -> None:
     embedding_provider = FakeEmbeddingProvider(dimension=768)
-    query_vector = (await embedding_provider.embed(["authentication"]))[0]
+    query_vector = (
+        await embedding_provider.embed(
+            ["authentication"], purpose=EmbeddingPurpose.DOCUMENT
+        )
+    )[0]
     workspace = await create_workspace(db_session)
     _, active_version = await create_version(
         db_session,
@@ -178,7 +276,11 @@ async def test_explicit_metadata_filters_apply_before_ranking(
     db_session: AsyncSession,
 ) -> None:
     embedding_provider = FakeEmbeddingProvider(dimension=768)
-    query_vector = (await embedding_provider.embed(["authentication"]))[0]
+    query_vector = (
+        await embedding_provider.embed(
+            ["authentication"], purpose=EmbeddingPurpose.DOCUMENT
+        )
+    )[0]
     workspace = await create_workspace(db_session)
     variants = [
         ("match.md", "text/markdown", "Atlas", date(2026, 7, 15), ["Maya"]),
@@ -248,7 +350,11 @@ async def test_decision_fields_add_their_evidence_passage_as_candidate(
         version,
         sequence_number=0,
         content="The rollout dependency remains unresolved.",
-        embedding=(await embedding_provider.embed(["unrelated storage note"]))[0],
+        embedding=(
+            await embedding_provider.embed(
+                ["unrelated storage note"], purpose=EmbeddingPurpose.DOCUMENT
+            )
+        )[0],
     )
     decision = Decision(
         document_version_id=version.id,
@@ -304,7 +410,11 @@ async def test_trace_api_returns_trace_and_stable_not_found(
     db_session: AsyncSession,
 ) -> None:
     embedding_provider = FakeEmbeddingProvider(dimension=768)
-    query_vector = (await embedding_provider.embed(["authentication"]))[0]
+    query_vector = (
+        await embedding_provider.embed(
+            ["authentication"], purpose=EmbeddingPurpose.DOCUMENT
+        )
+    )[0]
     workspace = await create_workspace(db_session)
     _, version = await create_version(db_session, workspace, name="trace.md")
     await create_passage(

@@ -248,7 +248,7 @@ Run: `docker compose exec ollama sh -lc 'ollama pull "$OLLAMA_GENERATION_MODEL"'
 Run: `docker compose exec ollama sh -lc 'ollama pull "$OLLAMA_EMBEDDING_MODEL"'`
 Expected: the Ollama service is healthy and both configured models are available before the contract test.
 
-Run: `docker compose run --rm -e OLLAMA_CONTRACT_TESTS=1 api pytest tests/contract/test_ollama_provider.py -v` with the Ollama service healthy.
+Run: `docker compose run --rm -e OLLAMA_CONTRACT_TESTS=1 api pytest -m live_provider tests/contract/test_ollama_provider.py -v` with the Ollama service healthy.
 Expected: PASS; without the environment flag, tests SKIP.
 
 - [ ] **Step 6: Commit**
@@ -1071,7 +1071,7 @@ Pin `google-genai==2.13.0` and configure the Gemini Developer API `v1beta`. Add 
 GENERATION_PROVIDER=gemini
 EMBEDDING_PROVIDER=gemini
 GEMINI_API_KEY=
-GEMINI_GENERATION_MODEL=gemini-2.5-flash-lite
+GEMINI_GENERATION_MODEL=gemini-3.1-flash-lite
 GEMINI_EMBEDDING_MODEL=gemini-embedding-2
 GEMINI_EMBEDDING_DIMENSION=768
 GEMINI_EMBEDDING_CONFIG_VERSION=retrieval-prefix-v1
@@ -1123,7 +1123,7 @@ Run: `docker compose up -d db --wait`
 Run: `docker compose run --rm api alembic upgrade head`
 Expected: migration succeeds against both a fresh database and the existing development database.
 
-Run: `docker compose run --rm -e GEMINI_CONTRACT_TESTS=1 api pytest tests/contract/test_gemini_provider.py -v`
+Run: `docker compose run --rm -e GEMINI_CONTRACT_TESTS=1 api pytest -m live_provider tests/contract/test_gemini_provider.py -v`
 Expected: with `GEMINI_API_KEY` supplied to Compose, generation returns schema-valid output and embedding returns exactly 768 finite values; without the opt-in flag, tests SKIP. Missing credentials or quota exhaustion is skipped/inconclusive, never PASS.
 
 - [ ] **Step 7: Commit**
@@ -1181,7 +1181,7 @@ The live command passes only after the complete real Gemini flow succeeds. Missi
 
 - [ ] **Step 5: Run the live Gemini evaluation**
 
-Run: `docker compose run --rm -e GEMINI_CONTRACT_TESTS=1 api pytest tests/contract/test_gemini_provider.py -v`
+Run: `docker compose run --rm -e GEMINI_CONTRACT_TESTS=1 api pytest -m live_provider tests/contract/test_gemini_provider.py -v`
 Expected: live Gemini generation and 768-dimensional embedding contracts pass using the uncommitted API key.
 
 Using the containerized application, ingest the complete Atlas corpus, run semantic-only and hybrid benchmarks, and save actual output through the application. Verify hybrid top-five hit rate is at least 80%; if it is not, debug chunking/query/fusion using traces before tuning thresholds.

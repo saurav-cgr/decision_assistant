@@ -29,6 +29,7 @@ from decision_assistant.models import (
     Passage,
 )
 from decision_assistant.providers.base import GenerationProvider
+from decision_assistant.providers.orchestration import generate_with_repair
 from decision_assistant.retrieval.schemas import RetrievalSearchRequest
 from decision_assistant.retrieval.service import HybridRetrievalService
 
@@ -99,7 +100,8 @@ class AnswerService:
                 unsupported_facets=[request.question],
             )
 
-        generated = await self._generation_provider.generate(
+        generated = await generate_with_repair(
+            self._generation_provider,
             build_answer_prompt(request.question, evidence_pack),
             GeneratedAnswer,
         )

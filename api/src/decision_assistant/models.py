@@ -151,6 +151,12 @@ class Passage(TimestampMixin, Base):
         Computed("to_tsvector('english'::regconfig, content)", persisted=True),
     )
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSION))
+    # Nullable at the database boundary so legacy rows remain detectable and can
+    # be migrated atomically. Ingestion always supplies a validated profile.
+    embedding_profile: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
 
 
 class Decision(TimestampMixin, Base):

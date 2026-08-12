@@ -4,6 +4,7 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
+from decision_assistant.providers.base import EmbeddingPurpose, ProviderOutputInvalid
 from decision_assistant.providers.ollama import (
     OllamaEmbeddingProvider,
     OllamaGenerationProvider,
@@ -30,7 +31,9 @@ async def test_embedding_adapter_sends_batch_and_validates_dimension() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    assert await provider.embed(["evidence"]) == [[0.1, 0.2, 0.3]]
+    assert await provider.embed(
+        ["evidence"], purpose=EmbeddingPurpose.DOCUMENT
+    ) == [[0.1, 0.2, 0.3]]
     assert requests == [{"model": "embedding-test", "input": ["evidence"]}]
 
 
@@ -61,6 +64,22 @@ async def test_generation_adapter_requests_schema_and_zero_temperature() -> None
 
 
 @pytest.mark.asyncio
+async def test_generation_adapter_maps_local_json_validation_to_output_invalid() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {"content": "not json"}})
+
+    provider = OllamaGenerationProvider(
+        base_url="http://ollama.test",
+        model="generation-test",
+        retry_count=0,
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProviderOutputInvalid):
+        await provider.generate("Use evidence only", AnswerStub)
+
+
+@pytest.mark.asyncio
 async def test_adapter_retries_transient_status_only() -> None:
     attempts = 0
 
@@ -80,5 +99,7 @@ async def test_adapter_retries_transient_status_only() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    assert await provider.embed(["retry"]) == [[1.0, 0.0]]
+    assert await provider.embed(
+        ["retry"], purpose=EmbeddingPurpose.QUERY
+    ) == [[1.0, 0.0]]
     assert attempts == 2

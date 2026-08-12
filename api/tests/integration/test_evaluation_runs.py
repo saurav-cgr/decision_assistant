@@ -3,12 +3,12 @@ from collections.abc import AsyncIterator
 from importlib import import_module
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from decision_assistant.main import create_app
 from decision_assistant.models import (
@@ -18,8 +18,12 @@ from decision_assistant.models import (
     EvaluationResult,
     EvaluationRun,
     Passage,
+    RetrievalTrace,
     Workspace,
 )
+from decision_assistant.config import Settings, get_settings
+from decision_assistant.providers.factory import ProviderBundle
+from decision_assistant.providers.fakes import FakeEmbeddingProvider, FakeGenerationProvider
 
 
 DATASET_VERSION = "decision-eval-v1"
@@ -40,9 +44,9 @@ JUDGE_PROFILE = {
 }
 
 
-def write_dataset(path: Path) -> Path:
+def write_dataset(path: Path, *, version: str = DATASET_VERSION) -> Path:
     dataset = {
-        "version": DATASET_VERSION,
+        "version": version,
         "questions": [
             {
                 "id": "q1",
@@ -103,6 +107,8 @@ class RecordingExecutor:
         self.isolated_failure_id = isolated_failure_id
         self.fatal_error = fatal_error
         self.observed_progress: list[tuple[str, int, int]] = []
+        self.embedding_profile = EMBEDDING_PROFILE
+        self.generation_profile = GENERATION_PROFILE
 
     async def execute(
         self,
@@ -156,6 +162,7 @@ class RecordingExecutor:
 class RecordingJudge:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.profile = JUDGE_PROFILE
 
     async def judge(
         self,
@@ -169,6 +176,88 @@ class RecordingJudge:
             "supported_claims": 1,
             "total_claims": 1,
         }
+
+
+@pytest.mark.asyncio
+async def test_background_runner_persists_after_request_session_teardown(
+    tmp_path: Path,
+) -> None:
+    router_module = import_module("decision_assistant.evaluation.router")
+    schemas = import_module("decision_assistant.evaluation.schemas")
+    dataset_version = f"background-{uuid4()}"
+    settings = Settings(
+        database_url=get_settings().database_url,
+        evaluation_dataset_path=write_dataset(
+            tmp_path / "background.json",
+            version=dataset_version,
+        ),
+    )
+    engine = create_async_engine(settings.database_url)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    bundle = ProviderBundle(
+        embedding=FakeEmbeddingProvider(dimension=768),
+        generation=FakeGenerationProvider(),
+    )
+    run_id: UUID | None = None
+    question_ids: list[UUID] = []
+    try:
+        async with maker() as request_session:
+            service = router_module._build_evaluation_service(
+                request_session,
+                settings,
+                bundle,
+            )
+            request = schemas.EvaluationRunRequest(
+                strategy="semantic",
+                dataset_version=dataset_version,
+                configuration=RUN_CONFIGURATION,
+            )
+            run = await service.create_run(request)
+            run_id = run.id
+            question_ids = list(
+                await request_session.scalars(
+                    select(EvaluationQuestion.id).where(
+                        EvaluationQuestion.dataset_version == dataset_version
+                    )
+                )
+            )
+            await request_session.commit()
+
+        runner = router_module.EvaluationBackgroundRunner(
+            settings,
+            lambda: bundle,
+            session_maker=maker,
+        )
+        await runner.dispatch(run_id)
+
+        async with maker() as verification_session:
+            persisted = await verification_session.get(EvaluationRun, run_id)
+            assert persisted is not None
+            assert persisted.status == "completed"
+    finally:
+        async with maker() as cleanup_session:
+            if run_id is not None:
+                await cleanup_session.execute(
+                    delete(EvaluationResult).where(
+                        EvaluationResult.evaluation_run_id == run_id
+                    )
+                )
+                await cleanup_session.execute(
+                    delete(RetrievalTrace).where(
+                        RetrievalTrace.request_id.like(f"evaluation:{run_id}:%")
+                    )
+                )
+                await cleanup_session.execute(
+                    delete(EvaluationRun).where(EvaluationRun.id == run_id)
+                )
+            if question_ids:
+                await cleanup_session.execute(
+                    delete(EvaluationQuestion).where(
+                        EvaluationQuestion.id.in_(question_ids)
+                    )
+                )
+            await cleanup_session.commit()
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -399,8 +488,17 @@ async def test_semantic_and_hybrid_runs_keep_identical_snapshots(
         executor=RecordingExecutor(db_session),
         judge=RecordingJudge(),
     )
-    semantic = await service.create_run(run_request(schemas, "semantic"))
-    hybrid = await service.create_run(run_request(schemas, "hybrid"))
+    spoofed = {
+        "generation_profile": {"provider": "client-spoof"},
+        "embedding_profile": {"provider": "client-spoof"},
+        "judge_profile": {"provider": "client-spoof"},
+    }
+    semantic = await service.create_run(
+        run_request(schemas, "semantic").model_copy(update=spoofed)
+    )
+    hybrid = await service.create_run(
+        run_request(schemas, "hybrid").model_copy(update=spoofed)
+    )
 
     await service.execute_run(semantic.id)
     await service.execute_run(hybrid.id)
@@ -409,8 +507,8 @@ async def test_semantic_and_hybrid_runs_keep_identical_snapshots(
 
     assert semantic.dataset_version == hybrid.dataset_version == DATASET_VERSION
     assert semantic.configuration == hybrid.configuration == RUN_CONFIGURATION
-    assert semantic.generation_profile == hybrid.generation_profile
-    assert semantic.embedding_profile == hybrid.embedding_profile
+    assert semantic.generation_profile == hybrid.generation_profile == GENERATION_PROFILE
+    assert semantic.embedding_profile == hybrid.embedding_profile == EMBEDDING_PROFILE
     assert semantic.judge_profile == hybrid.judge_profile == JUDGE_PROFILE
 
     async def expected_snapshots(run_id: UUID) -> list[dict[str, Any]]:
@@ -442,6 +540,14 @@ async def test_evaluation_api_starts_run_and_returns_completed_detail(
     )
     app = create_app()
     app.dependency_overrides[router_module.get_evaluation_service] = lambda: service
+
+    class TestRunner:
+        async def dispatch(self, run_id: UUID) -> None:
+            await service.execute_run(run_id)
+
+    app.dependency_overrides[
+        router_module.get_evaluation_background_runner
+    ] = TestRunner
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),

@@ -15,6 +15,9 @@ vi.mock("../api/client", () => ({
 const sharedRequest = {
   dataset_version: "atlas-v1",
   configuration: { top_k: 5, rrf_k: 60 },
+};
+
+const runtimeProfiles = {
   generation_profile: { provider: "ollama", model: "qwen3:8b" },
   embedding_profile: { provider: "ollama", model: "embeddinggemma" },
   judge_profile: {
@@ -85,6 +88,7 @@ function completedRun(
     total_questions: 20,
     failure: null,
     ...sharedRequest,
+    ...runtimeProfiles,
     aggregate_metrics: {
       top_five_hit_rate: strategy === "hybrid" ? 0.85 : 0.7,
       mean_reciprocal_rank: strategy === "hybrid" ? 0.76 : 0.61,

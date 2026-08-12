@@ -22,8 +22,14 @@ from decision_assistant.models import (
     DocumentVersion,
     IngestionJob,
     Passage,
+    Workspace,
 )
-from decision_assistant.providers.base import EmbeddingProvider
+from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
+from decision_assistant.workspace.embedding_migration import (
+    EmbeddingReindexRequired,
+    acquire_workspace_embedding_lock,
+    get_embedding_corpus_state,
+)
 
 
 class IngestionError(ApplicationError):
@@ -214,7 +220,8 @@ class IngestionService:
         job.progress = 40
         drafts = chunk_document(parsed)
         embeddings = await self._embedding_provider.embed(
-            [draft.content for draft in drafts]
+            [draft.content for draft in drafts],
+            purpose=EmbeddingPurpose.DOCUMENT,
         )
         if len(embeddings) != len(drafts):
             raise IngestionError(
@@ -232,6 +239,7 @@ class IngestionService:
                 content_hash=draft.content_hash,
                 locator=draft.locator,
                 embedding=embedding,
+                embedding_profile=self._embedding_provider.profile.as_dict(),
             )
             for draft, embedding in zip(drafts, embeddings, strict=True)
         ]
@@ -305,6 +313,19 @@ class IngestionService:
 
         job.stage = "activating"
         job.progress = 90
+        await acquire_workspace_embedding_lock(self._session, document.workspace_id)
+        corpus_state = await get_embedding_corpus_state(
+            self._session,
+            document.workspace_id,
+            self._embedding_provider.profile,
+        )
+        if corpus_state.active_passage_count == 0:
+            workspace = await self._session.get(Workspace, document.workspace_id)
+            if workspace is None:
+                raise IngestionError("Workspace not found", code="workspace_not_found")
+            workspace.embedding_profile = self._embedding_provider.profile.as_dict()
+        elif corpus_state.migration_pending:
+            raise EmbeddingReindexRequired()
         if previous_version is not None:
             previous_version.state = "retired"
             await self._session.flush([previous_version])

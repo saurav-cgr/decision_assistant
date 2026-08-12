@@ -31,6 +31,8 @@ from decision_assistant.providers.fakes import (
     FakeGenerationProvider,
 )
 
+FAKE_EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
+
 
 @dataclass(slots=True)
 class DecisionApiHarness:
@@ -75,7 +77,7 @@ async def decisions_api(
 ) -> AsyncIterator[DecisionApiHarness]:
     workspace = Workspace(
         name=f"Decision API workspace {uuid4()}",
-        embedding_profile={"provider": "fake", "dimension": 768},
+        embedding_profile=FAKE_EMBEDDING_PROFILE,
     )
     db_session.add(workspace)
     await db_session.flush()
@@ -132,6 +134,7 @@ async def decisions_api(
         content_hash=sha256(active_content.encode()).hexdigest(),
         locator={"kind": "lines", "start": 1, "end": 1},
         embedding=[0.0] * 768,
+        embedding_profile=FAKE_EMBEDDING_PROFILE,
     )
     retired_passage = Passage(
         document_version_id=retired_version.id,
@@ -142,6 +145,7 @@ async def decisions_api(
         content_hash=sha256(retired_content.encode()).hexdigest(),
         locator={"kind": "lines", "start": 1, "end": 1},
         embedding=[0.0] * 768,
+        embedding_profile=FAKE_EMBEDDING_PROFILE,
     )
     db_session.add_all([active_passage, retired_passage])
     await db_session.flush()

@@ -21,6 +21,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    profiles: ["ollama"]
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
       OLLAMA_GENERATION_MODEL: ${OLLAMA_GENERATION_MODEL:-qwen3:8b}
@@ -42,6 +43,16 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://decision_assistant:decision_assistant@db:5432/decision_assistant}
       UPLOAD_DIRECTORY: ${UPLOAD_DIRECTORY:-/workspace/uploads}
+      GENERATION_PROVIDER: ${GENERATION_PROVIDER:-gemini}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_GENERATION_MODEL: ${GEMINI_GENERATION_MODEL:-gemini-3.1-flash-lite}
+      GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}
+      GEMINI_EMBEDDING_DIMENSION: ${GEMINI_EMBEDDING_DIMENSION:-768}
+      GEMINI_EMBEDDING_CONFIG_VERSION: ${GEMINI_EMBEDDING_CONFIG_VERSION:-retrieval-prefix-v1}
+      GEMINI_GENERATION_PROMPT_VERSION: ${GEMINI_GENERATION_PROMPT_VERSION:-gemini-json-v1}
+      GEMINI_EMBEDDING_BATCH_SIZE: ${GEMINI_EMBEDDING_BATCH_SIZE:-32}
+      GEMINI_MAX_PROMPT_CHARACTERS: ${GEMINI_MAX_PROMPT_CHARACTERS:-100000}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       OLLAMA_GENERATION_MODEL: ${OLLAMA_GENERATION_MODEL:-qwen3:8b}
       OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-embeddinggemma}
@@ -69,8 +80,6 @@ services:
       - uploads_data:/workspace/uploads
     depends_on:
       db:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
     healthcheck:
       test:

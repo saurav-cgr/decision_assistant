@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,16 @@ class Settings(BaseSettings):
         "@db:5432/decision_assistant"
     )
     upload_directory: Path = Path("/workspace/uploads")
+    generation_provider: str = "gemini"
+    embedding_provider: str = "gemini"
+    gemini_api_key: SecretStr | None = None
+    gemini_generation_model: str = "gemini-3.1-flash-lite"
+    gemini_embedding_model: str = "gemini-embedding-2"
+    gemini_embedding_dimension: int = 768
+    gemini_embedding_config_version: str = "retrieval-prefix-v1"
+    gemini_generation_prompt_version: str = "gemini-json-v1"
+    gemini_embedding_batch_size: int = 32
+    gemini_max_prompt_characters: int = 100_000
     ollama_base_url: str = "http://ollama:11434"
     ollama_generation_model: str = "qwen3:8b"
     ollama_embedding_model: str = "embeddinggemma"

@@ -16,19 +16,6 @@ const benchmarkConfiguration: Omit<EvaluationRunRequest, "strategy"> = {
     top_k: Number(import.meta.env.VITE_EVALUATION_TOP_K || 5),
     rrf_k: Number(import.meta.env.VITE_EVALUATION_RRF_K || 60),
   },
-  generation_profile: {
-    provider: "ollama",
-    model: import.meta.env.VITE_OLLAMA_GENERATION_MODEL || "qwen3:8b",
-  },
-  embedding_profile: {
-    provider: "ollama",
-    model: import.meta.env.VITE_OLLAMA_EMBEDDING_MODEL || "embeddinggemma",
-  },
-  judge_profile: {
-    provider: "ollama",
-    model: import.meta.env.VITE_OLLAMA_GENERATION_MODEL || "qwen3:8b",
-    temperature: 0,
-  },
 };
 
 function isActive(run: EvaluationRun): boolean {

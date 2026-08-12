@@ -31,10 +31,13 @@ class RetrievalRepository:
         embedding: list[float],
         filters: RetrievalFilters,
         *,
+        embedding_profile: dict[str, str | int],
         limit: int,
     ) -> list[RankedPassage]:
         distance = Passage.embedding.cosine_distance(embedding).label("distance")
-        statement = self._active_passages(select(Passage, distance), filters)
+        statement = self._active_passages(select(Passage, distance), filters).where(
+            Passage.embedding_profile == embedding_profile
+        )
         rows = (
             await self._session.execute(statement.order_by(distance).limit(limit))
         ).all()

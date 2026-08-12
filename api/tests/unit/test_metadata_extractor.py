@@ -6,6 +6,8 @@ import pytest
 from decision_assistant.ingestion.metadata import MetadataExtractor
 from decision_assistant.ingestion.parsers import parse_document
 from decision_assistant.providers.fakes import FakeGenerationProvider
+from decision_assistant.providers.base import ProviderOutputInvalid
+from decision_assistant.providers.orchestration import ModelOutputInvalid
 
 
 def write_markdown(tmp_path: Path, content: str) -> Path:
@@ -97,3 +99,45 @@ async def test_absent_metadata_remains_unknown(tmp_path: Path) -> None:
     assert metadata.participants == []
     assert metadata.source_type is None
     assert metadata.project is None
+
+
+@pytest.mark.asyncio
+async def test_metadata_generation_uses_a_bounded_beginning_of_document_sample(
+    tmp_path: Path,
+) -> None:
+    source = write_markdown(tmp_path, "BEGINNING " + "x" * 40 + " OMITTED-TAIL")
+    provider = FakeGenerationProvider(
+        [
+            {
+                "title": None,
+                "document_date": None,
+                "participants": [],
+                "source_type": None,
+                "project": None,
+            }
+        ]
+    )
+
+    await MetadataExtractor(provider, max_sample_characters=20).extract(
+        parse_document(source)
+    )
+
+    assert "BEGINNING" in provider.prompts[0]
+    assert "OMITTED-TAIL" not in provider.prompts[0]
+    assert "bounded beginning-of-document sample" in provider.prompts[0].lower()
+
+
+@pytest.mark.asyncio
+async def test_metadata_schema_failure_repairs_once_then_raises_stable_error(
+    tmp_path: Path,
+) -> None:
+    source = write_markdown(tmp_path, "A note without metadata.\n")
+    provider = FakeGenerationProvider(
+        [ProviderOutputInvalid(), ProviderOutputInvalid()]
+    )
+
+    with pytest.raises(ModelOutputInvalid) as caught:
+        await MetadataExtractor(provider).extract(parse_document(source))
+
+    assert caught.value.code == "model_output_invalid"
+    assert len(provider.prompts) == 2

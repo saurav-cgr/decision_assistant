@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.decisions.extractor import DecisionExtractor
 from decision_assistant.ingestion.metadata import MetadataExtractor
+from decision_assistant.ingestion import service as ingestion_service_module
 from decision_assistant.ingestion.service import IngestionService
 from decision_assistant.models import (
     Decision,
@@ -14,13 +16,15 @@ from decision_assistant.models import (
     DocumentVersion,
     IngestionJob,
     Passage,
+    Workspace,
 )
-from decision_assistant.providers.base import ProviderUnavailable
+from decision_assistant.providers.base import EmbeddingPurpose, ProviderUnavailable
 from decision_assistant.providers.fakes import (
     FakeEmbeddingProvider,
     FakeGenerationProvider,
 )
 from decision_assistant.workspace.service import WorkspaceService
+from decision_assistant.workspace.embedding_migration import EmbeddingReindexRequired
 
 GOOD_CONTENT = """---
 title: Architecture Sync
@@ -97,11 +101,160 @@ async def test_unchanged_checksum_skips_new_version(
 
 
 @pytest.mark.asyncio
+async def test_new_passages_store_the_validated_embedding_profile(
+    db_session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    service, document, embedding_provider = await create_harness(db_session, tmp_path)
+
+    result = await service.ingest(
+        document.id,
+        write_source(tmp_path, GOOD_CONTENT),
+        request_id="profile-request",
+    )
+    passages = list(
+        await db_session.scalars(
+            select(Passage).where(Passage.document_version_id == result.version_id)
+        )
+    )
+
+    assert passages
+    expected_profile = {
+        "provider": embedding_provider.profile.provider,
+        "model": embedding_provider.profile.model,
+        "dimension": embedding_provider.profile.dimension,
+        "adapter_config_version": embedding_provider.profile.adapter_config_version,
+    }
+    assert all(passage.embedding_profile == expected_profile for passage in passages)
+    workspace = await db_session.get(Workspace, document.workspace_id)
+    assert workspace is not None
+    assert workspace.embedding_profile == expected_profile
+
+
+@pytest.mark.asyncio
+async def test_provider_change_does_not_defeat_checksum_idempotency(
+    db_session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    service, document, embedding_provider = await create_harness(db_session, tmp_path)
+    source = write_source(tmp_path, GOOD_CONTENT)
+    first = await service.ingest(document.id, source, request_id="provider-before")
+    original_profile = embedding_provider.profile.as_dict()
+    embedding_provider._profile = replace(  # type: ignore[attr-defined]
+        embedding_provider.profile,
+        model="changed-embedding-model",
+    )
+
+    repeated = await service.ingest(
+        document.id,
+        source,
+        request_id="provider-after",
+    )
+
+    assert repeated.skipped is True
+    assert repeated.version_id == first.version_id
+    assert await db_session.scalar(
+        select(func.count(DocumentVersion.id)).where(
+            DocumentVersion.document_id == document.id
+        )
+    ) == 1
+    workspace = await db_session.get(Workspace, document.workspace_id)
+    assert workspace is not None
+    assert workspace.embedding_profile == original_profile
+
+
+@pytest.mark.asyncio
+async def test_ingestion_uses_workspace_embedding_guard_before_activation(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, document, _ = await create_harness(db_session, tmp_path)
+    acquired_for: list[object] = []
+    original = ingestion_service_module.acquire_workspace_embedding_lock
+
+    async def recording_guard(session: AsyncSession, workspace_id: object) -> None:
+        acquired_for.append(workspace_id)
+        await original(session, workspace_id)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        ingestion_service_module,
+        "acquire_workspace_embedding_lock",
+        recording_guard,
+    )
+
+    await service.ingest(
+        document.id,
+        write_source(tmp_path, GOOD_CONTENT),
+        request_id="guard-request",
+    )
+
+    assert acquired_for == [document.workspace_id]
+
+
+@pytest.mark.asyncio
+async def test_waiting_old_profile_ingestion_cannot_activate_mixed_corpus(
+    db_session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    service, document, embedding_provider = await create_harness(db_session, tmp_path)
+    source = write_source(tmp_path, GOOD_CONTENT)
+    first = await service.ingest(document.id, source, request_id="old-active")
+    migrated_profile = replace(
+        embedding_provider.profile,
+        model="new-embedding-model",
+    ).as_dict()
+    workspace = await db_session.get(Workspace, document.workspace_id)
+    assert workspace is not None
+    workspace.embedding_profile = migrated_profile
+    active_passages = list(
+        await db_session.scalars(
+            select(Passage).where(Passage.document_version_id == first.version_id)
+        )
+    )
+    for passage in active_passages:
+        passage.embedding_profile = migrated_profile
+    await db_session.flush()
+    write_source(tmp_path, CHANGED_CONTENT)
+
+    with pytest.raises(EmbeddingReindexRequired) as error:
+        await service.ingest(document.id, source, request_id="queued-old-provider")
+
+    await db_session.refresh(document)
+    await db_session.refresh(workspace)
+    versions = list(
+        await db_session.scalars(
+            select(DocumentVersion)
+            .where(DocumentVersion.document_id == document.id)
+            .order_by(DocumentVersion.version_number)
+        )
+    )
+    searchable_profiles = list(
+        await db_session.scalars(
+            select(Passage.embedding_profile)
+            .join(
+                DocumentVersion,
+                DocumentVersion.id == Passage.document_version_id,
+            )
+            .where(DocumentVersion.state == "active")
+        )
+    )
+    assert error.value.code == "embedding_reindex_required"
+    assert document.active_version_id == first.version_id
+    assert [version.state for version in versions] == ["active", "failed"]
+    assert workspace.embedding_profile == migrated_profile
+    assert searchable_profiles
+    assert all(profile == migrated_profile for profile in searchable_profiles)
+
+
+@pytest.mark.asyncio
 async def test_successful_reindex_atomically_activates_new_version(
     db_session: AsyncSession,
     tmp_path: Path,
 ) -> None:
-    service, document, _ = await create_harness(db_session, tmp_path)
+    service, document, embedding_provider = await create_harness(
+        db_session, tmp_path
+    )
     source = write_source(tmp_path, GOOD_CONTENT)
     first = await service.ingest(document.id, source, request_id="request-1")
     write_source(tmp_path, CHANGED_CONTENT)
@@ -121,6 +274,10 @@ async def test_successful_reindex_atomically_activates_new_version(
     assert [(version.id, version.state) for version in versions] == [
         (first.version_id, "retired"),
         (second.version_id, "active"),
+    ]
+    assert embedding_provider.purposes == [
+        EmbeddingPurpose.DOCUMENT,
+        EmbeddingPurpose.DOCUMENT,
     ]
     assert await db_session.scalar(
         select(func.count(Passage.id)).where(

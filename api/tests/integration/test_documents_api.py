@@ -11,7 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.config import Settings
-from decision_assistant.documents.router import get_document_service
+from decision_assistant.documents.router import (
+    _record_dispatch_failure,
+    get_document_service,
+)
 from decision_assistant.documents.service import DocumentService
 from decision_assistant.main import create_app
 from decision_assistant.models import (
@@ -21,6 +24,7 @@ from decision_assistant.models import (
     IngestionJob,
     Passage,
 )
+from decision_assistant.providers.base import ProviderConfigurationInvalid
 
 
 class RecordingDispatcher:
@@ -43,6 +47,63 @@ class RecordingDispatcher:
                 "request_id": request_id,
             }
         )
+
+
+@pytest.mark.asyncio
+async def test_provider_creation_failure_marks_queued_job_and_version_failed(
+    db_session: AsyncSession,
+) -> None:
+    document = Document(
+        workspace_id=(await _workspace_id(db_session)),
+        display_name="failed.md",
+        media_type="text/markdown",
+    )
+    db_session.add(document)
+    await db_session.flush()
+    version = DocumentVersion(
+        document_id=document.id,
+        version_number=1,
+        checksum="a" * 64,
+        storage_path="failed.md",
+        state="staging",
+    )
+    db_session.add(version)
+    await db_session.flush()
+    job = IngestionJob(
+        document_id=document.id,
+        document_version_id=version.id,
+        stage="queued",
+        status="pending",
+        progress=0,
+        attempt_count=0,
+        request_id="provider-config-failure",
+    )
+    db_session.add(job)
+    await db_session.flush()
+
+    await _record_dispatch_failure(
+        db_session,
+        job.id,
+        ProviderConfigurationInvalid(),
+    )
+
+    assert job.status == "failed"
+    assert version.state == "failed"
+    assert job.error == {
+        "code": "provider_configuration_invalid",
+        "message": "Model provider configuration is invalid",
+        "retryable": False,
+        "details": None,
+    }
+
+
+async def _workspace_id(session: AsyncSession) -> UUID:
+    from decision_assistant.models import Workspace
+
+    workspace = Workspace(name="failure-workspace", embedding_profile=None)
+    session.add(workspace)
+    await session.flush()
+    return workspace.id
 
 
 @pytest_asyncio.fixture

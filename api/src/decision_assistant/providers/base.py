@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from enum import StrEnum
 from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -8,21 +9,52 @@ from decision_assistant.errors import ApplicationError
 ResponseModelT = TypeVar("ResponseModelT", bound=BaseModel)
 
 
+class EmbeddingPurpose(StrEnum):
+    DOCUMENT = "document"
+    QUERY = "query"
+
+
 @dataclass(frozen=True, slots=True)
 class EmbeddingProfile:
     provider: str
     model: str
     dimension: int
+    adapter_config_version: str
+
+    def as_dict(self) -> dict[str, str | int]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationProfile:
+    provider: str
+    model: str
+    api_version: str
+    sdk_version: str
+    temperature: int
+    schema_mode: str
+    prompt_contract_version: str
 
 
 class EmbeddingProvider(Protocol):
     @property
     def profile(self) -> EmbeddingProfile: ...
 
-    async def embed(self, texts: list[str]) -> list[list[float]]: ...
+    async def embed(
+        self,
+        texts: list[str],
+        *,
+        purpose: EmbeddingPurpose,
+    ) -> list[list[float]]: ...
 
 
 class GenerationProvider(Protocol):
+    @property
+    def profile(self) -> GenerationProfile: ...
+
+    @property
+    def max_prompt_characters(self) -> int: ...
+
     async def generate(
         self,
         prompt: str,
@@ -62,5 +94,64 @@ class ProviderResponseInvalid(ProviderError):
         super().__init__(
             code="provider_response_invalid",
             message=message,
+            retryable=False,
+        )
+
+
+class ProviderOutputInvalid(ProviderResponseInvalid):
+    """Locally received generation output failed JSON/schema validation."""
+
+
+
+class ProviderConfigurationInvalid(ProviderError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="provider_configuration_invalid",
+            message="Model provider configuration is invalid",
+            retryable=False,
+        )
+
+
+class ProviderAuthenticationFailed(ProviderError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="provider_authentication_failed",
+            message="Model provider authentication failed",
+            retryable=False,
+        )
+
+
+class ProviderRateLimited(ProviderError):
+    def __init__(self, *, retryable: bool = True) -> None:
+        super().__init__(
+            code="provider_rate_limited",
+            message="Model provider rate limit reached",
+            retryable=retryable,
+        )
+
+
+class ProviderQuotaExhausted(ProviderError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="provider_quota_exhausted",
+            message="Model provider quota exhausted",
+            retryable=False,
+        )
+
+
+class ProviderInputTooLarge(ProviderError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="provider_input_too_large",
+            message="Model provider input exceeds the configured limit",
+            retryable=False,
+        )
+
+
+class ProviderSchemaUnsupported(ProviderError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="provider_schema_unsupported",
+            message="Model provider does not support the response schema",
             retryable=False,
         )

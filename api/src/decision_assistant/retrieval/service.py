@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.errors import ApplicationError
 from decision_assistant.models import Passage, RetrievalTrace
-from decision_assistant.providers.base import EmbeddingProvider
+from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
 from decision_assistant.retrieval.repository import RankedPassage, RetrievalRepository
 from decision_assistant.retrieval.rrf import reciprocal_rank_fusion
 from decision_assistant.retrieval.schemas import (
@@ -14,6 +14,9 @@ from decision_assistant.retrieval.schemas import (
     RetrievalSearchRequest,
     RetrievalSearchResponse,
     RetrievalTraceResponse,
+)
+from decision_assistant.workspace.embedding_migration import (
+    require_current_embedding_profile,
 )
 
 
@@ -66,12 +69,22 @@ class HybridRetrievalService:
     ) -> RetrievalSearchResponse:
         total_started = perf_counter()
         normalized_question = request.question.lower()
-        embedding = (await self._embedding_provider.embed([normalized_question]))[0]
+        await require_current_embedding_profile(
+            self._session,
+            self._embedding_provider.profile,
+        )
+        embedding = (
+            await self._embedding_provider.embed(
+                [normalized_question],
+                purpose=EmbeddingPurpose.QUERY,
+            )
+        )[0]
 
         semantic_started = perf_counter()
         semantic = await self._repository.semantic_search(
             embedding,
             request.filters,
+            embedding_profile=self._embedding_provider.profile.as_dict(),
             limit=self._config.semantic_limit,
         )
         semantic_ms = _elapsed_ms(semantic_started)

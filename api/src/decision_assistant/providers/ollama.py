@@ -1,4 +1,5 @@
 import asyncio
+import math
 from typing import Any
 
 import httpx
@@ -6,6 +7,10 @@ from pydantic import ValidationError
 
 from decision_assistant.providers.base import (
     EmbeddingProfile,
+    EmbeddingPurpose,
+    GenerationProfile,
+    ProviderOutputInvalid,
+    ProviderInputTooLarge,
     ProviderResponseInvalid,
     ProviderUnavailable,
     ResponseModelT,
@@ -101,15 +106,21 @@ class OllamaEmbeddingProvider(_OllamaAdapter):
             provider="ollama",
             model=model,
             dimension=dimension,
+            adapter_config_version="ollama-native-v1",
         )
 
     @property
     def profile(self) -> EmbeddingProfile:
         return self._profile
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(
+        self,
+        texts: list[str],
+        *,
+        purpose: EmbeddingPurpose,
+    ) -> list[list[float]]:
         if not texts:
-            return []
+            raise ValueError("Embedding input must contain at least one text")
 
         result = await self._post(
             "/api/embed",
@@ -123,7 +134,12 @@ class OllamaEmbeddingProvider(_OllamaAdapter):
         for vector in embeddings:
             if not isinstance(vector, list) or len(vector) != self.profile.dimension:
                 raise ProviderResponseInvalid("Ollama returned wrong embedding dimension")
-            if any(not isinstance(value, (int, float)) or isinstance(value, bool) for value in vector):
+            if any(
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(value)
+                for value in vector
+            ):
                 raise ProviderResponseInvalid("Ollama returned non-numeric embedding")
             validated.append([float(value) for value in vector])
         return validated
@@ -138,6 +154,7 @@ class OllamaGenerationProvider(_OllamaAdapter):
         retry_count: int = 2,
         timeout_seconds: float = 120.0,
         retry_backoff_seconds: float = 0.25,
+        max_prompt_characters: int = 100_000,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         super().__init__(
@@ -148,12 +165,32 @@ class OllamaGenerationProvider(_OllamaAdapter):
             transport=transport,
         )
         self._model = model
+        self._max_prompt_characters = max_prompt_characters
+        self._profile = GenerationProfile(
+            provider="ollama",
+            model=model,
+            api_version="/api/chat",
+            sdk_version="httpx-0.28.1",
+            temperature=0,
+            schema_mode="json_schema",
+            prompt_contract_version="ollama-json-v1",
+        )
+
+    @property
+    def profile(self) -> GenerationProfile:
+        return self._profile
+
+    @property
+    def max_prompt_characters(self) -> int:
+        return self._max_prompt_characters
 
     async def generate(
         self,
         prompt: str,
         response_model: type[ResponseModelT],
     ) -> ResponseModelT:
+        if len(prompt) > self.max_prompt_characters:
+            raise ProviderInputTooLarge()
         result = await self._post(
             "/api/chat",
             {
@@ -174,4 +211,4 @@ class OllamaGenerationProvider(_OllamaAdapter):
                 raise TypeError
             return response_model.model_validate_json(content)
         except (KeyError, TypeError, ValueError, ValidationError) as exc:
-            raise ProviderResponseInvalid() from exc
+            raise ProviderOutputInvalid() from None

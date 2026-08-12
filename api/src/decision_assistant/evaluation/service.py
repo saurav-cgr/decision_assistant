@@ -1,5 +1,6 @@
 import json
 from collections.abc import Mapping
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
@@ -40,8 +41,10 @@ from decision_assistant.models import (
 )
 from decision_assistant.providers.base import (
     EmbeddingProvider,
+    EmbeddingPurpose,
     GenerationProvider,
 )
+from decision_assistant.providers.orchestration import generate_with_repair
 from decision_assistant.retrieval.repository import RetrievalRepository
 from decision_assistant.retrieval.schemas import (
     RetrievalResult,
@@ -51,6 +54,9 @@ from decision_assistant.retrieval.schemas import (
 from decision_assistant.retrieval.service import (
     HybridRetrievalService,
     RetrievalConfig,
+)
+from decision_assistant.workspace.embedding_migration import (
+    require_current_embedding_profile,
 )
 
 CLAIM_JUDGE_PROMPT_VERSION = "claim-support-v1"
@@ -109,6 +115,13 @@ class EvaluationService:
         self._dataset_path = dataset_path
         self._executor = executor
         self._judge = judge
+        self._embedding_profile = dict(
+            getattr(executor, "embedding_profile", {})
+        )
+        self._generation_profile = dict(
+            getattr(executor, "generation_profile", {})
+        )
+        self._judge_profile = dict(getattr(judge, "profile", {}))
 
     async def create_run(self, request: EvaluationRunRequest) -> EvaluationRun:
         dataset = self._load_dataset()
@@ -127,9 +140,9 @@ class EvaluationService:
             failure=None,
             configuration=request.configuration,
             dataset_version=dataset.version,
-            generation_profile=request.generation_profile,
-            embedding_profile=request.embedding_profile,
-            judge_profile=request.judge_profile,
+            generation_profile=self._generation_profile,
+            embedding_profile=self._embedding_profile,
+            judge_profile=self._judge_profile,
             aggregate_metrics=None,
         )
         self._session.add(run)
@@ -627,6 +640,10 @@ class GenerationClaimJudge:
     def __init__(self, provider: GenerationProvider) -> None:
         self._provider = provider
 
+    @property
+    def profile(self) -> dict[str, Any]:
+        return asdict(self._provider.profile)
+
     async def judge(
         self,
         prompt: str,
@@ -634,7 +651,11 @@ class GenerationClaimJudge:
         profile: dict[str, Any],
     ) -> dict[str, Any]:
         del profile
-        result = await self._provider.generate(prompt, ClaimJudgeOutput)
+        result = await generate_with_repair(
+            self._provider,
+            prompt,
+            ClaimJudgeOutput,
+        )
         return result.model_dump(mode="json")
 
 
@@ -649,6 +670,14 @@ class RuntimeEvaluationExecutor:
         self._session = session
         self._embedding_provider = embedding_provider
         self._generation_provider = generation_provider
+
+    @property
+    def embedding_profile(self) -> dict[str, Any]:
+        return asdict(self._embedding_provider.profile)
+
+    @property
+    def generation_profile(self) -> dict[str, Any]:
+        return asdict(self._generation_provider.profile)
 
     async def execute(
         self,
@@ -763,10 +792,20 @@ class SemanticRetrievalService:
     ) -> RetrievalSearchResponse:
         started = perf_counter()
         normalized = request.question.lower()
-        embedding = (await self._embedding_provider.embed([normalized]))[0]
+        await require_current_embedding_profile(
+            self._session,
+            self._embedding_provider.profile,
+        )
+        embedding = (
+            await self._embedding_provider.embed(
+                [normalized],
+                purpose=EmbeddingPurpose.QUERY,
+            )
+        )[0]
         ranked = await self._repository.semantic_search(
             embedding,
             request.filters,
+            embedding_profile=self._embedding_provider.profile.as_dict(),
             limit=self._top_k,
         )
         elapsed_ms = round((perf_counter() - started) * 1_000, 3)

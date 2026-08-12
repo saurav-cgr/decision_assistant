@@ -1,0 +1,13 @@
+services:
+  api:
+    environment:
+      GEMINI_API_KEY: ""
+    command:
+      - uvicorn
+      - tests.smoke_app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "1"

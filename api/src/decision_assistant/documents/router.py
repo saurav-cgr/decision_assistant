@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -15,11 +16,13 @@ from decision_assistant.documents.schemas import (
     UploadBatchResponse,
 )
 from decision_assistant.documents.service import DocumentService, IngestionDispatcher
+from decision_assistant.errors import ApplicationError
 from decision_assistant.ingestion.metadata import MetadataExtractor
 from decision_assistant.ingestion.service import IngestionService
-from decision_assistant.providers.ollama import (
-    OllamaEmbeddingProvider,
-    OllamaGenerationProvider,
+from decision_assistant.models import DocumentVersion, IngestionJob
+from decision_assistant.providers.factory import (
+    ProviderBundleFactory,
+    get_provider_bundle_factory,
 )
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
@@ -30,8 +33,13 @@ def get_runtime_settings(request: Request) -> Settings:
 
 
 class LocalIngestionDispatcher:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        provider_factory: ProviderBundleFactory,
+    ) -> None:
         self._settings = settings
+        self._provider_factory = provider_factory
 
     async def dispatch(
         self,
@@ -41,46 +49,79 @@ class LocalIngestionDispatcher:
         source_path: Path,
         request_id: str,
     ) -> None:
-        generation_provider = OllamaGenerationProvider(
-            base_url=self._settings.ollama_base_url,
-            model=self._settings.ollama_generation_model,
-            retry_count=self._settings.model_retry_count,
-            timeout_seconds=self._settings.model_timeout_seconds,
-        )
-        embedding_provider = OllamaEmbeddingProvider(
-            base_url=self._settings.ollama_base_url,
-            model=self._settings.ollama_embedding_model,
-            dimension=self._settings.ollama_embedding_dimension,
-            retry_count=self._settings.model_retry_count,
-            timeout_seconds=self._settings.model_timeout_seconds,
-        )
         async with session_factory() as session:
-            service = IngestionService(
-                session=session,
-                embedding_provider=embedding_provider,
-                decision_extractor=DecisionExtractor(generation_provider),
-                metadata_extractor=MetadataExtractor(generation_provider),
-                upload_directory=self._settings.upload_directory,
-            )
             try:
+                providers = self._provider_factory()
+                service = IngestionService(
+                    session=session,
+                    embedding_provider=providers.embedding,
+                    decision_extractor=DecisionExtractor(
+                        providers.generation,
+                        max_prompt_characters=self._settings.gemini_max_prompt_characters,
+                    ),
+                    metadata_extractor=MetadataExtractor(providers.generation),
+                    upload_directory=self._settings.upload_directory,
+                )
                 await service.ingest(
                     document_id,
                     source_path,
                     request_id=request_id,
                     job_id=job_id,
                 )
-            except Exception:
+            except Exception as exc:
+                await _record_dispatch_failure(session, job_id, exc)
                 await session.commit()
                 return
             await session.commit()
 
 
+async def _record_dispatch_failure(
+    session: AsyncSession,
+    job_id: UUID,
+    error: Exception,
+) -> None:
+    job = await session.get(IngestionJob, job_id)
+    if job is None:
+        return
+    if isinstance(error, ApplicationError):
+        payload = {
+            "code": error.code,
+            "message": error.message,
+            "retryable": error.retryable,
+            "details": None,
+        }
+    else:
+        payload = {
+            "code": "ingestion_failed",
+            "message": "Document ingestion failed",
+            "retryable": False,
+            "details": None,
+        }
+    job.stage = "failed"
+    job.status = "failed"
+    job.error = payload
+    job.finished_at = datetime.now(timezone.utc)
+    if job.document_version_id is not None:
+        version = await session.get(DocumentVersion, job.document_version_id)
+        if version is not None and version.state in {"staging", "failed"}:
+            version.state = "failed"
+            version.error = payload
+    await session.flush()
+
+
 def get_document_service(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
+    provider_factory: Annotated[
+        ProviderBundleFactory,
+        Depends(get_provider_bundle_factory),
+    ],
 ) -> DocumentService:
     settings = get_runtime_settings(request)
-    dispatcher: IngestionDispatcher = LocalIngestionDispatcher(settings)
+    dispatcher: IngestionDispatcher = LocalIngestionDispatcher(
+        settings,
+        provider_factory,
+    )
     return DocumentService(
         session=session,
         settings=settings,

@@ -1,4 +1,4 @@
-.PHONY: build up down logs test-api test-web migrate models smoke
+.PHONY: build up down logs test-api test-web migrate smoke
 
 build:
 	docker compose build
@@ -20,11 +20,6 @@ test-web:
 
 migrate:
 	docker compose run --rm api alembic upgrade head
-
-models:
-	docker compose up -d ollama --wait
-	docker compose exec ollama sh -lc 'ollama pull "$$OLLAMA_GENERATION_MODEL"'
-	docker compose exec ollama sh -lc 'ollama pull "$$OLLAMA_EMBEDDING_MODEL"'
 
 smoke:
 	bash scripts/smoke.sh
