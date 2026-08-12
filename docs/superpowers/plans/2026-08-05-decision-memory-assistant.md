@@ -1203,9 +1203,36 @@ git add scripts/smoke.sh scripts/smoke.py README.md .env.example Makefile
 git commit -m "docs: complete local MVP verification and demo"
 ```
 
+## Approved Next Product Direction: Multi-Workspace Project Isolation
+
+**Status:** Planned only. Do not implement until the P1 boundary and a focused multi-workspace design/specification are reviewed and approved.
+
+The next product increment will support multiple workspaces with the invariant **one workspace represents exactly one project**. A workspace is the isolation boundary for its documents, document versions, passages, decisions, evidence, decision relations, revisions, user corrections, timelines, retrieval traces, embedding profile, and evaluation runs. The existing single workspace becomes the first project workspace through a backwards-compatible data migration; existing source records and user corrections must not be recreated or rewritten.
+
+The focused design and implementation plan must cover:
+
+- workspace create, list, rename, select, archive/delete policy, and empty-state behavior;
+- an explicit workspace context on every project-data API operation, while retaining `/api/v1` versioning;
+- mandatory workspace predicates in document, decision, relation, revision, correction, timeline, retrieval, answering, ingestion, migration, and evaluation read/write paths;
+- workspace-scoped uniqueness, storage paths, background jobs, advisory locks, embedding-profile checks, and retrieval traces;
+- a frontend workspace selector and clear display of the active project workspace;
+- migration of the current implicit workspace without document, decision, evidence, or citation loss;
+- deterministic isolation tests proving that identical filenames/topics can exist in two workspaces and that neither keyword, semantic, decision, relation, revision, correction, timeline, citation, trace, nor evaluation reads or writes leak across them;
+- authorization explicitly remaining out of scope: workspace isolation is application-level project separation for one local user, not security-grade multi-tenancy.
+
+Minimum acceptance evidence:
+
+1. Create two project workspaces and ingest different documents into each.
+2. Ask the same question in both workspaces and receive only workspace-local evidence and citations.
+3. Show independent decision timelines and evaluation results for each workspace.
+4. Change or migrate one workspace's embedding profile without blocking or modifying the other.
+5. Restart the Compose stack and retain both workspaces and their isolated data; active-workspace selection persistence remains a P1 design decision.
+
+Open boundary decisions—API workspace addressing, active-workspace persistence, archive versus delete semantics, workspace naming/identity rules, and whether legacy `project` metadata is removed, derived, or retained—belong to the upcoming P1 design review. They are deliberately not decided by this amendment.
+
 ## P1 Boundary
 
-P1 enhancements are not part of this implementation plan. After P0 verification, any measured enhancement requires its own focused plan containing the failing benchmark/test, exact affected files, and expected metric change. Do not spend the remaining 1-hour P0 contingency on speculative P1 work.
+P1 enhancements, including multi-workspace support, are not part of the completed single-workspace MVP implementation. After P0 verification, multi-workspace receives its own design/specification and focused implementation plan with exact affected files, migration strategy, RED tests, and verification commands. Other measured enhancements likewise require a focused plan containing the failing benchmark/test and expected metric change. Do not use the remaining P0 contingency for speculative P1 implementation.
 
 ## Milestone Checkpoints
 
@@ -1215,6 +1242,7 @@ P1 enhancements are not part of this implementation plan. After P0 verification,
 4. **Complete product:** Tasks 15–20; all five screens and benchmark corpus work.
 5. **Provider migration:** Task 21A; Gemini is the default, embedding spaces are protected, and deterministic tests remain offline.
 6. **Portfolio handoff:** Task 21; Docker, metrics, README, and demo are verified.
+7. **Next product increment:** multi-workspace project isolation; planned now, implemented only after its P1 boundary and focused design are approved.
 
 Stop at each checkpoint, run its named tests, and review elapsed time against the 50-hour budget. Omit P1 if the P0 forecast exceeds the remaining budget.
 
