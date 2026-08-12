@@ -3,11 +3,36 @@ from pathlib import Path
 import pytest
 from pypdf import PdfReader, PdfWriter
 
-from decision_assistant.ingestion.parsers import DocumentParseError, parse_document
+from decision_assistant.ingestion.parsers import (
+    DocumentParseError,
+    _reconstruct_pdf_lines,
+    parse_document,
+)
 
 
 TEXT_PDF = Path("tests/fixtures/text.pdf")
 SCANNED_EMPTY_PDF = Path("tests/fixtures/scanned-empty.pdf")
+
+
+def test_pdf_line_reconstruction_joins_wrapped_sentences() -> None:
+    wrapped = (
+        "Public authentication is active for Q3 and Marco Silva owns the rollout. Status:\n"
+        "active.\n"
+        "This statement conflicts with the approved July 8 decision memo, which limits access to an\n"
+        "employee-only beta and keeps the public rollout postponed.\n"
+        "Offline model packaging\n"
+        "Decision: Do not bundle Ollama model weights in the application images. Status: active. Dana Wu\n"
+        "owns setup documentation.\n"
+    )
+
+    reconstructed = _reconstruct_pdf_lines(wrapped)
+
+    assert "owns the rollout. Status: active." in reconstructed
+    assert "limits access to an employee-only beta" in reconstructed
+    assert "Dana Wu owns setup documentation." in reconstructed
+    # A heading (capitalized, short) must not be joined onto the prior line.
+    assert "\nOffline model packaging\nDecision:" in reconstructed
+
 
 
 def test_pdf_parser_preserves_page_numbers_and_offsets() -> None:

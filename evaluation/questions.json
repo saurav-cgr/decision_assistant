@@ -305,7 +305,7 @@
       "expected_passages": [
         {
           "document": "01-product-plan.md",
-          "quote": "Slack, Notion, and Google Drive connectors are postponed until after the local-file MVP.",
+          "quote": "Decision: Slack, Notion, and Google Drive connectors are postponed until after the local-file MVP. Status: active. Elena Park owns scope.",
           "locator": {"kind": "lines", "start": 31, "end": 31}
         },
         {

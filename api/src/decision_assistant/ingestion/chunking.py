@@ -114,6 +114,18 @@ def _locator_for_range(
         for block in blocks
         if block.start_offset < end and block.end_offset > start
     ]
+    kind = covered[0].locator.get("kind", "lines")
+    if kind == "pdf_page":
+        pages = sorted(
+            {int(block.locator["page"]) for block in covered}
+        )
+        return {"kind": "pdf_page", "page": pages[0]}
+    if kind == "docx_paragraphs":
+        return {
+            "kind": "docx_paragraphs",
+            "start": int(covered[0].locator["start"]),
+            "end": int(covered[-1].locator["end"]),
+        }
     return {
         "kind": "lines",
         "start": int(covered[0].locator["start"]),

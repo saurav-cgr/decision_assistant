@@ -33,3 +33,25 @@ def test_chunks_respect_boundaries_size_and_source_locators() -> None:
     assert all(chunk.start_offset < chunk.end_offset for chunk in chunks)
     assert all(chunk.locator["kind"] == "lines" for chunk in chunks)
     assert all(chunk.locator["start"] <= chunk.locator["end"] for chunk in chunks)
+
+
+def test_chunking_preserves_pdf_page_locator_kind() -> None:
+    pdf = parse_document(Path("tests/fixtures/text.pdf"))
+
+    chunks = chunk_document(pdf, max_characters=240)
+
+    assert chunks
+    assert all(chunk.locator["kind"] == "pdf_page" for chunk in chunks)
+    assert all("page" in chunk.locator for chunk in chunks)
+
+
+def test_chunking_preserves_docx_paragraph_locator_kind() -> None:
+    docx = parse_document(Path("tests/fixtures/decision.docx"))
+
+    chunks = chunk_document(docx, max_characters=240)
+
+    assert chunks
+    assert all(chunk.locator["kind"] == "docx_paragraphs" for chunk in chunks)
+    assert all(
+        chunk.locator["start"] <= chunk.locator["end"] for chunk in chunks
+    )

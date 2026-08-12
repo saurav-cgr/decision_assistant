@@ -96,7 +96,9 @@ def _parse_pdf_document(path: Path) -> ParsedDocument:
             )
         source_blocks = [
             (
-                _normalize_extracted_text(page.extract_text() or ""),
+                _normalize_extracted_text(
+                    _reconstruct_pdf_lines(page.extract_text() or "")
+                ),
                 {"kind": "pdf_page", "page": page_number},
             )
             for page_number, page in enumerate(reader.pages, start=1)
@@ -206,6 +208,29 @@ def _normalize_extracted_text(text: str) -> str:
     while lines and not lines[-1].strip():
         lines.pop()
     return "\n".join(lines)
+
+
+def _reconstruct_pdf_lines(text: str) -> str:
+    """Rejoin PDF line-wraps so sentences are not broken by hard newlines.
+
+    PDF text extraction inserts a newline wherever a line wraps. A wrapped
+    continuation almost always starts with a lowercase letter, while a new
+    heading, label, or sentence starts with a capital. Join a line onto the
+    previous one when the next line begins lowercase. Blank lines are kept as
+    paragraph separators.
+    """
+    joined: list[str] = []
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            if joined and joined[-1].strip():
+                joined.append("")
+            continue
+        if joined and joined[-1].strip() and stripped[0].islower():
+            joined[-1] = f"{joined[-1]} {stripped}"
+        else:
+            joined.append(raw_line)
+    return "\n".join(joined)
 
 
 def _collect_blocks(lines: list[str]) -> list[tuple[int, int, str]]:
