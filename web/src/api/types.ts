@@ -299,3 +299,17 @@ export type EvaluationRun = EvaluationRunRequest & {
   completed_at: string | null;
   results: EvaluationResult[];
 };
+
+export type EvaluationRunSummary = {
+  id: string;
+  strategy: EvaluationStrategy;
+  status: "pending" | "running" | "completed" | "failed";
+  completed_questions: number;
+  total_questions: number;
+  failure: Record<string, unknown> | null;
+  dataset_version: string;
+  aggregate_metrics: EvaluationMetrics | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+};

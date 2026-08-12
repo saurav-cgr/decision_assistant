@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { getEvaluationRun, startEvaluationRun } from "../api/client";
+import { getEvaluationRun, listEvaluationRuns, startEvaluationRun } from "../api/client";
 import type {
   EvaluationRun,
   EvaluationRunRequest,
@@ -44,15 +44,47 @@ export function Evaluation() {
   );
   const mounted = useRef(true);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // React StrictMode double-mounts in dev; re-arm the flag on each mount so
+    // the async start/load handlers don't silently bail after their first await.
+    mounted.current = true;
+    return () => {
       mounted.current = false;
       for (const timer of Object.values(timers.current)) {
         if (timer !== undefined) clearTimeout(timer);
       }
-    },
-    [],
-  );
+    };
+  }, []);
+
+  // Load the most recent run for each strategy so past results remain visible
+  // after a reload, instead of showing only the start buttons.
+  useEffect(() => {
+    const loadExisting = async () => {
+      try {
+        const summaries = await listEvaluationRuns();
+        if (!mounted.current) return;
+        const loadFor = async (strategy: EvaluationStrategy) => {
+          const summary = summaries.find((item) => item.strategy === strategy);
+          if (!summary) return;
+          const run = await getEvaluationRun(summary.id);
+          if (!mounted.current) return;
+          setRuns((current) => ({ ...current, [strategy]: run }));
+          if (isActive(run)) schedulePoll(strategy, run.id);
+        };
+        await Promise.all([loadFor("semantic"), loadFor("hybrid")]);
+      } catch (caught) {
+        if (mounted.current) {
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "Evaluation history could not be loaded.",
+          );
+        }
+      }
+    };
+    void loadExisting();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const schedulePoll = (strategy: EvaluationStrategy, runId: string) => {
     timers.current[strategy] = setTimeout(async () => {

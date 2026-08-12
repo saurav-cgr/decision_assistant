@@ -29,6 +29,7 @@ from decision_assistant.evaluation.schemas import (
     EvaluationResultResponse,
     EvaluationRunRequest,
     EvaluationRunResponse,
+    EvaluationRunSummaryResponse,
 )
 from decision_assistant.models import (
     Document,
@@ -268,6 +269,36 @@ class EvaluationService:
                 )
                 for result, question in rows
             ],
+        )
+
+    async def list_runs(
+        self,
+        *,
+        limit: int = 10,
+    ) -> list[EvaluationRunSummaryResponse]:
+        runs = list(
+            await self._session.scalars(
+                select(EvaluationRun)
+                .order_by(EvaluationRun.created_at.desc())
+                .limit(limit)
+            )
+        )
+        return [self._to_summary(run) for run in runs]
+
+    @staticmethod
+    def _to_summary(run: EvaluationRun) -> EvaluationRunSummaryResponse:
+        return EvaluationRunSummaryResponse(
+            id=run.id,
+            strategy=run.strategy,
+            status=run.status,
+            completed_questions=run.completed_questions,
+            total_questions=run.total_questions,
+            failure=run.failure,
+            dataset_version=run.dataset_version,
+            aggregate_metrics=run.aggregate_metrics,
+            started_at=run.started_at,
+            completed_at=run.completed_at,
+            created_at=run.created_at,
         )
 
     async def _successful_result(

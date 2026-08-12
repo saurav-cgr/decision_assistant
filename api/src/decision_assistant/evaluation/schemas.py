@@ -92,3 +92,19 @@ class EvaluationRunResponse(EvaluationModel):
     started_at: datetime | None
     completed_at: datetime | None
     results: list[EvaluationResultResponse] = Field(default_factory=list)
+
+
+class EvaluationRunSummaryResponse(EvaluationModel):
+    """Lightweight run metadata without per-question results."""
+
+    id: UUID
+    strategy: Literal["semantic", "hybrid"]
+    status: Literal["pending", "running", "completed", "failed"]
+    completed_questions: int
+    total_questions: int
+    failure: dict[str, Any] | None
+    dataset_version: str
+    aggregate_metrics: dict[str, Any] | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    created_at: datetime

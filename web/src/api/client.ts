@@ -8,6 +8,7 @@ import type {
   DocumentListResponse,
   EvaluationRun,
   EvaluationRunRequest,
+  EvaluationRunSummary,
   QuestionResponse,
   RetrievalTraceResponse,
   RetryResponse,
@@ -123,6 +124,14 @@ export function startEvaluationRun(
 export function getEvaluationRun(runId: string): Promise<EvaluationRun> {
   return apiRequest<EvaluationRun>(
     `/evaluations/runs/${encodeURIComponent(runId)}`,
+  );
+}
+
+export function listEvaluationRuns(
+  limit = 10,
+): Promise<EvaluationRunSummary[]> {
+  return apiRequest<EvaluationRunSummary[]>(
+    `/evaluations/runs?limit=${encodeURIComponent(String(limit))}`,
   );
 }
 

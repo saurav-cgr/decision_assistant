@@ -9,6 +9,7 @@ from decision_assistant.db import get_session, session_factory
 from decision_assistant.evaluation.schemas import (
     EvaluationRunRequest,
     EvaluationRunResponse,
+    EvaluationRunSummaryResponse,
 )
 from decision_assistant.evaluation.service import (
     EvaluationService,
@@ -92,6 +93,14 @@ def get_evaluation_background_runner(
         request.app.state.settings,
         provider_factory,
     )
+
+
+@router.get("/runs", response_model=list[EvaluationRunSummaryResponse])
+async def list_runs(
+    service: Annotated[EvaluationService, Depends(get_evaluation_service)],
+    limit: int = 10,
+) -> list[EvaluationRunSummaryResponse]:
+    return await service.list_runs(limit=limit)
 
 
 @router.post(
