@@ -97,13 +97,14 @@ class AnswerVerifier:
             missing = [
                 passage_id
                 for passage_id in conflict.passage_ids
-                if passage_id not in valid_cited_ids
+                if passage_id not in passages
+                or not passages[passage_id].active_version
             ]
             if missing:
                 errors.append(
                     VerificationError(
                         code="conflict_citation_invalid",
-                        message="Conflict references evidence that did not verify",
+                        message="Conflict references evidence not in the active evidence pack",
                         passage_id=missing[0],
                     )
                 )

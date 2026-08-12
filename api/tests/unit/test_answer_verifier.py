@@ -214,6 +214,38 @@ def test_verifier_returns_conflict_with_both_citations() -> None:
     assert result.conflicts[0].passage_ids == [PASSAGE_ID, SECOND_PASSAGE_ID]
 
 
+def test_verifier_accepts_app_detected_conflict_citing_evidence_pack_passage() -> (
+    None
+):
+    second_content = "Priya Nair owns authentication readiness."
+    answer = generated_answer(
+        citations=[citation()],
+        conflicts=[
+            EvidenceConflict(
+                facet="owner",
+                passage_ids=[PASSAGE_ID, SECOND_PASSAGE_ID],
+            )
+        ],
+    )
+
+    result = AnswerVerifier().verify(
+        answer,
+        {
+            PASSAGE_ID: evidence_passage(),
+            SECOND_PASSAGE_ID: evidence_passage(
+                SECOND_PASSAGE_ID,
+                content=second_content,
+            ),
+        },
+    )
+
+    # An app-detected conflict may cite a second evidence-pack passage that the
+    # model did not quote. That is competing evidence to display, not a failure.
+    assert result.valid is True
+    assert result.state == AnswerState.CONFLICTED
+    assert result.conflicts[0].passage_ids == [PASSAGE_ID, SECOND_PASSAGE_ID]
+
+
 def test_verifier_returns_partial_when_only_some_facets_are_supported() -> None:
     result = AnswerVerifier().verify(
         generated_answer(unsupported_facets=["who changed it later"]),
