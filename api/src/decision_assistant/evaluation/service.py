@@ -4,7 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Protocol
+from typing import Any, Protocol, Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -485,6 +485,19 @@ class EvaluationService:
                 and isinstance(locator, dict)
                 and self._locator_covers(passage.locator, locator)
             ]
+            if not matches:
+                raise FatalEvaluationError(
+                    code="dataset_reference_unresolved",
+                    message=(
+                        f"Gold passage for {question.external_id} did not resolve "
+                        f"in {document.display_name}"
+                    ),
+                )
+            # Overlapping chunks share boundary lines, so a gold locator on a
+            # boundary can be covered by more than one passage. Resolve to the
+            # most specific (smallest) covering range; anything else is genuine
+            # ambiguity.
+            matches = self._narrow_passage_matches(matches)
             if len(matches) != 1:
                 raise FatalEvaluationError(
                     code="dataset_reference_unresolved",
@@ -549,6 +562,41 @@ class EvaluationService:
             and passage_start <= gold_start
             and passage_end >= gold_end
         )
+
+    @staticmethod
+    def _locator_span(passage_locator: Mapping[str, Any]) -> int:
+        """Return the span of a passage locator (smaller = more specific).
+
+        pdf_page locators match on page identity, so every candidate is equally
+        specific; return 0 so page-based resolution is unchanged.
+        """
+        if passage_locator.get("kind") == "pdf_page":
+            return 0
+        start = passage_locator.get("start")
+        end = passage_locator.get("end")
+        if not isinstance(start, int) or not isinstance(end, int):
+            return 0
+        return end - start
+
+    @staticmethod
+    def _narrow_passage_matches(matches: Sequence[Passage]) -> Sequence[Passage]:
+        """Prefer the most specific passage among overlapping-chunk matches.
+
+        Overlapping chunks share boundary lines, so a gold locator on a boundary
+        is covered by more than one passage. Keep only the passages with the
+        smallest locator span; callers treat any non-singleton result as
+        unresolved ambiguity.
+        """
+        if len(matches) <= 1:
+            return matches
+        min_span = min(
+            EvaluationService._locator_span(passage.locator) for passage in matches
+        )
+        return [
+            passage
+            for passage in matches
+            if EvaluationService._locator_span(passage.locator) == min_span
+        ]
 
     def _load_dataset(self) -> EvaluationDataset:
         try:
