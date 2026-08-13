@@ -9,8 +9,8 @@ Create a synthetic, connected corpus for exercising Decision Memory Assistant in
 Place final artifacts in `test_corpus/cgr_foundation_connected/`.
 
 - Exactly 10 ingestible documents: 3 Markdown, 3 plain text, 2 DOCX, and 2 PDF.
-- One corpus guide outside the 10-document count. It will list expected decisions, conflicts, supersessions, and deliberately unsupported questions.
-- One MD5 checksum manifest outside the 10-document count for file-integrity testing.
+- One `GROUND_TRUTH.json` guide outside the 10-document count. It will list expected decisions, conflicts, supersessions, and deliberately unsupported questions. JSON is intentionally unsupported by the application's document uploader, preventing accidental ingestion as an eleventh source.
+- One `checksums.md5` manifest outside the 10-document count for file-integrity testing. Its checksum extension is also unsupported by the document uploader.
 - Stable, descriptive filenames prefixed `01` through `10` so chronological order is visible.
 
 The user's reference to "md5" is treated as Markdown plus a conventional `.md5` checksum manifest. The application itself accepts `.md`, `.txt`, `.docx`, and `.pdf`.
@@ -81,7 +81,7 @@ Documents will resemble varied workplace artifacts: meeting notes, proposals, wo
 - Render every DOCX and PDF page to PNG and visually inspect for clipping, overlap, broken tables, missing glyphs, and page-number defects.
 - Verify expected decision phrases and cross-document entities are present.
 - Generate MD5 checksums after final artifacts stabilize, then independently verify them.
-- Ensure the corpus guide distinguishes expected ground truth from document content and is not included in the 10 ingestible-document count.
+- Confirm the only uploader-supported files in the output directory are the 10 numbered corpus documents; `GROUND_TRUTH.json` and `checksums.md5` remain non-ingestible support artifacts.
 
 ## Success Criteria
 
