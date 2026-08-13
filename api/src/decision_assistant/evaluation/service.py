@@ -186,7 +186,10 @@ class EvaluationService:
         questions = list(
             await self._session.scalars(
                 select(EvaluationQuestion)
-                .where(EvaluationQuestion.dataset_version == run.dataset_version)
+                .where(
+                    EvaluationQuestion.dataset_version == run.dataset_version,
+                    EvaluationQuestion.workspace_id == run.workspace_id,
+                )
                 .order_by(EvaluationQuestion.external_id)
             )
         )
@@ -203,6 +206,7 @@ class EvaluationService:
                     run_id=run.id,
                     strategy=run.strategy,
                     configuration=run.configuration,
+                    workspace_id=run.workspace_id,
                 )
                 result = await self._successful_result(
                     run,
@@ -799,6 +803,7 @@ class RuntimeEvaluationExecutor:
         run_id: UUID,
         strategy: str,
         configuration: dict[str, Any],
+        workspace_id: UUID,
     ) -> dict[str, Any]:
         started = perf_counter()
         top_k = int(configuration.get("top_k", 5))
@@ -823,6 +828,7 @@ class RuntimeEvaluationExecutor:
         answer = await answer_service.answer(
             QuestionRequest(question=question.question),
             request_id=f"evaluation:{run_id}:{question.external_id}",
+            workspace_id=workspace_id,
         )
         trace = await self._session.get(RetrievalTrace, answer.trace_id)
         retrieved_ids = trace.selected_passage_ids if trace is not None else []
@@ -902,12 +908,18 @@ class SemanticRetrievalService:
         request: RetrievalSearchRequest,
         *,
         request_id: str,
+        workspace_id: UUID | None = None,
     ) -> RetrievalSearchResponse:
         started = perf_counter()
+        if workspace_id is None:
+            workspace_id = (
+                await WorkspaceService(self._session).get_or_create_active()
+            ).id
         normalized = request.question.lower()
         await require_current_embedding_profile(
             self._session,
             self._embedding_provider.profile,
+            workspace_id=workspace_id,
         )
         embedding = (
             await self._embedding_provider.embed(
@@ -920,9 +932,11 @@ class SemanticRetrievalService:
             request.filters,
             embedding_profile=self._embedding_provider.profile.as_dict(),
             limit=self._top_k,
+            workspace_id=workspace_id,
         )
         elapsed_ms = round((perf_counter() - started) * 1_000, 3)
         trace = RetrievalTrace(
+            workspace_id=workspace_id,
             request_id=request_id,
             normalized_question=normalized,
             filters=request.filters.model_dump(mode="json", exclude_none=True),

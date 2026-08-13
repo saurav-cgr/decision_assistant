@@ -119,6 +119,7 @@ class RecordingExecutor:
         run_id: UUID,
         strategy: str,
         configuration: dict[str, Any],
+        workspace_id: UUID,
     ) -> dict[str, Any]:
         run = await self.session.get(EvaluationRun, run_id)
         assert run is not None
