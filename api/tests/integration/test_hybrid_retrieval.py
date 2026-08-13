@@ -185,6 +185,7 @@ async def test_vector_query_filters_active_versions_by_configured_passage_profil
         RetrievalFilters(),
         embedding_profile=EMBEDDING_PROFILE,
         limit=10,
+        workspace_id=workspace.id,
     )
 
     assert [result.passage.id for result in results] == [matching.id]
@@ -241,6 +242,7 @@ async def test_hybrid_retrieval_caps_sources_and_excludes_retired_versions(
     result = await service.search(
         RetrievalSearchRequest(question="authentication"),
         request_id="retrieval-1",
+        workspace_id=workspace.id,
     )
     trace = await db_session.get(RetrievalTrace, result.trace_id)
 
@@ -329,6 +331,7 @@ async def test_explicit_metadata_filters_apply_before_ranking(
             ),
         ),
         request_id="retrieval-filtered",
+        workspace_id=workspace.id,
     )
 
     assert [item.passage_id for item in result.results] == [passages["match.md"].id]
@@ -397,6 +400,7 @@ async def test_decision_fields_add_their_evidence_passage_as_candidate(
     result = await service.search(
         RetrievalSearchRequest(question="authentication"),
         request_id="retrieval-decision",
+        workspace_id=workspace.id,
     )
     trace = await db_session.get(RetrievalTrace, result.trace_id)
 

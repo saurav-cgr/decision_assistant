@@ -91,31 +91,8 @@ def upgrade() -> None:
         )
         op.create_index(f"ix_{table}_workspace_id", table, ["workspace_id"])
 
-    # Evaluation questions are unique per workspace + dataset entry.
-    op.drop_constraint(
-        "uq_evaluation_questions_dataset_external_id",
-        "evaluation_questions",
-        type_="unique",
-    )
-    op.create_unique_constraint(
-        "uq_evaluation_questions_workspace_dataset_external_id",
-        "evaluation_questions",
-        ["workspace_id", "dataset_version", "external_id"],
-    )
-
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "uq_evaluation_questions_workspace_dataset_external_id",
-        "evaluation_questions",
-        type_="unique",
-    )
-    op.create_unique_constraint(
-        "uq_evaluation_questions_dataset_external_id",
-        "evaluation_questions",
-        ["dataset_version", "external_id"],
-    )
-
     for table in _ISOLATED_TABLES:
         op.drop_index(f"ix_{table}_workspace_id", table_name=table)
         op.drop_constraint(f"fk_{table}_workspace_id", table, type_="foreignkey")

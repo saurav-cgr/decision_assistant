@@ -93,6 +93,7 @@ class HybridRetrievalService:
             request.filters,
             embedding_profile=self._embedding_provider.profile.as_dict(),
             limit=self._config.semantic_limit,
+            workspace_id=workspace_id,
         )
         semantic_ms = _elapsed_ms(semantic_started)
 
@@ -101,6 +102,7 @@ class HybridRetrievalService:
             normalized_question,
             request.filters,
             limit=self._config.keyword_limit,
+            workspace_id=workspace_id,
         )
         keyword_ms = _elapsed_ms(keyword_started)
 
@@ -109,6 +111,7 @@ class HybridRetrievalService:
             normalized_question,
             request.filters,
             limit=self._config.decision_limit,
+            workspace_id=workspace_id,
         )
         decision_ms = _elapsed_ms(decision_started)
 

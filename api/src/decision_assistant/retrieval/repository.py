@@ -33,10 +33,12 @@ class RetrievalRepository:
         *,
         embedding_profile: dict[str, str | int],
         limit: int,
+        workspace_id: UUID,
     ) -> list[RankedPassage]:
         distance = Passage.embedding.cosine_distance(embedding).label("distance")
         statement = self._active_passages(select(Passage, distance), filters).where(
-            Passage.embedding_profile == embedding_profile
+            Passage.embedding_profile == embedding_profile,
+            Document.workspace_id == workspace_id,
         )
         rows = (
             await self._session.execute(statement.order_by(distance).limit(limit))
@@ -52,6 +54,7 @@ class RetrievalRepository:
         filters: RetrievalFilters,
         *,
         limit: int,
+        workspace_id: UUID,
     ) -> list[RankedPassage]:
         query = func.websearch_to_tsquery(
             literal_column("'english'::regconfig"),
@@ -59,7 +62,8 @@ class RetrievalRepository:
         )
         rank = func.ts_rank_cd(Passage.search_vector, query).label("rank")
         statement = self._active_passages(select(Passage, rank), filters).where(
-            Passage.search_vector.op("@@")(query)
+            Passage.search_vector.op("@@")(query),
+            Document.workspace_id == workspace_id,
         )
         rows = (
             await self._session.execute(statement.order_by(rank.desc()).limit(limit))
@@ -75,6 +79,7 @@ class RetrievalRepository:
         filters: RetrievalFilters,
         *,
         limit: int,
+        workspace_id: UUID,
     ) -> list[RankedPassage]:
         query = func.websearch_to_tsquery(
             literal_column("'english'::regconfig"),
@@ -102,6 +107,7 @@ class RetrievalRepository:
             .join(Document, Document.id == DocumentVersion.document_id)
             .where(
                 DocumentVersion.state == "active",
+                Document.workspace_id == workspace_id,
                 Document.active_version_id == DocumentVersion.id,
                 Decision.retired.is_(False),
                 Decision.review_state == "supported",
