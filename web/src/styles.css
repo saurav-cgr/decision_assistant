@@ -125,32 +125,31 @@ a {
 
 .primary-nav {
   display: flex;
-  gap: 6px;
-  padding: 12px 30px;
+  gap: 2px;
+  padding: 0 30px;
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
 }
 
 .primary-nav__link {
-  padding: 9px 14px;
+  padding: 14px 14px;
+  margin-bottom: -1px;
   color: var(--muted);
-  border-radius: 999px;
+  border-bottom: 2px solid transparent;
   font-size: 0.86rem;
   font-weight: 650;
   text-decoration: none;
   white-space: nowrap;
-  transition: color 160ms ease, background 160ms ease;
+  transition: color 160ms ease;
 }
 
 .primary-nav__link:hover {
   color: var(--ink);
-  background: #eeece4;
 }
 
 .primary-nav__link.is-active {
   color: var(--accent);
-  background: transparent;
-  box-shadow: inset 0 -2px 0 var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .workspace-selector {
