@@ -217,7 +217,7 @@ a {
 
 .main-content {
   min-height: 560px;
-  padding: clamp(40px, 8vw, 96px) clamp(24px, 8vw, 100px);
+  padding: clamp(24px, 4vw, 48px) clamp(24px, 8vw, 100px);
 }
 
 .page-intro {
