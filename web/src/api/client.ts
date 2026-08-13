@@ -14,10 +14,39 @@ import type {
   RetryResponse,
   TimelineResponse,
   UploadBatchResponse,
+  WorkspaceDetail,
+  WorkspaceListResponse,
 } from "./types";
 
 const configuredOrigin = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const API_V1 = `${configuredOrigin.replace(/\/$/, "")}/api/v1`;
+
+let activeWorkspaceId: string | null = null;
+
+export function setActiveWorkspaceId(workspaceId: string | null): void {
+  activeWorkspaceId = workspaceId;
+}
+
+export function getActiveWorkspaceId(): string | null {
+  return activeWorkspaceId;
+}
+
+function requireWorkspace(): string {
+  if (!activeWorkspaceId) {
+    throw new ApiClientError(0, {
+      code: "no_active_workspace",
+      message: "No active workspace is selected",
+      request_id: "unavailable",
+      retryable: false,
+      details: null,
+    });
+  }
+  return activeWorkspaceId;
+}
+
+function projectPath(path: string): `/${string}` {
+  return `/workspaces/${requireWorkspace()}${path}` as `/${string}`;
+}
 
 export class ApiClientError extends Error {
   readonly status: number;
@@ -54,12 +83,58 @@ export async function apiRequest<T>(
   return (await response.json()) as T;
 }
 
+export function listWorkspaces(): Promise<WorkspaceListResponse> {
+  return apiRequest<WorkspaceListResponse>("/workspaces");
+}
+
+export function createWorkspace(name: string): Promise<WorkspaceDetail> {
+  return apiRequest<WorkspaceDetail>("/workspaces", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function activateWorkspace(workspaceId: string): Promise<WorkspaceDetail> {
+  return apiRequest<WorkspaceDetail>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/activate`,
+    { method: "POST" },
+  );
+}
+
+export function renameWorkspace(
+  workspaceId: string,
+  name: string,
+): Promise<WorkspaceDetail> {
+  return apiRequest<WorkspaceDetail>(
+    `/workspaces/${encodeURIComponent(workspaceId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+  );
+}
+
+export function archiveWorkspace(workspaceId: string): Promise<WorkspaceDetail> {
+  return apiRequest<WorkspaceDetail>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/archive`,
+    { method: "POST" },
+  );
+}
+
+export function deleteArchivedWorkspace(workspaceId: string): Promise<void> {
+  return apiRequest<void>(`/workspaces/${encodeURIComponent(workspaceId)}`, {
+    method: "DELETE",
+  });
+}
+
 export function listDocuments(): Promise<DocumentListResponse> {
-  return apiRequest<DocumentListResponse>("/documents");
+  return apiRequest<DocumentListResponse>(projectPath("/documents"));
 }
 
 export function answerQuestion(question: string): Promise<QuestionResponse> {
-  return apiRequest<QuestionResponse>("/questions", {
+  return apiRequest<QuestionResponse>(projectPath("/questions"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ question }),
@@ -68,27 +143,32 @@ export function answerQuestion(question: string): Promise<QuestionResponse> {
 
 export function getRetrievalTrace(traceId: string): Promise<RetrievalTraceResponse> {
   return apiRequest<RetrievalTraceResponse>(
-    `/retrieval-traces/${encodeURIComponent(traceId)}`,
+    projectPath(`/retrieval-traces/${encodeURIComponent(traceId)}`),
   );
 }
 
 export function getDecision(decisionId: string): Promise<DecisionDetail> {
-  return apiRequest<DecisionDetail>(`/decisions/${encodeURIComponent(decisionId)}`);
+  return apiRequest<DecisionDetail>(
+    projectPath(`/decisions/${encodeURIComponent(decisionId)}`),
+  );
 }
 
 export function listDecisions(): Promise<DecisionListResponse> {
-  return apiRequest<DecisionListResponse>("/decisions");
+  return apiRequest<DecisionListResponse>(projectPath("/decisions"));
 }
 
 export function correctDecision(
   decisionId: string,
   request: DecisionCorrectionRequest,
 ): Promise<DecisionDetail> {
-  return apiRequest<DecisionDetail>(`/decisions/${encodeURIComponent(decisionId)}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(request),
-  });
+  return apiRequest<DecisionDetail>(
+    projectPath(`/decisions/${encodeURIComponent(decisionId)}`),
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    },
+  );
 }
 
 export function createDecisionRelation(
@@ -96,7 +176,7 @@ export function createDecisionRelation(
   request: DecisionRelationRequest,
 ): Promise<DecisionRelation> {
   return apiRequest<DecisionRelation>(
-    `/decisions/${encodeURIComponent(decisionId)}/relations`,
+    projectPath(`/decisions/${encodeURIComponent(decisionId)}/relations`),
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -107,14 +187,14 @@ export function createDecisionRelation(
 
 export function getTimeline(topic: string): Promise<TimelineResponse> {
   return apiRequest<TimelineResponse>(
-    `/timelines?topic=${encodeURIComponent(topic)}`,
+    projectPath(`/timelines?topic=${encodeURIComponent(topic)}`),
   );
 }
 
 export function startEvaluationRun(
   request: EvaluationRunRequest,
 ): Promise<EvaluationRun> {
-  return apiRequest<EvaluationRun>("/evaluations/runs", {
+  return apiRequest<EvaluationRun>(projectPath("/evaluations/runs"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(request),
@@ -123,7 +203,7 @@ export function startEvaluationRun(
 
 export function getEvaluationRun(runId: string): Promise<EvaluationRun> {
   return apiRequest<EvaluationRun>(
-    `/evaluations/runs/${encodeURIComponent(runId)}`,
+    projectPath(`/evaluations/runs/${encodeURIComponent(runId)}`),
   );
 }
 
@@ -131,17 +211,17 @@ export function listEvaluationRuns(
   limit = 10,
 ): Promise<EvaluationRunSummary[]> {
   return apiRequest<EvaluationRunSummary[]>(
-    `/evaluations/runs?limit=${encodeURIComponent(String(limit))}`,
+    projectPath(`/evaluations/runs?limit=${encodeURIComponent(String(limit))}`),
   );
 }
 
 export function documentDetailUrl(documentId: string): string {
-  return `${API_V1}/documents/${encodeURIComponent(documentId)}`;
+  return `${API_V1}/workspaces/${requireWorkspace()}/documents/${encodeURIComponent(documentId)}`;
 }
 
 export function retryDocument(documentId: string): Promise<RetryResponse> {
   return apiRequest<RetryResponse>(
-    `/documents/${encodeURIComponent(documentId)}/retry`,
+    projectPath(`/documents/${encodeURIComponent(documentId)}/retry`),
     { method: "POST" },
   );
 }
@@ -157,7 +237,10 @@ export function uploadDocuments(
 
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.open("POST", `${API_V1}/documents/upload`);
+    request.open(
+      "POST",
+      `${API_V1}/workspaces/${requireWorkspace()}/documents/upload`,
+    );
     request.setRequestHeader("accept", "application/json");
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) {

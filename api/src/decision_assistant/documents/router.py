@@ -24,8 +24,14 @@ from decision_assistant.providers.factory import (
     ProviderBundleFactory,
     get_provider_bundle_factory,
 )
+from decision_assistant.workspace.context import (
+    WorkspaceContext,
+    get_workspace_context,
+)
 
-router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+router = APIRouter(
+    prefix="/api/v1/workspaces/{workspace_id}/documents", tags=["documents"]
+)
 
 
 def get_runtime_settings(request: Request) -> Settings:
@@ -137,11 +143,16 @@ def get_document_service(
 async def upload_documents(
     request: Request,
     background_tasks: BackgroundTasks,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[DocumentService, Depends(get_document_service)],
     files: Annotated[list[UploadFile], File()],
 ) -> UploadBatchResponse:
     request_id = request.state.request_id
-    submission = await service.submit_uploads(files, request_id=request_id)
+    submission = await service.submit_uploads(
+        files,
+        request_id=request_id,
+        workspace_id=workspace.workspace_id,
+    )
     for dispatch in submission.dispatches:
         background_tasks.add_task(service.dispatch, dispatch)
     return submission.response
@@ -149,17 +160,21 @@ async def upload_documents(
 
 @router.get("", response_model=DocumentListResponse)
 async def list_documents(
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[DocumentService, Depends(get_document_service)],
 ) -> DocumentListResponse:
-    return await service.list_documents()
+    return await service.list_documents(workspace_id=workspace.workspace_id)
 
 
 @router.get("/{document_id}", response_model=DocumentDetail)
 async def get_document(
     document_id: UUID,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[DocumentService, Depends(get_document_service)],
 ) -> DocumentDetail:
-    return await service.get_document(document_id)
+    return await service.get_document(
+        document_id, workspace_id=workspace.workspace_id
+    )
 
 
 @router.post(
@@ -171,11 +186,13 @@ async def retry_document(
     document_id: UUID,
     request: Request,
     background_tasks: BackgroundTasks,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[DocumentService, Depends(get_document_service)],
 ) -> RetryResponse:
     submission = await service.retry(
         document_id,
         request_id=request.state.request_id,
+        workspace_id=workspace.workspace_id,
     )
     background_tasks.add_task(service.dispatch, submission.dispatch)
     return submission.response

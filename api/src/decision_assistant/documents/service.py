@@ -105,8 +105,14 @@ class DocumentService:
         uploads: list[UploadFile],
         *,
         request_id: str,
+        workspace_id: UUID | None = None,
     ) -> UploadSubmission:
-        workspace = await WorkspaceService(self._session).get_or_create()
+        if workspace_id is None:
+            workspace = await WorkspaceService(
+                self._session
+            ).get_or_create_active()
+        else:
+            workspace = await WorkspaceService(self._session).get(workspace_id)
         results: list[UploadFileResult] = []
         dispatches: list[DispatchRequest] = []
 
@@ -253,12 +259,11 @@ class DocumentService:
             request_id=request.request_id,
         )
 
-    async def list_documents(self) -> DocumentListResponse:
-        documents = list(
-            await self._session.scalars(
-                select(Document).order_by(Document.created_at.desc())
-            )
-        )
+    async def list_documents(self, *, workspace_id: UUID | None = None) -> DocumentListResponse:
+        statement = select(Document).order_by(Document.created_at.desc())
+        if workspace_id is not None:
+            statement = statement.where(Document.workspace_id == workspace_id)
+        documents = list(await self._session.scalars(statement))
         items: list[DocumentListItem] = []
         for document in documents:
             job = await self._session.scalar(
@@ -310,9 +315,16 @@ class DocumentService:
             )
         return DocumentListResponse(items=items)
 
-    async def get_document(self, document_id: UUID) -> DocumentDetail:
+    async def get_document(
+        self,
+        document_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> DocumentDetail:
         document = await self._session.get(Document, document_id)
-        if document is None:
+        if document is None or (
+            workspace_id is not None and document.workspace_id != workspace_id
+        ):
             raise DocumentApiError("document_not_found", "Document not found", 404)
 
         version = (
@@ -364,9 +376,12 @@ class DocumentService:
         document_id: UUID,
         *,
         request_id: str,
+        workspace_id: UUID | None = None,
     ) -> RetrySubmission:
         document = await self._session.get(Document, document_id)
-        if document is None:
+        if document is None or (
+            workspace_id is not None and document.workspace_id != workspace_id
+        ):
             raise DocumentApiError("document_not_found", "Document not found", 404)
         failed_job = await self._session.scalar(
             select(IngestionJob)

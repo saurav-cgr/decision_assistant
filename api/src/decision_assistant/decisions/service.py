@@ -52,8 +52,15 @@ class DecisionService:
         project: str | None = None,
         topic: str | None = None,
         review_state: str | None = None,
+        workspace_id: UUID | None = None,
     ) -> DecisionListResponse:
         statement = select(Decision).where(Decision.retired.is_(False))
+        if workspace_id is not None:
+            statement = statement.join(
+                DocumentVersion,
+                DocumentVersion.id == Decision.document_version_id,
+            ).join(Document, Document.id == DocumentVersion.document_id)
+            statement = statement.where(Document.workspace_id == workspace_id)
         filters = {
             "status": status,
             "owner": owner,
@@ -73,8 +80,13 @@ class DecisionService:
             items=[self._summary(decision) for decision in decisions]
         )
 
-    async def get_decision(self, decision_id: UUID) -> DecisionDetail:
-        decision = await self._require_decision(decision_id)
+    async def get_decision(
+        self,
+        decision_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> DecisionDetail:
+        decision = await self._require_decision(decision_id, workspace_id=workspace_id)
         evidence_rows = (
             await self._session.execute(
                 select(DecisionEvidence, Passage)
@@ -132,8 +144,10 @@ class DecisionService:
         self,
         decision_id: UUID,
         request: DecisionCorrectionRequest,
+        *,
+        workspace_id: UUID | None = None,
     ) -> DecisionDetail:
-        decision = await self._require_decision(decision_id)
+        decision = await self._require_decision(decision_id, workspace_id=workspace_id)
         previous_review_state = decision.review_state
         previous_revision_fields = set(
             await self._session.scalars(
@@ -198,9 +212,13 @@ class DecisionService:
         self,
         source_decision_id: UUID,
         request: DecisionRelationRequest,
+        *,
+        workspace_id: UUID | None = None,
     ) -> DecisionRelationResponse:
-        await self._require_decision(source_decision_id)
-        await self._require_decision(request.target_decision_id)
+        await self._require_decision(source_decision_id, workspace_id=workspace_id)
+        await self._require_decision(
+            request.target_decision_id, workspace_id=workspace_id
+        )
         if source_decision_id == request.target_decision_id:
             raise DecisionApiError(
                 "invalid_relation",
@@ -313,7 +331,12 @@ class DecisionService:
             return "needs_review"
         return "supported"
 
-    async def _require_decision(self, decision_id: UUID) -> Decision:
+    async def _require_decision(
+        self,
+        decision_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> Decision:
         decision = await self._session.get(Decision, decision_id)
         if decision is None:
             raise DecisionApiError(
@@ -321,6 +344,21 @@ class DecisionService:
                 "Decision not found",
                 404,
             )
+        if workspace_id is not None:
+            version = await self._session.get(
+                DocumentVersion, decision.document_version_id
+            )
+            document = (
+                await self._session.get(Document, version.document_id)
+                if version is not None
+                else None
+            )
+            if version is None or document is None or document.workspace_id != workspace_id:
+                raise DecisionApiError(
+                    "decision_not_found",
+                    "Decision not found",
+                    404,
+                )
         return decision
 
     @staticmethod

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -32,6 +32,8 @@ from decision_assistant.providers.fakes import (
 )
 
 FAKE_EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
+
+WORKSPACE_ID = UUID("22222222-2222-2222-2222-222222222222")
 
 
 @dataclass(slots=True)
@@ -76,6 +78,7 @@ async def decisions_api(
     db_session: AsyncSession,
 ) -> AsyncIterator[DecisionApiHarness]:
     workspace = Workspace(
+        id=WORKSPACE_ID,
         name=f"Decision API workspace {uuid4()}",
         embedding_profile=FAKE_EMBEDDING_PROFILE,
     )
@@ -243,7 +246,7 @@ async def test_list_filters_decisions_and_detail_includes_evidence_history(
     decisions_api: DecisionApiHarness,
 ) -> None:
     response = await decisions_api.client.get(
-        "/api/v1/decisions",
+        f"/api/v1/workspaces/{WORKSPACE_ID}/decisions",
         params={
             "status": "active",
             "owner": "Elena",
@@ -259,7 +262,7 @@ async def test_list_filters_decisions_and_detail_includes_evidence_history(
     ]
 
     detail = await decisions_api.client.get(
-        f"/api/v1/decisions/{decisions_api.earlier_decision.id}"
+        f"/api/v1/workspaces/{WORKSPACE_ID}/decisions/{decisions_api.earlier_decision.id}"
     )
 
     assert detail.status_code == 200
@@ -282,7 +285,7 @@ async def test_supported_correction_replaces_field_evidence_and_records_revision
     quote = "Maya owns the migration decision."
 
     response = await decisions_api.client.patch(
-        f"/api/v1/decisions/{decisions_api.earlier_decision.id}",
+        f"/api/v1/workspaces/{WORKSPACE_ID}/decisions/{decisions_api.earlier_decision.id}",
         json={
             "changes": [
                 supported_change(
@@ -331,7 +334,7 @@ async def test_correction_without_evidence_is_saved_as_unsupported(
     decisions_api: DecisionApiHarness,
 ) -> None:
     response = await decisions_api.client.patch(
-        f"/api/v1/decisions/{decisions_api.earlier_decision.id}",
+        f"/api/v1/workspaces/{WORKSPACE_ID}/decisions/{decisions_api.earlier_decision.id}",
         json={
             "changes": [
                 {
@@ -385,7 +388,7 @@ async def test_correction_rejects_retired_or_stale_evidence(
         evidence["content_hash"] = "0" * 64
 
     response = await decisions_api.client.patch(
-        f"/api/v1/decisions/{decisions_api.earlier_decision.id}",
+        f"/api/v1/workspaces/{WORKSPACE_ID}/decisions/{decisions_api.earlier_decision.id}",
         json={
             "changes": [
                 {
@@ -410,7 +413,7 @@ async def test_user_can_create_explicit_supersedes_relation(
 ) -> None:
     rationale = "Team confirmed authentication work replaces the postponement."
     response = await decisions_api.client.post(
-        f"/api/v1/decisions/{decisions_api.later_decision.id}/relations",
+        f"/api/v1/workspaces/{WORKSPACE_ID}/decisions/{decisions_api.later_decision.id}/relations",
         json={
             "target_decision_id": str(decisions_api.earlier_decision.id),
             "relation_type": "supersedes",
@@ -444,7 +447,7 @@ async def test_user_can_create_explicit_supersedes_relation(
     assert relation.rationale == rationale
 
     detail = await decisions_api.client.get(
-        f"/api/v1/decisions/{decisions_api.later_decision.id}"
+        f"/api/v1/workspaces/{WORKSPACE_ID}/decisions/{decisions_api.later_decision.id}"
     )
     assert detail.status_code == 200
     stored_relation = detail.json()["relations"][0]
@@ -461,7 +464,7 @@ async def test_reindex_moves_user_correction_to_needs_review(
     tmp_path: Path,
 ) -> None:
     correction = await decisions_api.client.patch(
-        f"/api/v1/decisions/{decisions_api.earlier_decision.id}",
+        f"/api/v1/workspaces/{WORKSPACE_ID}/decisions/{decisions_api.earlier_decision.id}",
         json={
             "changes": [
                 supported_change(
@@ -508,7 +511,7 @@ async def test_reindex_moves_user_correction_to_needs_review(
     )
 
     detail = await decisions_api.client.get(
-        f"/api/v1/decisions/{decisions_api.earlier_decision.id}"
+        f"/api/v1/workspaces/{WORKSPACE_ID}/decisions/{decisions_api.earlier_decision.id}"
     )
     assert detail.status_code == 200
     assert detail.json()["review_state"] == "needs_review"

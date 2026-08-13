@@ -14,12 +14,17 @@ describe("Decision Assistant API client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const clientModule = "./client";
-    const { listDocuments } = await import(/* @vite-ignore */ clientModule);
+    const { listDocuments, setActiveWorkspaceId } = await import(
+      /* @vite-ignore */ clientModule
+    );
+    setActiveWorkspaceId("workspace-1");
 
     await listDocuments();
 
     const [requestedUrl] = fetchMock.mock.calls[0];
-    expect(String(requestedUrl)).toMatch(/\/api\/v1\/documents$/);
+    expect(String(requestedUrl)).toMatch(
+      /\/api\/v1\/workspaces\/workspace-1\/documents$/,
+    );
   });
 
   it("preserves the stable API error and request ID", async () => {
@@ -40,7 +45,10 @@ describe("Decision Assistant API client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const clientModule = "./client";
-    const { listDocuments } = await import(/* @vite-ignore */ clientModule);
+    const { listDocuments, setActiveWorkspaceId } = await import(
+      /* @vite-ignore */ clientModule
+    );
+    setActiveWorkspaceId("workspace-1");
 
     await expect(listDocuments()).rejects.toMatchObject({
       name: "ApiClientError",

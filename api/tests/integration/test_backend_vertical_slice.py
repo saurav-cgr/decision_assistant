@@ -16,13 +16,24 @@ from decision_assistant.documents.service import DocumentService
 from decision_assistant.ingestion.metadata import MetadataExtractor
 from decision_assistant.ingestion.service import IngestionService
 from decision_assistant.main import create_app
-from decision_assistant.models import IngestionJob, Passage, RetrievalTrace
+from decision_assistant.models import (
+    IngestionJob,
+    Passage,
+    RetrievalTrace,
+    Workspace,
+)
 from decision_assistant.providers.fakes import (
     FakeEmbeddingProvider,
     FakeGenerationProvider,
 )
 from decision_assistant.retrieval.router import get_retrieval_service
 from decision_assistant.retrieval.service import HybridRetrievalService
+from decision_assistant.workspace.context import (
+    WorkspaceContext,
+    get_workspace_context,
+)
+
+WORKSPACE_ID = UUID("77777777-7777-7777-7777-777777777777")
 
 
 class RecordingDispatcher:
@@ -54,6 +65,14 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
 ) -> None:
     settings = Settings(upload_directory=tmp_path / "uploads")
     dispatcher = RecordingDispatcher()
+    db_session.add(
+        Workspace(
+            id=WORKSPACE_ID,
+            name=f"Vertical slice workspace {WORKSPACE_ID}",
+            embedding_profile=None,
+        )
+    )
+    await db_session.flush()
     document_service = DocumentService(
         session=db_session,
         settings=settings,
@@ -61,6 +80,9 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
     )
     app = create_app(settings)
     app.dependency_overrides[get_document_service] = lambda: document_service
+    app.dependency_overrides[get_workspace_context] = (
+        lambda: WorkspaceContext(workspace_id=WORKSPACE_ID)
+    )
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
@@ -68,7 +90,7 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
     ) as client:
         source = Path("tests/fixtures/meeting.md").read_bytes()
         upload = await client.post(
-            "/api/v1/documents/upload",
+            f"/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
             files={"files": ("meeting.md", source, "text/markdown")},
             headers={"x-request-id": "vertical-upload"},
         )
@@ -162,12 +184,12 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
         app.dependency_overrides[get_retrieval_service] = lambda: retrieval_service
 
         supported = await client.post(
-            "/api/v1/questions",
+            f"/api/v1/workspaces/{WORKSPACE_ID}/questions",
             json={"question": "What happened to authentication?"},
             headers={"x-request-id": "vertical-supported"},
         )
         unsupported = await client.post(
-            "/api/v1/questions",
+            f"/api/v1/workspaces/{WORKSPACE_ID}/questions",
             json={"question": "Who owns database encryption?"},
             headers={"x-request-id": "vertical-unsupported"},
         )
@@ -185,7 +207,9 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
         assert unsupported.json()["citations"] == []
 
         trace_id = supported.json()["trace_id"]
-        trace_response = await client.get(f"/api/v1/retrieval-traces/{trace_id}")
+        trace_response = await client.get(
+            f"/api/v1/workspaces/{WORKSPACE_ID}/retrieval-traces/{trace_id}"
+        )
 
         assert trace_response.status_code == 200
         assert trace_response.json()["request_id"] == "vertical-supported"

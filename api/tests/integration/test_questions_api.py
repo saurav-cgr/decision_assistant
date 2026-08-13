@@ -10,9 +10,14 @@ from decision_assistant.answering.schemas import (
     QuestionResponse,
 )
 from decision_assistant.main import create_app
+from decision_assistant.workspace.context import (
+    WorkspaceContext,
+    get_workspace_context,
+)
 
 
 TRACE_ID = UUID("33333333-3333-3333-3333-333333333333")
+WORKSPACE_ID = UUID("44444444-4444-4444-4444-444444444444")
 
 
 class StubAnswerService:
@@ -21,6 +26,7 @@ class StubAnswerService:
         request: QuestionRequest,
         *,
         request_id: str,
+        workspace_id: UUID | None = None,
     ) -> QuestionResponse:
         assert request.question == "Why was authentication postponed?"
         assert request_id == "question-request"
@@ -39,9 +45,12 @@ class StubAnswerService:
 def test_questions_api_returns_explicit_abstention_and_trace_id() -> None:
     app = create_app()
     app.dependency_overrides[get_answer_service] = lambda: StubAnswerService()
+    app.dependency_overrides[get_workspace_context] = (
+        lambda: WorkspaceContext(workspace_id=WORKSPACE_ID)
+    )
 
     response = TestClient(app).post(
-        "/api/v1/questions",
+        f"/api/v1/workspaces/{WORKSPACE_ID}/questions",
         headers={"x-request-id": "question-request"},
         json={"question": "Why was authentication postponed?"},
     )

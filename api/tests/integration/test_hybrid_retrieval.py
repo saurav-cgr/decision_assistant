@@ -24,6 +24,10 @@ from decision_assistant.retrieval.router import get_retrieval_service
 from decision_assistant.retrieval.repository import RetrievalRepository
 from decision_assistant.retrieval.schemas import RetrievalFilters, RetrievalSearchRequest
 from decision_assistant.retrieval.service import HybridRetrievalService
+from decision_assistant.workspace.context import (
+    WorkspaceContext,
+    get_workspace_context,
+)
 from decision_assistant.workspace.embedding_migration import EmbeddingReindexRequired
 
 EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
@@ -435,20 +439,27 @@ async def test_trace_api_returns_trace_and_stable_not_found(
         return service
 
     app.dependency_overrides[get_retrieval_service] = override_service
+    app.dependency_overrides[get_workspace_context] = (
+        lambda: WorkspaceContext(workspace_id=workspace.id)
+    )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
         search_response = await client.post(
-            "/api/v1/retrieval/search",
+            f"/api/v1/workspaces/{workspace.id}/retrieval/search",
             json={"question": "authentication", "filters": {}},
             headers={"x-request-id": "trace-request"},
         )
         assert search_response.status_code == 200
         trace_id = search_response.json()["trace_id"]
 
-        trace_response = await client.get(f"/api/v1/retrieval-traces/{trace_id}")
-        missing_response = await client.get(f"/api/v1/retrieval-traces/{uuid4()}")
+        trace_response = await client.get(
+            f"/api/v1/workspaces/{workspace.id}/retrieval-traces/{trace_id}"
+        )
+        missing_response = await client.get(
+            f"/api/v1/workspaces/{workspace.id}/retrieval-traces/{uuid4()}"
+        )
 
     assert trace_response.status_code == 200
     assert trace_response.json()["id"] == trace_id

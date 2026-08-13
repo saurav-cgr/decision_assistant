@@ -144,7 +144,7 @@ def test_public_business_routes_use_v1_namespace() -> None:
     client = TestClient(app)
     paths = app.openapi()["paths"]
 
-    assert "/api/v1/documents" in paths
+    assert "/api/v1/workspaces/{workspace_id}/documents" in paths
     assert "/documents" not in paths
     assert "/health" in paths
     assert "/api/v1/health" not in paths

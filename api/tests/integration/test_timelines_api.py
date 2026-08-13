@@ -21,6 +21,8 @@ from decision_assistant.models import (
     Workspace,
 )
 
+WORKSPACE_ID = UUID("55555555-5555-5555-5555-555555555555")
+
 
 @dataclass(slots=True)
 class TimelineHarness:
@@ -108,6 +110,7 @@ async def timelines_api(
     db_session: AsyncSession,
 ) -> AsyncIterator[TimelineHarness]:
     workspace = Workspace(
+        id=WORKSPACE_ID,
         name=f"Timeline workspace {uuid4()}",
         embedding_profile={"provider": "fake", "dimension": 768},
     )
@@ -281,7 +284,7 @@ async def test_timeline_is_cited_ordered_and_expands_relationships(
     timelines_api: TimelineHarness,
 ) -> None:
     response = await timelines_api.client.get(
-        "/api/v1/timelines",
+        f"/api/v1/workspaces/{WORKSPACE_ID}/timelines",
         params={"topic": "  AUTHENTICATION  "},
     )
 

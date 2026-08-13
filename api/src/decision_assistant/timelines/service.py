@@ -78,24 +78,28 @@ class TimelineService:
         topic: str,
         *,
         candidate_decision_ids: list[UUID] | None = None,
+        workspace_id: UUID | None = None,
     ) -> TimelineResponse:
         normalized_topic = self._normalize_topic(topic)
         if not normalized_topic:
             raise TimelineApiError("invalid_topic", "Topic cannot be empty", 422)
 
-        rows = (
-            await self._session.execute(
-                select(Decision, DocumentVersion)
-                .join(
-                    DocumentVersion,
-                    DocumentVersion.id == Decision.document_version_id,
-                )
-                .where(
-                    Decision.retired.is_(False),
-                    Decision.review_state == "supported",
-                )
+        statement = (
+            select(Decision, DocumentVersion)
+            .join(
+                DocumentVersion,
+                DocumentVersion.id == Decision.document_version_id,
             )
-        ).all()
+            .where(
+                Decision.retired.is_(False),
+                Decision.review_state == "supported",
+            )
+        )
+        if workspace_id is not None:
+            statement = statement.join(
+                Document, Document.id == DocumentVersion.document_id
+            ).where(Document.workspace_id == workspace_id)
+        rows = (await self._session.execute(statement)).all()
         stored = {decision.id: (decision, version) for decision, version in rows}
         candidate_ids = set(candidate_decision_ids or [])
         selected_ids = {

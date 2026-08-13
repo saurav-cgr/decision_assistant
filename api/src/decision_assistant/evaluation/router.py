@@ -20,8 +20,14 @@ from decision_assistant.providers.factory import (
     ProviderBundleFactory,
     get_provider_bundle_factory,
 )
+from decision_assistant.workspace.context import (
+    WorkspaceContext,
+    get_workspace_context,
+)
 
-router = APIRouter(prefix="/api/v1/evaluations", tags=["evaluations"])
+router = APIRouter(
+    prefix="/api/v1/workspaces/{workspace_id}/evaluations", tags=["evaluations"]
+)
 
 
 def _build_evaluation_service(
@@ -97,10 +103,13 @@ def get_evaluation_background_runner(
 
 @router.get("/runs", response_model=list[EvaluationRunSummaryResponse])
 async def list_runs(
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[EvaluationService, Depends(get_evaluation_service)],
     limit: int = 10,
 ) -> list[EvaluationRunSummaryResponse]:
-    return await service.list_runs(limit=limit)
+    return await service.list_runs(
+        workspace_id=workspace.workspace_id, limit=limit
+    )
 
 
 @router.post(
@@ -111,14 +120,19 @@ async def list_runs(
 async def start_run(
     payload: EvaluationRunRequest,
     background_tasks: BackgroundTasks,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[EvaluationService, Depends(get_evaluation_service)],
     runner: Annotated[
         EvaluationBackgroundRunner,
         Depends(get_evaluation_background_runner),
     ],
 ) -> EvaluationRunResponse:
-    run = await service.create_run(payload)
-    response = await service.get_run(run.id)
+    run = await service.create_run(
+        payload, workspace_id=workspace.workspace_id
+    )
+    response = await service.get_run(
+        run.id, workspace_id=workspace.workspace_id
+    )
     background_tasks.add_task(runner.dispatch, run.id)
     return response
 
@@ -126,6 +140,7 @@ async def start_run(
 @router.get("/runs/{run_id}", response_model=EvaluationRunResponse)
 async def get_run(
     run_id: UUID,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[EvaluationService, Depends(get_evaluation_service)],
 ) -> EvaluationRunResponse:
-    return await service.get_run(run_id)
+    return await service.get_run(run_id, workspace_id=workspace.workspace_id)

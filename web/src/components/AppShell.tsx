@@ -1,4 +1,11 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import {
+  getActiveWorkspaceId,
+  listWorkspaces,
+  setActiveWorkspaceId,
+} from "../api/client";
+import { WorkspaceSelector } from "./WorkspaceSelector";
 
 const navigation = [
   { label: "Workspace", to: "/", end: true },
@@ -8,6 +15,37 @@ const navigation = [
 ] as const;
 
 export function AppShell() {
+  const [activeWorkspaceId, setWorkspace] = useState<string | null>(
+    getActiveWorkspaceId(),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadActiveWorkspace() {
+      try {
+        const response = await listWorkspaces();
+        if (cancelled) {
+          return;
+        }
+        const active =
+          response.items.find((item) => item.is_active) ?? response.items[0] ?? null;
+        setActiveWorkspaceId(active?.id ?? null);
+        setWorkspace(active?.id ?? null);
+      } catch {
+        // Leave the active workspace unset; pages surface the API error.
+      }
+    }
+    void loadActiveWorkspace();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSwitch = (workspaceId: string) => {
+    setActiveWorkspaceId(workspaceId);
+    setWorkspace(workspaceId);
+  };
+
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -20,9 +58,13 @@ export function AppShell() {
             <small>Project memory, with evidence</small>
           </span>
         </a>
+        <WorkspaceSelector
+          activeWorkspaceId={activeWorkspaceId}
+          onSwitch={handleSwitch}
+        />
         <div className="local-status" aria-label="Environment status">
           <span aria-hidden="true" />
-          Local workspace
+          Local
         </div>
       </header>
 
@@ -42,7 +84,7 @@ export function AppShell() {
       </nav>
 
       <main className="main-content">
-        <Outlet />
+        <Outlet key={activeWorkspaceId ?? "none"} />
       </main>
 
       <footer className="site-footer">

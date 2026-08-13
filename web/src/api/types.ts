@@ -313,3 +313,18 @@ export type EvaluationRunSummary = {
   completed_at: string | null;
   created_at: string;
 };
+
+export type WorkspaceSummary = {
+  id: string;
+  name: string;
+  status: "active" | "archived";
+  is_active: boolean;
+  document_count: number;
+  created_at: string;
+};
+
+export type WorkspaceDetail = WorkspaceSummary & {
+  embedding_profile: Record<string, unknown> | null;
+};
+
+export type WorkspaceListResponse = { items: WorkspaceSummary[] };

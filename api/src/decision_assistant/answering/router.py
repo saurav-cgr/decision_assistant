@@ -11,8 +11,12 @@ from decision_assistant.providers.factory import (
     get_provider_bundle_factory,
 )
 from decision_assistant.retrieval.service import HybridRetrievalService
+from decision_assistant.workspace.context import (
+    WorkspaceContext,
+    get_workspace_context,
+)
 
-router = APIRouter(prefix="/api/v1", tags=["questions"])
+router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["questions"])
 
 
 def get_answer_service(
@@ -39,6 +43,11 @@ def get_answer_service(
 async def answer_question(
     payload: QuestionRequest,
     request: Request,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[AnswerService, Depends(get_answer_service)],
 ) -> QuestionResponse:
-    return await service.answer(payload, request_id=request.state.request_id)
+    return await service.answer(
+        payload,
+        request_id=request.state.request_id,
+        workspace_id=workspace.workspace_id,
+    )

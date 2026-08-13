@@ -23,8 +23,15 @@ from decision_assistant.models import (
     DocumentVersion,
     IngestionJob,
     Passage,
+    Workspace,
 )
 from decision_assistant.providers.base import ProviderConfigurationInvalid
+from decision_assistant.workspace.context import (
+    WorkspaceContext,
+    get_workspace_context,
+)
+
+WORKSPACE_ID = UUID("11111111-1111-1111-1111-111111111111")
 
 
 class RecordingDispatcher:
@@ -116,6 +123,14 @@ async def documents_api(
         max_upload_bytes=64,
     )
     dispatcher = RecordingDispatcher()
+    db_session.add(
+        Workspace(
+            id=WORKSPACE_ID,
+            name=f"Documents workspace {WORKSPACE_ID}",
+            embedding_profile=None,
+        )
+    )
+    await db_session.flush()
     service = DocumentService(
         session=db_session,
         settings=settings,
@@ -127,6 +142,9 @@ async def documents_api(
         return service
 
     app.dependency_overrides[get_document_service] = override_service
+    app.dependency_overrides[get_workspace_context] = (
+        lambda: WorkspaceContext(workspace_id=WORKSPACE_ID)
+    )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
@@ -141,7 +159,7 @@ async def test_single_upload_is_sanitized_and_accepted(
     client, dispatcher, settings = documents_api
 
     response = await client.post(
-        "/api/v1/documents/upload",
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
         files={"files": ("../../meeting.md", b"# Architecture\n", "text/markdown")},
         headers={"x-request-id": "upload-1"},
     )
@@ -167,7 +185,7 @@ async def test_multiple_valid_uploads_return_one_result_each(
     client, dispatcher, _ = documents_api
 
     response = await client.post(
-        "/api/v1/documents/upload",
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
         files=[
             ("files", ("one.md", b"# One\n", "text/markdown")),
             ("files", ("two.txt", b"Decision two\n", "text/plain")),
@@ -189,7 +207,7 @@ async def test_invalid_extension_returns_per_file_error(
     client, dispatcher, _ = documents_api
 
     response = await client.post(
-        "/api/v1/documents/upload",
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
         files={"files": ("malware.exe", b"unsafe", "application/octet-stream")},
     )
 
@@ -207,7 +225,7 @@ async def test_excessive_size_returns_per_file_error(
     client, dispatcher, settings = documents_api
 
     response = await client.post(
-        "/api/v1/documents/upload",
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
         files={
             "files": (
                 "large.txt",
@@ -231,7 +249,7 @@ async def test_mixed_upload_rejects_only_invalid_files(
     client, dispatcher, _ = documents_api
 
     response = await client.post(
-        "/api/v1/documents/upload",
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
         files=[
             ("files", ("valid.md", b"# Valid\n", "text/markdown")),
             ("files", ("invalid.exe", b"bad", "application/octet-stream")),
@@ -252,7 +270,7 @@ async def test_document_listing_exposes_job_status_progress_and_error(
 ) -> None:
     client, _, _ = documents_api
     upload = await client.post(
-        "/api/v1/documents/upload",
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
         files={"files": ("meeting.md", b"# Meeting\n", "text/markdown")},
     )
     job_id = upload.json()["results"][0]["job_id"]
@@ -264,7 +282,7 @@ async def test_document_listing_exposes_job_status_progress_and_error(
     job.error = {"code": "provider_unavailable"}
     await db_session.flush()
 
-    response = await client.get("/api/v1/documents")
+    response = await client.get("/api/v1/workspaces/{WORKSPACE_ID}/documents")
 
     assert response.status_code == 200
     item = response.json()["items"][0]
@@ -281,7 +299,7 @@ async def test_document_detail_and_listing_return_active_extraction(
 ) -> None:
     client, _, _ = documents_api
     upload = await client.post(
-        "/api/v1/documents/upload",
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
         files={"files": ("meeting.md", b"# Meeting\n", "text/markdown")},
     )
     document_id = upload.json()["results"][0]["document_id"]
@@ -320,7 +338,7 @@ async def test_document_detail_and_listing_return_active_extraction(
     )
     await db_session.flush()
 
-    response = await client.get(f"/api/v1/documents/{document.id}")
+    response = await client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/documents/{document.id}")
 
     assert response.status_code == 200
     detail = response.json()
@@ -333,7 +351,7 @@ async def test_document_detail_and_listing_return_active_extraction(
         }
     ]
 
-    listing = await client.get("/api/v1/documents")
+    listing = await client.get("/api/v1/workspaces/{WORKSPACE_ID}/documents")
 
     assert listing.status_code == 200
     summary = listing.json()["items"][0]
@@ -353,7 +371,7 @@ async def test_failed_document_can_be_retried(
 ) -> None:
     client, dispatcher, _ = documents_api
     upload = await client.post(
-        "/api/v1/documents/upload",
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
         files={"files": ("meeting.md", b"# Meeting\n", "text/markdown")},
     )
     result = upload.json()["results"][0]
@@ -364,7 +382,7 @@ async def test_failed_document_can_be_retried(
     await db_session.flush()
 
     response = await client.post(
-        f'/api/v1/documents/{result["document_id"]}/retry',
+        f'/api/v1/workspaces/{WORKSPACE_ID}/documents/{result["document_id"]}/retry',
         headers={"x-request-id": "retry-1"},
     )
 

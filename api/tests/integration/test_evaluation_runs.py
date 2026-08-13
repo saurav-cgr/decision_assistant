@@ -24,9 +24,11 @@ from decision_assistant.models import (
 from decision_assistant.config import Settings, get_settings
 from decision_assistant.providers.factory import ProviderBundle
 from decision_assistant.providers.fakes import FakeEmbeddingProvider, FakeGenerationProvider
+from decision_assistant.workspace.context import WorkspaceContext
 
 
 DATASET_VERSION = "decision-eval-v1"
+WORKSPACE_ID = UUID("66666666-6666-6666-6666-666666666666")
 RUN_CONFIGURATION = {
     "top_k": 5,
     "answer_prompt_version": "answer-v1",
@@ -538,8 +540,19 @@ async def test_evaluation_api_starts_run_and_returns_completed_detail(
         executor=RecordingExecutor(db_session),
         judge=RecordingJudge(),
     )
+    db_session.add(
+        Workspace(
+            id=WORKSPACE_ID,
+            name=f"Evaluation workspace {WORKSPACE_ID}",
+            embedding_profile=None,
+        )
+    )
+    await db_session.flush()
     app = create_app()
     app.dependency_overrides[router_module.get_evaluation_service] = lambda: service
+    app.dependency_overrides[router_module.get_workspace_context] = (
+        lambda: WorkspaceContext(workspace_id=WORKSPACE_ID)
+    )
 
     class TestRunner:
         async def dispatch(self, run_id: UUID) -> None:
@@ -554,7 +567,7 @@ async def test_evaluation_api_starts_run_and_returns_completed_detail(
         base_url="http://test",
     ) as client:
         started = await client.post(
-            "/api/v1/evaluations/runs",
+            f"/api/v1/workspaces/{WORKSPACE_ID}/evaluations/runs",
             json={
                 "strategy": "hybrid",
                 "dataset_version": DATASET_VERSION,
@@ -567,7 +580,9 @@ async def test_evaluation_api_starts_run_and_returns_completed_detail(
 
         assert started.status_code == 202
         run_id = started.json()["id"]
-        detail = await client.get(f"/api/v1/evaluations/runs/{run_id}")
+        detail = await client.get(
+            f"/api/v1/workspaces/{WORKSPACE_ID}/evaluations/runs/{run_id}"
+        )
 
     assert detail.status_code == 200
     assert detail.json()["status"] == "completed"

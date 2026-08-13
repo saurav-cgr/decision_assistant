@@ -238,6 +238,24 @@ def run_smoke() -> None:
     if health.get("status") != "ok":
         raise SmokeFailure("Unversioned health endpoint is not ready")
 
+    # Resolve the active workspace (create one if the corpus is empty) and scope
+    # every project-data request below /api/v1/workspaces/{id}/...
+    global API_V1
+    workspaces = _request_json(f"{API_V1}/workspaces")
+    items = workspaces.get("items") or []
+    active = next((w for w in items if w.get("is_active")), None)
+    if active is None:
+        created = _request_json(
+            f"{API_V1}/workspaces",
+            method="POST",
+            payload={"name": "Smoke Workspace"},
+            expected_statuses={201},
+        )
+        workspace_id = created["id"]
+    else:
+        workspace_id = active["id"]
+    API_V1 = f"{API_V1}/workspaces/{workspace_id}"
+
     fixture_paths = [
         SAMPLE_ROOT / "02-architecture-sync.md",
         SAMPLE_ROOT / "03-auth-rollout.md",

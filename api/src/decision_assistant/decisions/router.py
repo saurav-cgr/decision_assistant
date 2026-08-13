@@ -15,8 +15,14 @@ from decision_assistant.decisions.schemas import (
     SupportState,
 )
 from decision_assistant.decisions.service import DecisionService
+from decision_assistant.workspace.context import (
+    WorkspaceContext,
+    get_workspace_context,
+)
 
-router = APIRouter(prefix="/api/v1/decisions", tags=["decisions"])
+router = APIRouter(
+    prefix="/api/v1/workspaces/{workspace_id}/decisions", tags=["decisions"]
+)
 
 
 def get_decision_service(
@@ -27,6 +33,7 @@ def get_decision_service(
 
 @router.get("", response_model=DecisionListResponse)
 async def list_decisions(
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[DecisionService, Depends(get_decision_service)],
     decision_status: Annotated[DecisionStatus | None, Query(alias="status")] = None,
     owner: str | None = None,
@@ -40,24 +47,31 @@ async def list_decisions(
         project=project,
         topic=topic,
         review_state=review_state,
+        workspace_id=workspace.workspace_id,
     )
 
 
 @router.get("/{decision_id}", response_model=DecisionDetail)
 async def get_decision(
     decision_id: UUID,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[DecisionService, Depends(get_decision_service)],
 ) -> DecisionDetail:
-    return await service.get_decision(decision_id)
+    return await service.get_decision(
+        decision_id, workspace_id=workspace.workspace_id
+    )
 
 
 @router.patch("/{decision_id}", response_model=DecisionDetail)
 async def correct_decision(
     decision_id: UUID,
     request: DecisionCorrectionRequest,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[DecisionService, Depends(get_decision_service)],
 ) -> DecisionDetail:
-    return await service.correct_decision(decision_id, request)
+    return await service.correct_decision(
+        decision_id, request, workspace_id=workspace.workspace_id
+    )
 
 
 @router.post(
@@ -68,6 +82,9 @@ async def correct_decision(
 async def create_relation(
     decision_id: UUID,
     request: DecisionRelationRequest,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[DecisionService, Depends(get_decision_service)],
 ) -> DecisionRelationResponse:
-    return await service.create_relation(decision_id, request)
+    return await service.create_relation(
+        decision_id, request, workspace_id=workspace.workspace_id
+    )

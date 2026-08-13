@@ -15,8 +15,12 @@ from decision_assistant.retrieval.schemas import (
     RetrievalTraceResponse,
 )
 from decision_assistant.retrieval.service import HybridRetrievalService
+from decision_assistant.workspace.context import (
+    WorkspaceContext,
+    get_workspace_context,
+)
 
-router = APIRouter(prefix="/api/v1", tags=["retrieval"])
+router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["retrieval"])
 
 
 def get_retrieval_service(
@@ -38,9 +42,14 @@ def get_retrieval_service(
 async def search(
     payload: RetrievalSearchRequest,
     request: Request,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[HybridRetrievalService, Depends(get_retrieval_service)],
 ) -> RetrievalSearchResponse:
-    return await service.search(payload, request_id=request.state.request_id)
+    return await service.search(
+        payload,
+        request_id=request.state.request_id,
+        workspace_id=workspace.workspace_id,
+    )
 
 
 @router.get(
@@ -49,6 +58,9 @@ async def search(
 )
 async def get_trace(
     trace_id: UUID,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     service: Annotated[HybridRetrievalService, Depends(get_retrieval_service)],
 ) -> RetrievalTraceResponse:
-    return await service.get_trace(trace_id)
+    return await service.get_trace(
+        trace_id, workspace_id=workspace.workspace_id
+    )
