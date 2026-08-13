@@ -81,22 +81,34 @@ export function WorkspaceSelector({
     return <span className="workspace-selector">Loading workspaces…</span>;
   }
 
+  const activeWorkspace = workspaces.find(
+    (workspace) => workspace.id === activeWorkspaceId,
+  );
+
   return (
-    <div className="workspace-selector" aria-label="Active project workspace">
-      <label htmlFor="workspace-select">Project</label>
-      <select
-        id="workspace-select"
-        value={activeWorkspaceId ?? ""}
-        onChange={(event) => void handleSwitch(event.target.value)}
-        disabled={loading}
-      >
-        {workspaces.map((workspace) => (
-          <option key={workspace.id} value={workspace.id}>
-            {workspace.name}
-            {workspace.status === "archived" ? " (archived)" : ""}
-          </option>
-        ))}
-      </select>
+    <div className="workspace-selector" aria-label="Active workspace">
+      <label htmlFor="workspace-select">Workspace</label>
+      <div className="workspace-selector__row">
+        <select
+          id="workspace-select"
+          value={activeWorkspaceId ?? ""}
+          onChange={(event) => void handleSwitch(event.target.value)}
+          disabled={loading}
+        >
+          {workspaces.map((workspace) => (
+            <option key={workspace.id} value={workspace.id}>
+              {workspace.name}
+              {workspace.status === "archived" ? " (archived)" : ""}
+            </option>
+          ))}
+        </select>
+        {activeWorkspace ? (
+          <span className="workspace-selector__count" aria-label="Document count">
+            {activeWorkspace.document_count}{" "}
+            {activeWorkspace.document_count === 1 ? "document" : "documents"}
+          </span>
+        ) : null}
+      </div>
       <form
         className="workspace-selector__create"
         onSubmit={(event) => {
@@ -106,7 +118,7 @@ export function WorkspaceSelector({
       >
         <input
           aria-label="New workspace name"
-          placeholder="New project…"
+          placeholder="New workspace…"
           value={newName}
           onChange={(event) => setNewName(event.target.value)}
           disabled={creating}
