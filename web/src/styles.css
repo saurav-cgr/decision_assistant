@@ -149,7 +149,7 @@ a {
 
 .primary-nav__link.is-active {
   color: var(--accent);
-  background: #e2f1ea;
+  background: transparent;
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
