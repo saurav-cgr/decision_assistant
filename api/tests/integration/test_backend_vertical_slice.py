@@ -135,11 +135,16 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
             "completed",
             100,
         )
-        passage = await db_session.scalar(
-            select(Passage).where(Passage.document_version_id == job.document_version_id)
-        )
-        assert passage is not None
         quote = "The team proposed postponing authentication"
+        passages = list(
+            await db_session.scalars(
+                select(Passage).where(
+                    Passage.document_version_id == job.document_version_id
+                )
+            )
+        )
+        passage = next(p for p in passages if quote in p.content)
+        assert passage is not None
         answer_provider = FakeGenerationProvider(
             [
                 {

@@ -61,6 +61,7 @@ services:
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-26214400}
       MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-120}
       MODEL_RETRY_COUNT: ${MODEL_RETRY_COUNT:-2}
+      TIKTOKEN_CACHE_DIR: ${TIKTOKEN_CACHE_DIR:-/opt/tiktoken-cache}
       EVALUATION_DATASET_PATH: ${EVALUATION_DATASET_PATH:-/workspace/evaluation/questions.json}
       PYTHONPATH: /workspace/api/src
     command:
