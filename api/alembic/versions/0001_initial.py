@@ -27,14 +27,38 @@ def timestamps() -> list[sa.Column]:
 
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    op.execute("CREATE EXTENSION IF NOT EXISTS citext")
 
     op.create_table(
         "workspaces",
         sa.Column("id", UUID, primary_key=True),
-        sa.Column("name", sa.String(200), nullable=False),
+        sa.Column("name", postgresql.CITEXT(), nullable=False),
+        sa.Column(
+            "status",
+            sa.String(20),
+            server_default=sa.text("'active'"),
+            nullable=False,
+        ),
+        sa.Column(
+            "is_active",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
         sa.Column("embedding_profile", postgresql.JSONB(), nullable=True),
         *timestamps(),
         sa.UniqueConstraint("name", name="uq_workspaces_name"),
+        sa.CheckConstraint(
+            "status IN ('active', 'archived')",
+            name="ck_workspaces_status",
+        ),
+    )
+    op.create_index(
+        "uq_workspaces_one_active",
+        "workspaces",
+        ["is_active"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
     )
 
     op.create_table(
@@ -62,6 +86,12 @@ def upgrade() -> None:
         sa.Column("checksum", sa.String(64), nullable=False),
         sa.Column("storage_path", sa.Text(), nullable=False),
         sa.Column("normalized_content", sa.Text(), nullable=True),
+        sa.Column(
+            "chunking_profile",
+            postgresql.JSONB(),
+            server_default=EMPTY_OBJECT,
+            nullable=False,
+        ),
         sa.Column("state", sa.String(20), server_default="staging", nullable=False),
         sa.Column("error", postgresql.JSONB(), nullable=True),
         sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
@@ -107,6 +137,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("embedding", Vector(768), nullable=False),
+        sa.Column("embedding_profile", postgresql.JSONB(), nullable=False),
         *timestamps(),
         sa.ForeignKeyConstraint(["document_version_id"], ["document_versions.id"], ondelete="CASCADE"),
         sa.UniqueConstraint("document_version_id", "sequence_number", name="uq_passages_version_sequence"),
@@ -233,6 +264,7 @@ def upgrade() -> None:
     op.create_table(
         "retrieval_traces",
         sa.Column("id", UUID, primary_key=True),
+        sa.Column("workspace_id", UUID, nullable=False),
         sa.Column("request_id", sa.String(100), nullable=False),
         sa.Column("normalized_question", sa.Text(), nullable=False),
         sa.Column("filters", postgresql.JSONB(), server_default=EMPTY_OBJECT, nullable=False),
@@ -241,16 +273,26 @@ def upgrade() -> None:
         sa.Column("decision_candidates", postgresql.JSONB(), server_default=EMPTY_ARRAY, nullable=False),
         sa.Column("fused_results", postgresql.JSONB(), server_default=EMPTY_ARRAY, nullable=False),
         sa.Column("selected_passage_ids", postgresql.JSONB(), server_default=EMPTY_ARRAY, nullable=False),
+        sa.Column(
+            "selected_passage_metadata",
+            postgresql.JSONB(),
+            server_default=EMPTY_ARRAY,
+            nullable=False,
+        ),
+        sa.Column("rerank", postgresql.JSONB(), nullable=True),
         sa.Column("timings", postgresql.JSONB(), server_default=EMPTY_OBJECT, nullable=False),
         sa.Column("configuration", postgresql.JSONB(), server_default=EMPTY_OBJECT, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=NOW, nullable=False),
+        sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
     )
     op.create_index("ix_retrieval_traces_request_id", "retrieval_traces", ["request_id"])
     op.create_index("ix_retrieval_traces_created_at", "retrieval_traces", ["created_at"])
+    op.create_index("ix_retrieval_traces_workspace_id", "retrieval_traces", ["workspace_id"])
 
     op.create_table(
         "evaluation_questions",
         sa.Column("id", UUID, primary_key=True),
+        sa.Column("workspace_id", UUID, nullable=False),
         sa.Column("external_id", sa.String(100), nullable=False),
         sa.Column("dataset_version", sa.String(100), nullable=False),
         sa.Column("question", sa.Text(), nullable=False),
@@ -261,14 +303,22 @@ def upgrade() -> None:
         sa.Column("expectation", sa.String(20), nullable=False),
         sa.Column("tags", postgresql.JSONB(), server_default=EMPTY_ARRAY, nullable=False),
         *timestamps(),
-        sa.UniqueConstraint("dataset_version", "external_id", name="uq_evaluation_questions_dataset_external_id"),
+        sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
+        sa.UniqueConstraint(
+            "workspace_id",
+            "dataset_version",
+            "external_id",
+            name="uq_evaluation_questions_workspace_dataset_external_id",
+        ),
         sa.CheckConstraint("expectation IN ('answer', 'abstain', 'partial')", name="ck_evaluation_questions_expectation"),
     )
     op.create_index("ix_evaluation_questions_dataset_version", "evaluation_questions", ["dataset_version"])
+    op.create_index("ix_evaluation_questions_workspace_id", "evaluation_questions", ["workspace_id"])
 
     op.create_table(
         "evaluation_runs",
         sa.Column("id", UUID, primary_key=True),
+        sa.Column("workspace_id", UUID, nullable=False),
         sa.Column("strategy", sa.String(20), nullable=False),
         sa.Column("status", sa.String(20), server_default="pending", nullable=False),
         sa.Column("completed_questions", sa.Integer(), server_default="0", nullable=False),
@@ -279,15 +329,23 @@ def upgrade() -> None:
         sa.Column("generation_profile", postgresql.JSONB(), server_default=EMPTY_OBJECT, nullable=False),
         sa.Column("embedding_profile", postgresql.JSONB(), server_default=EMPTY_OBJECT, nullable=False),
         sa.Column("judge_profile", postgresql.JSONB(), server_default=EMPTY_OBJECT, nullable=False),
+        sa.Column(
+            "corpus_snapshot",
+            postgresql.JSONB(),
+            server_default=EMPTY_ARRAY,
+            nullable=False,
+        ),
         sa.Column("aggregate_metrics", postgresql.JSONB(), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         *timestamps(),
+        sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.CheckConstraint("strategy IN ('semantic', 'hybrid')", name="ck_evaluation_runs_strategy"),
         sa.CheckConstraint("status IN ('pending', 'running', 'completed', 'failed')", name="ck_evaluation_runs_status"),
         sa.CheckConstraint("completed_questions >= 0 AND total_questions >= 0 AND completed_questions <= total_questions", name="ck_evaluation_runs_progress"),
     )
     op.create_index("ix_evaluation_runs_status", "evaluation_runs", ["status"])
+    op.create_index("ix_evaluation_runs_workspace_id", "evaluation_runs", ["workspace_id"])
 
     op.create_table(
         "evaluation_results",

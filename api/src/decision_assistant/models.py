@@ -134,6 +134,12 @@ class DocumentVersion(TimestampMixin, Base):
     checksum: Mapped[str] = mapped_column(String(64))
     storage_path: Mapped[str] = mapped_column(Text)
     normalized_content: Mapped[str | None] = mapped_column(Text)
+    chunking_profile: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
     state: Mapped[str] = mapped_column(String(20), default="staging")
     error: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -174,11 +180,12 @@ class Passage(TimestampMixin, Base):
         Computed("to_tsvector('english'::regconfig, content)", persisted=True),
     )
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSION))
-    # Nullable at the database boundary so legacy rows remain detectable and can
-    # be migrated atomically. Ingestion always supplies a validated profile.
-    embedding_profile: Mapped[dict[str, Any] | None] = mapped_column(
+    # Embedding-only; chunking metadata lives on DocumentVersion.chunking_profile.
+    # Non-null: this schema generation has no legacy migratable rows.
+    embedding_profile: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
-        nullable=True,
+        nullable=False,
+        default=dict,
     )
 
 
@@ -384,6 +391,10 @@ class RetrievalTrace(Base):
     decision_candidates: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     fused_results: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     selected_passage_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    selected_passage_metadata: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
+    rerank: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     timings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     configuration: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(
@@ -455,6 +466,9 @@ class EvaluationRun(TimestampMixin, Base):
     generation_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     embedding_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     judge_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    corpus_snapshot: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
     aggregate_metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
