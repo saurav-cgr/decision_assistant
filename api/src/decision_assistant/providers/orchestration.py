@@ -1,6 +1,9 @@
+from dataclasses import replace
+
 from decision_assistant.errors import ApplicationError
 from decision_assistant.providers.base import (
     GenerationProvider,
+    GenerationRequest,
     ProviderOutputInvalid,
     ResponseModelT,
 )
@@ -18,24 +21,27 @@ class ModelOutputInvalid(ApplicationError):
 
 async def generate_with_repair(
     provider: GenerationProvider,
-    prompt: str,
+    request: GenerationRequest,
     response_model: type[ResponseModelT],
 ) -> ResponseModelT:
     try:
-        return await provider.generate(prompt, response_model)
+        return await provider.generate(request, response_model)
     except ProviderOutputInvalid:
-        repair_prompt = _repair_prompt(prompt)
-        if len(repair_prompt) > provider.max_prompt_characters:
+        repair_request = _repair_request(request)
+        if repair_request.total_characters > provider.max_prompt_characters:
             raise ModelOutputInvalid() from None
         try:
-            return await provider.generate(repair_prompt, response_model)
+            return await provider.generate(repair_request, response_model)
         except ProviderOutputInvalid:
             raise ModelOutputInvalid() from None
 
 
-def _repair_prompt(prompt: str) -> str:
-    return (
-        "REPAIR REQUIRED: The prior output did not match the supplied JSON schema. "
-        "Return corrected structured data only.\n\n"
-        f"{prompt}"
+def _repair_request(request: GenerationRequest) -> GenerationRequest:
+    return replace(
+        request,
+        system_instruction=(
+            "REPAIR REQUIRED: The prior output did not match the supplied JSON schema. "
+            "Return corrected structured data only.\n\n"
+            f"{request.system_instruction}"
+        ),
     )

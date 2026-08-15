@@ -9,6 +9,7 @@ from decision_assistant.providers.base import (
     EmbeddingProfile,
     EmbeddingPurpose,
     GenerationProfile,
+    GenerationRequest,
     ProviderOutputInvalid,
     ProviderInputTooLarge,
     ProviderResponseInvalid,
@@ -186,16 +187,19 @@ class OllamaGenerationProvider(_OllamaAdapter):
 
     async def generate(
         self,
-        prompt: str,
+        request: GenerationRequest,
         response_model: type[ResponseModelT],
     ) -> ResponseModelT:
-        if len(prompt) > self.max_prompt_characters:
+        if request.total_characters > self.max_prompt_characters:
             raise ProviderInputTooLarge()
         result = await self._post(
             "/api/chat",
             {
                 "model": self._model,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": [
+                    {"role": "system", "content": request.system_instruction},
+                    {"role": "user", "content": request.user_content},
+                ],
                 "stream": False,
                 "think": False,
                 "format": response_model.model_json_schema(),

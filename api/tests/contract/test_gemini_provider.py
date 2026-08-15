@@ -8,7 +8,11 @@ import pytest_asyncio
 from pydantic import BaseModel
 
 from decision_assistant.config import get_settings
-from decision_assistant.providers.base import EmbeddingPurpose, ProviderError
+from decision_assistant.providers.base import (
+    EmbeddingPurpose,
+    GenerationRequest,
+    ProviderError,
+)
 from decision_assistant.providers.factory import create_provider_bundle
 
 pytestmark = [
@@ -95,7 +99,12 @@ async def test_configured_generation_model_returns_requested_schema(
 ) -> None:
     result = await run_live_provider(
         gemini_bundle.generation.generate(
-            "Return JSON with answer set to the single word supported.",
+            GenerationRequest(
+                system_instruction=(
+                    "Return JSON with answer set to the single word supported."
+                ),
+                user_content="Return the required answer only.",
+            ),
             ContractAnswer,
         )
     )

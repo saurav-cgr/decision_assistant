@@ -4,7 +4,11 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from decision_assistant.providers.base import EmbeddingPurpose, ProviderOutputInvalid
+from decision_assistant.providers.base import (
+    EmbeddingPurpose,
+    GenerationRequest,
+    ProviderOutputInvalid,
+)
 from decision_assistant.providers.ollama import (
     OllamaEmbeddingProvider,
     OllamaGenerationProvider,
@@ -13,6 +17,13 @@ from decision_assistant.providers.ollama import (
 
 class AnswerStub(BaseModel):
     answer: str
+
+
+def request(
+    user: str = "Use evidence only",
+    system: str = "trusted policy",
+) -> GenerationRequest:
+    return GenerationRequest(system_instruction=system, user_content=user)
 
 
 @pytest.mark.asyncio
@@ -55,12 +66,16 @@ async def test_generation_adapter_requests_schema_and_zero_temperature() -> None
         transport=httpx.MockTransport(handler),
     )
 
-    result = await provider.generate("Use evidence only", AnswerStub)
+    result = await provider.generate(request(), AnswerStub)
 
     assert result == AnswerStub(answer="supported")
     assert requests[0]["format"] == AnswerStub.model_json_schema()
     assert requests[0]["options"] == {"temperature": 0}
     assert requests[0]["stream"] is False
+    assert requests[0]["messages"] == [
+        {"role": "system", "content": "trusted policy"},
+        {"role": "user", "content": "Use evidence only"},
+    ]
 
 
 @pytest.mark.asyncio
@@ -76,7 +91,7 @@ async def test_generation_adapter_maps_local_json_validation_to_output_invalid()
     )
 
     with pytest.raises(ProviderOutputInvalid):
-        await provider.generate("Use evidence only", AnswerStub)
+        await provider.generate(request(), AnswerStub)
 
 
 @pytest.mark.asyncio

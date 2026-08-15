@@ -14,6 +14,7 @@ from decision_assistant.providers.base import (
     EmbeddingProfile,
     EmbeddingPurpose,
     GenerationProfile,
+    GenerationRequest,
     ProviderOutputInvalid,
     ResponseModelT,
 )
@@ -72,11 +73,16 @@ class SmokeGenerationProvider:
     )
     max_prompt_characters = 100_000
 
+    def __init__(self) -> None:
+        self.requests: list[GenerationRequest] = []
+
     async def generate(
         self,
-        prompt: str,
+        request: GenerationRequest,
         response_model: type[ResponseModelT],
     ) -> ResponseModelT:
+        self.requests.append(request)
+        prompt = request.user_content
         if response_model is DecisionExtractionResponse:
             payload = _decision_payload(prompt)
         elif response_model is GeneratedAnswerCandidate:

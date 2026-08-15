@@ -14,6 +14,7 @@ from decision_assistant.providers.base import (
     EmbeddingProfile,
     EmbeddingPurpose,
     GenerationProfile,
+    GenerationRequest,
     ProviderOutputInvalid,
     ProviderError,
 )
@@ -103,6 +104,13 @@ def generation_provider(models: RecordingModels, **overrides: Any) -> Any:
     }
     arguments.update(overrides)
     return GeminiGenerationProvider(**arguments)
+
+
+def request(
+    user: str = "prompt",
+    system: str = "trusted policy",
+) -> GenerationRequest:
+    return GenerationRequest(system_instruction=system, user_content=user)
 
 
 def config_payload(config: Any) -> dict[str, Any]:
@@ -290,11 +298,14 @@ def test_embedding_rejects_sdk_batch_size_above_32() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generation_sends_schema_json_mime_and_zero_temperature() -> None:
+async def test_generation_separates_trusted_and_user_roles() -> None:
     models = RecordingModels()
     models.generation_results.append(generation_response('{"answer":"supported"}'))
 
-    result = await generation_provider(models).generate("Use evidence", AnswerStub)
+    result = await generation_provider(models).generate(
+        request(user="Use evidence", system="trusted policy"),
+        AnswerStub,
+    )
 
     assert result == AnswerStub(answer="supported")
     call = models.generation_calls[0]
@@ -302,6 +313,7 @@ async def test_generation_sends_schema_json_mime_and_zero_temperature() -> None:
     assert call["contents"] == "Use evidence"
     config = config_payload(call["config"])
     assert config["temperature"] == 0
+    assert config["system_instruction"] == "trusted policy"
     assert config["response_mime_type"] == "application/json"
     assert config["response_json_schema"] == AnswerStub.model_json_schema()
 
@@ -315,9 +327,21 @@ async def test_generation_rejects_malformed_or_schema_invalid_output(
     models.generation_results.append(generation_response(bad_output))
 
     with pytest.raises(ProviderOutputInvalid) as caught:
-        await generation_provider(models).generate("prompt", AnswerStub)
+        await generation_provider(models).generate(request(), AnswerStub)
 
     assert error_code(caught) == "provider_response_invalid"
+
+
+@pytest.mark.asyncio
+async def test_generation_rejects_blank_roles_without_sdk_call() -> None:
+    models = RecordingModels()
+
+    with pytest.raises(ValueError, match="must not be blank"):
+        request(user="   ", system="policy")
+    with pytest.raises(ValueError, match="must not be blank"):
+        request(user="prompt", system="   ")
+
+    assert models.generation_calls == []
 
 
 @pytest.mark.asyncio
@@ -325,7 +349,7 @@ async def test_generation_rejects_oversize_prompt_without_sdk_call() -> None:
     models = RecordingModels()
 
     with pytest.raises(ProviderError) as caught:
-        await generation_provider(models).generate("x" * 100_001, AnswerStub)
+        await generation_provider(models).generate(request("x" * 100_001), AnswerStub)
 
     assert error_code(caught) == "provider_input_too_large"
     assert models.generation_calls == []
@@ -348,7 +372,7 @@ async def test_generation_bounded_retry_recovers_from_transient_failures(
         [first_error, generation_response('{"answer":"supported"}')]
     )
 
-    result = await generation_provider(models).generate("prompt", AnswerStub)
+    result = await generation_provider(models).generate(request(), AnswerStub)
 
     assert result.answer == "supported"
     assert len(models.generation_calls) == 2
@@ -381,7 +405,7 @@ async def test_generation_maps_permanent_sdk_errors_to_distinct_sanitized_codes(
     models.generation_results.append(sdk_error)
 
     with pytest.raises(ProviderError) as caught:
-        await generation_provider(models).generate("prompt", AnswerStub)
+        await generation_provider(models).generate(request(), AnswerStub)
 
     assert error_code(caught) == expected_code
     assert str(sdk_error) not in str(caught.value)
@@ -393,7 +417,7 @@ async def test_exhausted_transient_retries_have_stable_unavailable_code() -> Non
     models.generation_results.extend([TimeoutError("one"), TimeoutError("two")])
 
     with pytest.raises(ProviderError) as caught:
-        await generation_provider(models, retry_count=1).generate("prompt", AnswerStub)
+        await generation_provider(models, retry_count=1).generate(request(), AnswerStub)
 
     assert error_code(caught) == "provider_unavailable"
     assert len(models.generation_calls) == 2
@@ -410,7 +434,7 @@ async def test_exhausted_short_window_429_maps_to_rate_limited() -> None:
     )
 
     with pytest.raises(ProviderError) as caught:
-        await generation_provider(models, retry_count=1).generate("prompt", AnswerStub)
+        await generation_provider(models, retry_count=1).generate(request(), AnswerStub)
 
     assert error_code(caught) == "provider_rate_limited"
     assert len(models.generation_calls) == 2
@@ -428,7 +452,7 @@ async def test_api_key_never_appears_in_errors_or_logs(
     )
 
     with caplog.at_level(logging.DEBUG), pytest.raises(ProviderError) as caught:
-        await generation_provider(models).generate("prompt", AnswerStub)
+        await generation_provider(models).generate(request(), AnswerStub)
 
     assert key_name not in str(caught.value)
     assert raw_value not in str(caught.value)
@@ -446,7 +470,7 @@ async def test_sdk_secret_is_suppressed_from_formatted_traceback() -> None:
 
     caught_error: ProviderError | None = None
     try:
-        await generation_provider(models).generate("prompt", AnswerStub)
+        await generation_provider(models).generate(request(), AnswerStub)
     except ProviderError as error:
         caught_error = error
         rendered = "".join(traceback.format_exception(error))
@@ -464,7 +488,7 @@ async def test_quota_marker_overrides_short_retry_after() -> None:
     )
 
     with pytest.raises(ProviderError) as caught:
-        await generation_provider(models).generate("prompt", AnswerStub)
+        await generation_provider(models).generate(request(), AnswerStub)
 
     assert caught.value.code == "provider_quota_exhausted"
     assert len(models.generation_calls) == 1
@@ -479,7 +503,7 @@ async def test_rate_limit_is_not_retried_when_delay_exceeds_request_budget() -> 
 
     with pytest.raises(ProviderError) as caught:
         await generation_provider(models, request_timeout_seconds=1).generate(
-            "prompt", AnswerStub
+            request(), AnswerStub
         )
 
     assert caught.value.code == "provider_rate_limited"
@@ -501,7 +525,7 @@ async def test_total_deadline_bounds_a_slow_sdk_attempt() -> None:
             models,
             request_timeout_seconds=0.01,
             retry_count=3,
-        ).generate("prompt", AnswerStub)
+        ).generate(request(), AnswerStub)
 
     assert caught.value.code == "provider_unavailable"
     assert len(models.generation_calls) == 1
@@ -521,7 +545,7 @@ async def test_resource_exhausted_with_short_retry_after_remains_transient() -> 
         ]
     )
 
-    result = await generation_provider(models).generate("prompt", AnswerStub)
+    result = await generation_provider(models).generate(request(), AnswerStub)
 
     assert result.answer == "supported"
     assert len(models.generation_calls) == 2
@@ -544,7 +568,7 @@ async def test_exponential_backoff_uses_bounded_injected_jitter() -> None:
         random_source=lambda: 1.0,
         sleep=record_sleep,
         request_timeout_seconds=10,
-    ).generate("prompt", AnswerStub)
+    ).generate(request(), AnswerStub)
 
     assert result.answer == "supported"
     assert delays == [pytest.approx(1.2)]
@@ -565,7 +589,7 @@ async def test_429_without_usable_window_stays_nonretryable_rate_limit(
     models.generation_results.append(sdk_error)
 
     with pytest.raises(ProviderError) as caught:
-        await generation_provider(models).generate("prompt", AnswerStub)
+        await generation_provider(models).generate(request(), AnswerStub)
 
     assert caught.value.code == "provider_rate_limited"
     assert caught.value.retryable is False
@@ -597,7 +621,7 @@ async def test_actual_sdk_retry_info_shape_is_parsed() -> None:
         ]
     )
 
-    result = await generation_provider(models).generate("prompt", AnswerStub)
+    result = await generation_provider(models).generate(request(), AnswerStub)
 
     assert result.answer == "supported"
     assert len(models.generation_calls) == 2
@@ -620,7 +644,7 @@ async def test_actual_sdk_schema_rejection_maps_schema_unsupported() -> None:
     )
 
     with pytest.raises(ProviderError) as caught:
-        await generation_provider(models).generate("prompt", AnswerStub)
+        await generation_provider(models).generate(request(), AnswerStub)
 
     assert caught.value.code == "provider_schema_unsupported"
 
@@ -655,7 +679,7 @@ async def test_actual_sdk_daily_quota_failure_id_maps_hard_quota() -> None:
     )
 
     with pytest.raises(ProviderError) as caught:
-        await generation_provider(models).generate("prompt", AnswerStub)
+        await generation_provider(models).generate(request(), AnswerStub)
 
     assert caught.value.code == "provider_quota_exhausted"
 
@@ -670,7 +694,7 @@ async def test_schema_indicator_in_value_error_maps_schema_without_leaking() -> 
 
     caught_error: ProviderError | None = None
     try:
-        await generation_provider(models).generate("prompt", AnswerStub)
+        await generation_provider(models).generate(request(), AnswerStub)
     except ProviderError as error:
         caught_error = error
         rendered = "".join(traceback.format_exception(error))

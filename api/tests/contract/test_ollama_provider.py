@@ -4,7 +4,7 @@ import pytest
 from pydantic import BaseModel
 
 from decision_assistant.config import get_settings
-from decision_assistant.providers.base import EmbeddingPurpose
+from decision_assistant.providers.base import EmbeddingPurpose, GenerationRequest
 from decision_assistant.providers.ollama import (
     OllamaEmbeddingProvider,
     OllamaGenerationProvider,
@@ -54,7 +54,12 @@ async def test_configured_generation_model_returns_schema() -> None:
     )
 
     result = await provider.generate(
-        "Return JSON with answer set to the single word supported.",
+        GenerationRequest(
+            system_instruction=(
+                "Return JSON with answer set to the single word supported."
+            ),
+            user_content="Return the required answer only.",
+        ),
         ContractAnswer,
     )
 

@@ -24,6 +24,7 @@ from decision_assistant.models import (
 from decision_assistant.config import Settings, get_settings
 from decision_assistant.providers.factory import ProviderBundle
 from decision_assistant.providers.fakes import FakeEmbeddingProvider, FakeGenerationProvider
+from decision_assistant.providers.base import GenerationRequest
 from decision_assistant.workspace.context import WorkspaceContext
 
 
@@ -164,16 +165,16 @@ class RecordingExecutor:
 
 class RecordingJudge:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.calls: list[tuple[GenerationRequest, dict[str, Any]]] = []
         self.profile = JUDGE_PROFILE
 
     async def judge(
         self,
-        prompt: str,
+        request: GenerationRequest,
         *,
         profile: dict[str, Any],
     ) -> dict[str, Any]:
-        self.calls.append((prompt, profile))
+        self.calls.append((request, profile))
         return {
             "claims": [{"claim_index": 0, "supported": True}],
             "supported_claims": 1,

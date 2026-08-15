@@ -36,6 +36,31 @@ class GenerationProfile:
     prompt_contract_version: str
 
 
+@dataclass(frozen=True, slots=True)
+class GenerationRequest:
+    """Trusted system instructions vs request-specific untrusted user content.
+
+    ``system_instruction`` carries stable application policy (task/role,
+    evidence-only behavior, untrusted-content rule, citation and abstention
+    rules). ``user_content`` carries only request-specific data (questions,
+    document passages, candidates, judge payloads). Repair never alters
+    ``user_content`` byte-for-byte.
+    """
+
+    system_instruction: str
+    user_content: str
+
+    def __post_init__(self) -> None:
+        if not self.system_instruction.strip():
+            raise ValueError("system_instruction must not be blank")
+        if not self.user_content.strip():
+            raise ValueError("user_content must not be blank")
+
+    @property
+    def total_characters(self) -> int:
+        return len(self.system_instruction) + len(self.user_content)
+
+
 class EmbeddingProvider(Protocol):
     @property
     def profile(self) -> EmbeddingProfile: ...
@@ -57,7 +82,7 @@ class GenerationProvider(Protocol):
 
     async def generate(
         self,
-        prompt: str,
+        request: GenerationRequest,
         response_model: type[ResponseModelT],
     ) -> ResponseModelT: ...
 

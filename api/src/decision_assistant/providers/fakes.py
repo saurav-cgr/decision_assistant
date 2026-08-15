@@ -9,6 +9,7 @@ from decision_assistant.providers.base import (
     EmbeddingProfile,
     EmbeddingPurpose,
     GenerationProfile,
+    GenerationRequest,
     ProviderOutputInvalid,
     ProviderInputTooLarge,
     ProviderUnavailable,
@@ -73,7 +74,7 @@ class FakeGenerationProvider:
         max_prompt_characters: int = 100_000,
     ) -> None:
         self._responses = list(responses)
-        self.prompts: list[str] = []
+        self.requests: list[GenerationRequest] = []
         self._profile = GenerationProfile(
             provider="fake",
             model="queued-response",
@@ -101,12 +102,12 @@ class FakeGenerationProvider:
 
     async def generate(
         self,
-        prompt: str,
+        request: GenerationRequest,
         response_model: type[ResponseModelT],
     ) -> ResponseModelT:
-        if len(prompt) > self.max_prompt_characters:
+        if request.total_characters > self.max_prompt_characters:
             raise ProviderInputTooLarge()
-        self.prompts.append(prompt)
+        self.requests.append(request)
         if not self._responses:
             raise AssertionError("No fake generation response queued")
 

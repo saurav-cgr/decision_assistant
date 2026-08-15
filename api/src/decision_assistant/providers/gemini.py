@@ -12,6 +12,7 @@ from decision_assistant.providers.base import (
     EmbeddingProfile,
     EmbeddingPurpose,
     GenerationProfile,
+    GenerationRequest,
     ProviderAuthenticationFailed,
     ProviderConfigurationInvalid,
     ProviderError,
@@ -196,17 +197,18 @@ class GeminiGenerationProvider(_GeminiAdapter):
 
     async def generate(
         self,
-        prompt: str,
+        request: GenerationRequest,
         response_model: type[ResponseModelT],
     ) -> ResponseModelT:
-        if len(prompt) > self._max_prompt_characters:
+        if request.total_characters > self._max_prompt_characters:
             raise ProviderInputTooLarge()
         response = await self._request(
             lambda: self._client.aio.models.generate_content(
                 model=self.profile.model,
-                contents=prompt,
+                contents=request.user_content,
                 config={
                     "temperature": self.profile.temperature,
+                    "system_instruction": request.system_instruction,
                     "response_mime_type": "application/json",
                     "response_json_schema": response_model.model_json_schema(),
                 },

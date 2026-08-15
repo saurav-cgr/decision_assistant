@@ -44,7 +44,7 @@ Authentication was postponed.
     assert metadata.participants == ["Maya", "Ravi"]
     assert metadata.source_type == "meeting"
     assert metadata.project == "Atlas"
-    assert provider.prompts == []
+    assert provider.requests == []
 
 
 @pytest.mark.asyncio
@@ -74,7 +74,7 @@ async def test_heading_is_deterministic_and_model_fills_only_missing_fields(
     assert metadata.participants == ["Elena"]
     assert metadata.source_type == "meeting"
     assert metadata.project == "Atlas"
-    assert len(provider.prompts) == 1
+    assert len(provider.requests) == 1
 
 
 @pytest.mark.asyncio
@@ -122,9 +122,10 @@ async def test_metadata_generation_uses_a_bounded_beginning_of_document_sample(
         parse_document(source)
     )
 
-    assert "BEGINNING" in provider.prompts[0]
-    assert "OMITTED-TAIL" not in provider.prompts[0]
-    assert "bounded beginning-of-document sample" in provider.prompts[0].lower()
+    user = provider.requests[0].user_content
+    assert "BEGINNING" in user
+    assert "OMITTED-TAIL" not in user
+    assert "bounded beginning-of-document sample" in user.lower()
 
 
 @pytest.mark.asyncio
@@ -140,4 +141,4 @@ async def test_metadata_schema_failure_repairs_once_then_raises_stable_error(
         await MetadataExtractor(provider).extract(parse_document(source))
 
     assert caught.value.code == "model_output_invalid"
-    assert len(provider.prompts) == 2
+    assert len(provider.requests) == 2

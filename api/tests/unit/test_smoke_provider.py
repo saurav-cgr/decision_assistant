@@ -6,11 +6,18 @@ import pytest
 
 from decision_assistant.answering.schemas import GeneratedAnswerCandidate
 from decision_assistant.decisions.schemas import DecisionExtractionResponse
-from decision_assistant.providers.base import EmbeddingPurpose
+from decision_assistant.providers.base import EmbeddingPurpose, GenerationRequest
 from tests.support.smoke_provider import (
     SmokeEmbeddingProvider,
     SmokeGenerationProvider,
 )
+
+
+def request(user: str) -> GenerationRequest:
+    return GenerationRequest(
+        system_instruction="trusted policy",
+        user_content=user,
+    )
 
 
 @pytest.mark.asyncio
@@ -40,7 +47,7 @@ async def test_smoke_generation_extracts_only_fixed_atlas_beta_decision() -> Non
     prompt = f'<passage id="{passage_id}">\n{content}\n</passage>'
 
     result = await SmokeGenerationProvider().generate(
-        prompt,
+        request(prompt),
         DecisionExtractionResponse,
     )
 
@@ -73,7 +80,7 @@ async def test_smoke_generation_builds_verifiable_answer_from_prompt_evidence() 
     prompt = f"<evidence>{json.dumps(evidence)}</evidence>"
 
     result = await SmokeGenerationProvider().generate(
-        prompt, GeneratedAnswerCandidate
+        request(prompt), GeneratedAnswerCandidate
     )
 
     assert result.confidence == "high"
@@ -117,7 +124,7 @@ async def test_smoke_answer_cites_both_beta_decisions_for_conflict_verification(
     }
 
     result = await SmokeGenerationProvider().generate(
-        f"<evidence>{json.dumps(evidence)}</evidence>",
+        request(f"<evidence>{json.dumps(evidence)}</evidence>"),
         GeneratedAnswerCandidate,
     )
 
