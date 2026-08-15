@@ -78,6 +78,7 @@ def validate_selected_provider_configuration(settings: Settings) -> None:
     """Check local configuration presence only; never create or call a provider."""
     _prevalidate_embedding_settings(settings)
     _prevalidate_generation_settings(settings)
+    _prevalidate_rerank_settings(settings)
     if "gemini" in {settings.embedding_provider, settings.generation_provider}:
         key = (
             settings.gemini_api_key.get_secret_value().strip()
@@ -86,6 +87,17 @@ def validate_selected_provider_configuration(settings: Settings) -> None:
         )
         if not key:
             raise ProviderConfigurationInvalid()
+
+
+def _prevalidate_rerank_settings(settings: Settings) -> None:
+    if settings.rerank_candidate_limit < 1 or settings.rerank_min_candidates < 1:
+        raise ProviderConfigurationInvalid()
+    if settings.rerank_final_limit < 1:
+        raise ProviderConfigurationInvalid()
+    if settings.rerank_final_limit > settings.rerank_candidate_limit:
+        raise ProviderConfigurationInvalid()
+    if settings.rerank_min_candidates > settings.rerank_candidate_limit:
+        raise ProviderConfigurationInvalid()
 
 
 class CachedProviderBundleFactory:

@@ -53,6 +53,8 @@ class RetrievalTraceResponse(RetrievalModel):
     decision_candidates: list[dict[str, Any]]
     fused_results: list[dict[str, Any]]
     selected_passage_ids: list[str]
+    selected_passage_metadata: list[dict[str, Any]] = Field(default_factory=list)
+    rerank: dict[str, Any] | None = None
     timings: dict[str, Any]
     configuration: dict[str, Any]
     created_at: datetime

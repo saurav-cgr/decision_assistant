@@ -277,6 +277,10 @@ async def test_hybrid_retrieval_caps_sources_and_excludes_retired_versions(
         "decision_limit": 20,
         "rrf_k": 60,
         "top_k": 5,
+        "rerank_enabled": False,
+        "rerank_candidate_limit": 12,
+        "rerank_min_candidates": 6,
+        "rerank_final_limit": 5,
     }
 
 

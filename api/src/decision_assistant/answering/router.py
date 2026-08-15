@@ -5,12 +5,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.answering.schemas import QuestionRequest, QuestionResponse
 from decision_assistant.answering.service import AnswerService
+from decision_assistant.config import get_settings
 from decision_assistant.db import get_session
 from decision_assistant.providers.factory import (
     ProviderBundleFactory,
     get_provider_bundle_factory,
 )
-from decision_assistant.retrieval.service import HybridRetrievalService
+from decision_assistant.retrieval.reranking import GenerationReranker
+from decision_assistant.retrieval.service import (
+    HybridRetrievalService,
+    RetrievalConfig,
+)
 from decision_assistant.workspace.context import (
     WorkspaceContext,
     get_workspace_context,
@@ -28,9 +33,23 @@ def get_answer_service(
     ],
 ) -> AnswerService:
     providers = provider_factory()
+    settings = get_settings()
+    config = RetrievalConfig(
+        rerank_enabled=settings.rerank_enabled,
+        rerank_candidate_limit=settings.rerank_candidate_limit,
+        rerank_min_candidates=settings.rerank_min_candidates,
+        rerank_final_limit=settings.rerank_final_limit,
+    )
+    reranker = (
+        GenerationReranker(providers.generation)
+        if settings.rerank_enabled
+        else None
+    )
     retrieval_service = HybridRetrievalService(
         session=session,
         embedding_provider=providers.embedding,
+        config=config,
+        reranker=reranker,
     )
     return AnswerService(
         session=session,

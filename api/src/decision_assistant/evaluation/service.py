@@ -48,6 +48,7 @@ from decision_assistant.providers.base import (
 )
 from decision_assistant.providers.orchestration import generate_with_repair
 from decision_assistant.retrieval.repository import RetrievalRepository
+from decision_assistant.retrieval.reranking import GenerationReranker
 from decision_assistant.retrieval.schemas import (
     RetrievalResult,
     RetrievalSearchRequest,
@@ -828,10 +829,29 @@ class RuntimeEvaluationExecutor:
                 top_k=top_k,
             )
         else:
+            rerank_enabled = bool(configuration.get("rerank_enabled", False))
+            reranker = (
+                GenerationReranker(self._generation_provider)
+                if rerank_enabled
+                else None
+            )
             retrieval_service = HybridRetrievalService(
                 session=self._session,
                 embedding_provider=self._embedding_provider,
-                config=RetrievalConfig(top_k=top_k),
+                config=RetrievalConfig(
+                    top_k=top_k,
+                    rerank_enabled=rerank_enabled,
+                    rerank_candidate_limit=int(
+                        configuration.get("rerank_candidate_limit", 12)
+                    ),
+                    rerank_min_candidates=int(
+                        configuration.get("rerank_min_candidates", 6)
+                    ),
+                    rerank_final_limit=int(
+                        configuration.get("rerank_final_limit", 5)
+                    ),
+                ),
+                reranker=reranker,
             )
         answer_service = AnswerService(
             session=self._session,

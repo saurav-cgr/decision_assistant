@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 25 * 1024 * 1024
     model_timeout_seconds: float = 120.0
     model_retry_count: int = 2
+    rerank_enabled: bool = False
+    rerank_candidate_limit: int = 12
+    rerank_min_candidates: int = 6
+    rerank_final_limit: int = 5
     evaluation_dataset_path: Path = Path("/workspace/evaluation/questions.json")
 
 
