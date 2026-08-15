@@ -63,7 +63,7 @@ def gemini_settings(**overrides: Any) -> Settings:
         "gemini_embedding_model": "gemini-embedding-2",
         "gemini_embedding_dimension": 768,
         "gemini_embedding_config_version": "retrieval-prefix-v1",
-        "gemini_generation_prompt_version": "gemini-json-v1",
+        "gemini_generation_prompt_version": "gemini-json-v2",
         "gemini_embedding_batch_size": 32,
         "gemini_max_prompt_characters": 100_000,
     }

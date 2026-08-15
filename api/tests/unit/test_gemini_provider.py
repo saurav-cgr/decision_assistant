@@ -97,7 +97,7 @@ def generation_provider(models: RecordingModels, **overrides: Any) -> Any:
     arguments = {
         "client": sdk_client(models),
         "model": GENERATION_MODEL,
-        "prompt_version": "gemini-json-v1",
+        "prompt_version": "gemini-json-v2",
         "max_prompt_characters": 100_000,
         "retry_count": 2,
         "retry_backoff_seconds": 0,
@@ -145,7 +145,7 @@ def test_profiles_fully_describe_the_embedding_and_generation_contracts() -> Non
         sdk_version="2.13.0",
         temperature=0,
         schema_mode="json_schema",
-        prompt_contract_version="gemini-json-v1",
+        prompt_contract_version="gemini-json-v2",
     )
 
 

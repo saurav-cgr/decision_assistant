@@ -174,7 +174,7 @@ class OllamaGenerationProvider(_OllamaAdapter):
             sdk_version="httpx-0.28.1",
             temperature=0,
             schema_mode="json_schema",
-            prompt_contract_version="ollama-json-v1",
+            prompt_contract_version="ollama-json-v2",
         )
 
     @property
