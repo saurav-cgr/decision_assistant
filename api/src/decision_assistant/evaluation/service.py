@@ -57,9 +57,10 @@ from decision_assistant.retrieval.service import (
     HybridRetrievalService,
     RetrievalConfig,
 )
-from decision_assistant.workspace.embedding_migration import (
-    require_current_embedding_profile,
+from decision_assistant.workspace.embedding_profile import (
+    require_current_corpus_profiles,
 )
+from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.workspace.service import WorkspaceService
 
 CLAIM_JUDGE_PROMPT_VERSION = "claim-support-v1"
@@ -928,9 +929,10 @@ class SemanticRetrievalService:
                 await WorkspaceService(self._session).get_or_create_active()
             ).id
         normalized = request.question.lower()
-        await require_current_embedding_profile(
+        await require_current_corpus_profiles(
             self._session,
             self._embedding_provider.profile,
+            CURRENT_CHUNKING_PROFILE,
             workspace_id=workspace_id,
         )
         embedding = (

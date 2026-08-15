@@ -107,22 +107,27 @@ Key settings:
 
 ### Provider swapping
 
-Providers implement `EmbeddingProvider` and `GenerationProvider`. To switch, change the `*_PROVIDER` settings and (for embeddings) re-index. The optional Ollama path:
+Providers implement `EmbeddingProvider` and `GenerationProvider`. To switch, change the `*_PROVIDER` settings and (for embeddings) reset the database and reingest the corpus (see below). The optional Ollama path:
 
 ```bash
 docker compose --profile ollama up -d ollama
 # set GENERATION_PROVIDER=ollama and EMBEDDING_PROVIDER=ollama
 ```
 
-### Embedding-profile migration
+### Corpus-contract reset (development policy)
 
-An embedding profile is `(provider, model, dimension, adapter_config_version)`. Vectors from different profiles are never compared. Changing the configured profile leaves the corpus-active profile unchanged until you migrate:
+An embedding profile is `(provider, model, dimension, adapter_config_version)`, and a chunking profile is `(algorithm, encoding, target/max/overlap tokens)`. Vectors from different profiles are never compared. This project is in development and provides **no legacy-corpus compatibility and no in-place migration path**.
+
+If the configured embedding or chunking contract changes, the application returns `corpus_reset_required` instead of attempting a migration. Reset the PostgreSQL database and reingest every reproducible source document with the current code version:
 
 ```bash
-docker compose run --rm api python -m decision_assistant.commands.reindex_embeddings
+docker compose stop api web
+docker compose exec -T db sh -lc \
+  'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+docker compose run --rm api alembic upgrade head
 ```
 
-The command snapshots active passages, obtains and validates all vectors in bounded batches, then flips vectors/profiles and the corpus-active profile in **one** atomic transaction. Any failure or snapshot drift aborts without writes. It never creates a `DocumentVersion` and never re-runs parsing, extraction, or evidence alignment — so user corrections, passage IDs, offsets, and hashes are byte-for-byte unchanged. Until migration completes, hybrid/semantic retrieval returns `embedding_reindex_required`; keyword-only inspection and correction workflows stay available.
+This does **not** delete `uploads_data`, `ollama_data`, or `web_node_modules` volumes; only PostgreSQL is reset. Until a fresh, uniformly reingested corpus exists, hybrid/semantic retrieval, answering, and evaluation return `corpus_reset_required`; keyword-only inspection and correction workflows stay available.
 
 ---
 
@@ -242,7 +247,7 @@ Tests do not require live model output except the explicitly marked Gemini accep
 | Live calls fail with `provider_configuration_invalid` | `GEMINI_API_KEY` is empty. Add it to `.env` (never commit it). |
 | `provider_quota_exhausted` | Free-tier daily quota hit. Wait for reset or change provider/tier. |
 | `provider_authentication_failed` | Key rejected by Gemini. Check the key. |
-| `embedding_reindex_required` | Embedding profile changed; run the `reindex_embeddings` command. |
+| `corpus_reset_required` | Embedding or chunking profile changed; reset PostgreSQL and reingest the corpus (no in-place migration). |
 | Hybrid answers abstain | Not enough supported evidence in active passages; inspect the retrieval trace. |
 | Stale `running` ingestion jobs | An API restart interrupted in-process jobs; the UI exposes a retry action. |
 

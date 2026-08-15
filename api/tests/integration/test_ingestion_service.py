@@ -24,7 +24,7 @@ from decision_assistant.providers.fakes import (
     FakeGenerationProvider,
 )
 from decision_assistant.workspace.service import WorkspaceService
-from decision_assistant.workspace.embedding_migration import EmbeddingReindexRequired
+from decision_assistant.workspace.embedding_profile import CorpusResetRequired
 
 GOOD_CONTENT = """---
 title: Architecture Sync
@@ -49,7 +49,7 @@ async def create_harness(
     db_session: AsyncSession,
     tmp_path: Path,
 ) -> tuple[IngestionService, Document, FakeEmbeddingProvider]:
-    workspace = await WorkspaceService(db_session).get_or_create(
+    workspace = await WorkspaceService(db_session).get_or_create_active(
         name=f"Test workspace {uuid4()}"
     )
     document = Document(
@@ -217,7 +217,7 @@ async def test_waiting_old_profile_ingestion_cannot_activate_mixed_corpus(
     await db_session.flush()
     write_source(tmp_path, CHANGED_CONTENT)
 
-    with pytest.raises(EmbeddingReindexRequired) as error:
+    with pytest.raises(CorpusResetRequired) as error:
         await service.ingest(document.id, source, request_id="queued-old-provider")
 
     await db_session.refresh(document)
@@ -239,7 +239,7 @@ async def test_waiting_old_profile_ingestion_cannot_activate_mixed_corpus(
             .where(DocumentVersion.state == "active")
         )
     )
-    assert error.value.code == "embedding_reindex_required"
+    assert error.value.code == "corpus_reset_required"
     assert document.active_version_id == first.version_id
     assert [version.state for version in versions] == ["active", "failed"]
     assert workspace.embedding_profile == migrated_profile

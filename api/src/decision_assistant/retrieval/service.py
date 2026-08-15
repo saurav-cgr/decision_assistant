@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from decision_assistant.errors import ApplicationError
 from decision_assistant.models import Passage, RetrievalTrace
 from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
+from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.retrieval.repository import RankedPassage, RetrievalRepository
 from decision_assistant.retrieval.rrf import reciprocal_rank_fusion
 from decision_assistant.retrieval.schemas import (
@@ -15,8 +16,8 @@ from decision_assistant.retrieval.schemas import (
     RetrievalSearchResponse,
     RetrievalTraceResponse,
 )
-from decision_assistant.workspace.embedding_migration import (
-    require_current_embedding_profile,
+from decision_assistant.workspace.embedding_profile import (
+    require_current_corpus_profiles,
 )
 from decision_assistant.workspace.service import WorkspaceService
 
@@ -75,9 +76,10 @@ class HybridRetrievalService:
                 await WorkspaceService(self._session).get_or_create_active()
             ).id
         normalized_question = request.question.lower()
-        await require_current_embedding_profile(
+        await require_current_corpus_profiles(
             self._session,
             self._embedding_provider.profile,
+            CURRENT_CHUNKING_PROFILE,
             workspace_id=workspace_id,
         )
         embedding = (

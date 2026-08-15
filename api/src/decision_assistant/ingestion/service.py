@@ -25,10 +25,11 @@ from decision_assistant.models import (
     Workspace,
 )
 from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
-from decision_assistant.workspace.embedding_migration import (
-    EmbeddingReindexRequired,
+from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
+from decision_assistant.workspace.embedding_profile import (
+    CorpusResetRequired,
     acquire_workspace_embedding_lock,
-    get_embedding_corpus_state,
+    get_corpus_state,
 )
 
 
@@ -113,6 +114,7 @@ class IngestionService:
                 raise IngestionError("Document version not found", code="version_not_found")
             version.state = "staging"
             version.error = None
+            version.chunking_profile = CURRENT_CHUNKING_PROFILE
             job.stage = "staging"
             job.status = "running"
             job.progress = 5
@@ -140,6 +142,7 @@ class IngestionService:
                 version_number=version_number,
                 checksum=checksum,
                 storage_path=str(stored_path),
+                chunking_profile=CURRENT_CHUNKING_PROFILE,
                 state="staging",
             )
             job = IngestionJob(
@@ -314,18 +317,19 @@ class IngestionService:
         job.stage = "activating"
         job.progress = 90
         await acquire_workspace_embedding_lock(self._session, document.workspace_id)
-        corpus_state = await get_embedding_corpus_state(
+        corpus_state = await get_corpus_state(
             self._session,
             document.workspace_id,
             self._embedding_provider.profile,
+            CURRENT_CHUNKING_PROFILE,
         )
         if corpus_state.active_passage_count == 0:
             workspace = await self._session.get(Workspace, document.workspace_id)
             if workspace is None:
                 raise IngestionError("Workspace not found", code="workspace_not_found")
             workspace.embedding_profile = self._embedding_provider.profile.as_dict()
-        elif corpus_state.migration_pending:
-            raise EmbeddingReindexRequired()
+        elif corpus_state.corpus_reset_required:
+            raise CorpusResetRequired()
         if previous_version is not None:
             previous_version.state = "retired"
             await self._session.flush([previous_version])

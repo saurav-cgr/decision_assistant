@@ -8,7 +8,7 @@ from decision_assistant.config import Settings
 from decision_assistant.db import get_session
 from decision_assistant.documents.router import get_document_service
 from decision_assistant.main import create_app
-from decision_assistant.workspace.embedding_migration import EmbeddingReindexRequired
+from decision_assistant.workspace.embedding_profile import CorpusResetRequired
 
 
 class StubDocumentService:
@@ -61,12 +61,12 @@ def test_ready_checks_configuration_and_migration_without_creating_provider(
     )
     profile_seen = None
 
-    async def current_profile(_session: object, profile: object) -> None:
+    async def current_profile(_session: object, profile: object, chunking: object) -> None:
         nonlocal profile_seen
         profile_seen = profile
 
     monkeypatch.setattr(
-        "decision_assistant.main.require_current_embedding_profile",
+        "decision_assistant.main.require_current_corpus_profiles",
         current_profile,
     )
 
@@ -78,7 +78,7 @@ def test_ready_checks_configuration_and_migration_without_creating_provider(
     assert profile_seen.provider == "gemini"
 
 
-def test_ready_is_degraded_while_embedding_migration_is_pending(
+def test_ready_is_degraded_while_corpus_reset_is_required(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app = create_app(Settings(gemini_api_key="configured-not-validated"))
@@ -86,10 +86,10 @@ def test_ready_is_degraded_while_embedding_migration_is_pending(
     app.dependency_overrides[get_session] = _session_override(session)
 
     async def pending(*_: object) -> None:
-        raise EmbeddingReindexRequired()
+        raise CorpusResetRequired()
 
     monkeypatch.setattr(
-        "decision_assistant.main.require_current_embedding_profile",
+        "decision_assistant.main.require_current_corpus_profiles",
         pending,
     )
 
@@ -117,7 +117,7 @@ def test_ready_accepts_selected_ollama_configuration_without_gemini_key(
         return None
 
     monkeypatch.setattr(
-        "decision_assistant.main.require_current_embedding_profile",
+        "decision_assistant.main.require_current_corpus_profiles",
         current_profile,
     )
 

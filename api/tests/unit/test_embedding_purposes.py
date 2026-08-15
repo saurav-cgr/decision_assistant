@@ -48,12 +48,12 @@ async def test_runtime_and_semantic_evaluation_retrieval_embed_queries(
 
     monkeypatch.setattr(
         retrieval_service_module,
-        "require_current_embedding_profile",
+        "require_current_corpus_profiles",
         current_profile,
     )
     monkeypatch.setattr(
         evaluation_service_module,
-        "require_current_embedding_profile",
+        "require_current_corpus_profiles",
         current_profile,
     )
     provider = FakeEmbeddingProvider(dimension=768)

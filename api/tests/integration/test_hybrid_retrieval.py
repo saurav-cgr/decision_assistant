@@ -28,7 +28,8 @@ from decision_assistant.workspace.context import (
     WorkspaceContext,
     get_workspace_context,
 )
-from decision_assistant.workspace.embedding_migration import EmbeddingReindexRequired
+from decision_assistant.workspace.embedding_profile import CorpusResetRequired
+from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 
 EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
 
@@ -72,6 +73,7 @@ async def create_version(
         checksum=sha256(name.encode()).hexdigest(),
         storage_path=f"fixtures/{name}",
         normalized_content="",
+        chunking_profile=CURRENT_CHUNKING_PROFILE,
         state=state,
     )
     session.add(version)
@@ -120,10 +122,10 @@ async def test_hybrid_retrieval_abstains_before_provider_call_when_reindex_requi
         content="Legacy authentication decision.",
         embedding=[0.0] * 768,
     )
-    passage.embedding_profile = None
+    passage.embedding_profile = {"provider": "legacy", "model": "old"}
     await db_session.flush()
 
-    with pytest.raises(EmbeddingReindexRequired) as error:
+    with pytest.raises(CorpusResetRequired) as error:
         await HybridRetrievalService(
             session=db_session,
             embedding_provider=embedding_provider,
@@ -133,7 +135,7 @@ async def test_hybrid_retrieval_abstains_before_provider_call_when_reindex_requi
             workspace_id=workspace.id,
         )
 
-    assert error.value.code == "embedding_reindex_required"
+    assert error.value.code == "corpus_reset_required"
     assert embedding_provider.purposes == []
 
 

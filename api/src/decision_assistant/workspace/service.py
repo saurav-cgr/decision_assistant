@@ -84,10 +84,6 @@ class WorkspaceService:
             return workspace
         return await self.create(name=name)
 
-    async def get_or_create(self, *, name: str = "Decision Assistant") -> Workspace:
-        """Backwards-compatible alias used during the migration of project-data paths."""
-        return await self.get_or_create_active(name=name)
-
     async def rename(self, workspace_id: UUID, name: str) -> Workspace:
         workspace = await self.get(workspace_id)
         duplicate = await self._session.scalar(

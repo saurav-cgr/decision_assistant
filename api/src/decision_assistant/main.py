@@ -20,6 +20,7 @@ from decision_assistant.decisions.router import router as decisions_router
 from decision_assistant.documents.router import router as documents_router
 from decision_assistant.errors import ApplicationError, ErrorResponse
 from decision_assistant.evaluation.router import router as evaluation_router
+from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.retrieval.router import router as retrieval_router
 from decision_assistant.providers.base import ProviderConfigurationInvalid
 from decision_assistant.providers.factory import (
@@ -28,9 +29,9 @@ from decision_assistant.providers.factory import (
     validate_selected_provider_configuration,
 )
 from decision_assistant.timelines.router import router as timelines_router
-from decision_assistant.workspace.embedding_migration import (
-    EmbeddingReindexRequired,
-    require_current_embedding_profile,
+from decision_assistant.workspace.embedding_profile import (
+    CorpusResetRequired,
+    require_current_corpus_profiles,
 )
 from decision_assistant.workspace.router import router as workspaces_router
 
@@ -184,13 +185,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, str]:
         try:
             validate_selected_provider_configuration(resolved_settings)
-            await require_current_embedding_profile(
+            await require_current_corpus_profiles(
                 session,
                 configured_embedding_profile(resolved_settings),
+                CURRENT_CHUNKING_PROFILE,
             )
         except (
             ProviderConfigurationInvalid,
-            EmbeddingReindexRequired,
+            CorpusResetRequired,
             SQLAlchemyError,
         ):
             raise ServiceNotReady() from None
