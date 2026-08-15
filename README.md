@@ -103,6 +103,10 @@ Key settings:
 | `GEMINI_GENERATION_PROMPT_VERSION` | `gemini-json-v2` | Versioned generation prompt contract. |
 | `GEMINI_EMBEDDING_BATCH_SIZE` | `32` | Max embedding inputs per provider request. |
 | `GEMINI_MAX_PROMPT_CHARACTERS` | `100000` | Generation prompt budget; never silently truncated. |
+| `RERANK_ENABLED` | `false` | Enable schema-constrained reranking after RRF (disabled by default). |
+| `RERANK_CANDIDATE_LIMIT` | `12` | Max fused candidates sent to the reranker. |
+| `RERANK_MIN_CANDIDATES` | `6` | Minimum fused candidates before reranking runs. |
+| `RERANK_FINAL_LIMIT` | `5` | Evidence passages selected after reranking. |
 | `OLLAMA_*` | *(optional)* | Only used behind the `ollama` Compose profile. |
 
 ### Provider swapping
@@ -128,6 +132,53 @@ docker compose run --rm api alembic upgrade head
 ```
 
 This does **not** delete `uploads_data`, `ollama_data`, or `web_node_modules` volumes; only PostgreSQL is reset. Until a fresh, uniformly reingested corpus exists, hybrid/semantic retrieval, answering, and evaluation return `corpus_reset_required`; keyword-only inspection and correction workflows stay available.
+
+### Reingesting a reproducible corpus
+
+The reingestion script creates/activates the target workspace, uploads every supported file in stable filename order, polls each job, and prints a machine-readable manifest (checksum, document ID, active version ID, passage count):
+
+```bash
+docker compose up -d api web
+python scripts/ingest_corpus.py --source-directory sample_data/atlas --workspace-name Atlas
+```
+
+It never reads old database rows or uploads to reconstruct sources; all sources must exist under `sample_data`, fixtures, scripts, or an explicit external directory.
+
+---
+
+## Balanced Retrieval & Prompting
+
+This project splits retrieval into deterministic structural chunking + an optional schema-constrained reranker, and separates trusted application instructions from untrusted user content at the provider boundary.
+
+### Token-budgeted structural chunking
+
+Parsers normalize every source into a **source-neutral block contract** (`ParsedBlock`: text, block type, namespaced `group_path`, `boundary_before`, bounded attributes, JSON locator). A single chunker consumes these blocks for all source types — no source-specific branches.
+
+- Offline token counter: pinned `tiktoken` `cl100k_base` (a budgeting **approximation**, not a claim of token equivalence with any provider). The rank cache is baked into the image at `TIKTOKEN_CACHE_DIR`; runtime token counting works with the network disabled.
+- Budgets: target **450**, hard max **600**, overlap **≤ 60** budgeting tokens.
+- Chunks never cross hard boundaries (section/page/channel/thread) and never mix `group_path`s (thread/channel). Oversized units split at sentence then token-window boundaries, preserving exact source through offsets.
+- The current profile `structural-token-v1` is stored per active `DocumentVersion`. Changing chunking or embedding contracts is **not migratable** — it fails with `corpus_reset_required` (see above).
+
+### Trusted prompt roles
+
+`GenerationProvider.generate` takes a `GenerationRequest` with two roles:
+
+- **System instruction** — stable application policy: task/role, evidence-only behavior, the untrusted-content / prompt-injection rule, citation and abstention requirements, and output semantics not already in the JSON Schema.
+- **User content** — request-specific data only: questions, delimited passages/evidence, candidates, and judge payloads. Document text and user questions are always untrusted user-role content.
+
+Repair attempts append a short schema-repair directive to the system instruction and leave user content byte-for-byte unchanged. Generation prompt contract versions are `gemini-json-v2` / `ollama-json-v2`.
+
+### Schema-constrained reranking
+
+When enabled and at least `RERANK_MIN_CANDIDATES` fused candidates exist, the first `RERANK_CANDIDATE_LIMIT` RRF candidates are sent to a schema-constrained reranker that returns an ordered list of the supplied passage IDs. Validation drops duplicates/unknowns, appends omitted valid IDs in RRF order, and treats an empty ranking as invalid. Any provider error, schema failure, or invalid output **falls back to RRF** and is recorded in the trace. `CancelledError` is never swallowed. The reranker may only reorder supplied IDs — it never adds evidence.
+
+Settings (all validated at startup): `RERANK_ENABLED=false`, `RERANK_CANDIDATE_LIMIT=12`, `RERANK_MIN_CANDIDATES=6`, `RERANK_FINAL_LIMIT=5`. It is **disabled by default**; enable only after recorded benchmark evidence shows measurable quality improvement without an abstention regression.
+
+`RetrievalTrace` records `rerank` (`status`, input/output order, `profile`, `fallback_reason`), `rerank_ms`, and per-selected-passage metadata (`chunking_profile`, `source_kind`). Evaluation runs snapshot the active corpus (`corpus_snapshot`) at creation so pre/post comparisons are auditable even if documents activate or retire later.
+
+### Conversation-shaped sources (contract only)
+
+Slack/Teams messages are supported as a **normalization contract** (see `tests/fixtures/conversations/` and `test_conversation_block_contract.py`): one `message` block per message with canonical `[UTC] Author: text` prefixes, channel/thread `group_path`, and `slack_message`/`teams_message` locators. Secrets, tokens, full connector payloads, and reactions are excluded. Actual Slack/Teams authentication and connector clients are **out of scope**; source adapters are plug-compatible but not shipped.
 
 ---
 
