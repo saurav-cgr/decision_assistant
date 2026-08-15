@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from decision_assistant.db import get_session
 from decision_assistant.decisions.extractor import DecisionExtractor
 from decision_assistant.ingestion.metadata import MetadataExtractor
+from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.ingestion.service import IngestionService
 from decision_assistant.main import create_app
 from decision_assistant.models import (
@@ -109,6 +110,7 @@ async def decisions_api(
         checksum=sha256(active_content.encode()).hexdigest(),
         storage_path="/tmp/architecture-v2.md",
         normalized_content=active_content,
+        chunking_profile=CURRENT_CHUNKING_PROFILE,
         state="active",
     )
     retired_version = DocumentVersion(
@@ -122,6 +124,7 @@ async def decisions_api(
         checksum=sha256(retired_content.encode()).hexdigest(),
         storage_path="/tmp/architecture-v1.md",
         normalized_content=retired_content,
+        chunking_profile=CURRENT_CHUNKING_PROFILE,
         state="retired",
     )
     db_session.add_all([active_version, retired_version])

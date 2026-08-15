@@ -13,6 +13,7 @@ from decision_assistant.config import Settings
 from decision_assistant.decisions.service import DecisionService
 from decision_assistant.documents.service import DocumentService
 from decision_assistant.evaluation.service import EvaluationService
+from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.models import (
     Decision,
     DecisionEvidence,
@@ -64,6 +65,7 @@ async def _seed_workspace(
         checksum=sha256(SHARED_CONTENT.encode()).hexdigest(),
         storage_path=f"/tmp/{name}-auth.md",
         normalized_content=SHARED_CONTENT,
+        chunking_profile=CURRENT_CHUNKING_PROFILE,
         state="active",
     )
     session.add(version)
