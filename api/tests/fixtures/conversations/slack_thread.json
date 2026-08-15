@@ -1,0 +1,29 @@
+{
+  "kind": "slack",
+  "workspace_id": "T01234567",
+  "channel_id": "C0123ABC",
+  "thread_id": "1712345678.000001",
+  "message_url": "https://acme.slack.com/archives/C0123ABC/p1712345678000001",
+  "messages": [
+    {
+      "message_id": "1712345678.000001",
+      "ts": "2026-08-15T10:20:00Z",
+      "author": "Alice",
+      "text": "We should postpone authentication until imports stabilize.",
+      "attachments": [
+        {
+          "name": "roadmap.pdf",
+          "mime_type": "application/pdf",
+          "text": "Postpone to Q4."
+        }
+      ]
+    },
+    {
+      "message_id": "1712345680.000002",
+      "ts": "2026-08-15T10:22:00Z",
+      "author": "Bob",
+      "text": "Agreed. Maya will own the rollout.",
+      "reactions": [{"name": "thumbsup", "count": 3}]
+    }
+  ]
+}

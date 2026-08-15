@@ -3,7 +3,7 @@ from html import escape
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from decision_assistant.ingestion.parsers import ParsedDocument
+from decision_assistant.ingestion.parsers import ParsedBlock, ParsedDocument
 from decision_assistant.providers.base import (
     GenerationProvider,
     GenerationRequest,
@@ -44,7 +44,7 @@ class MetadataExtractor:
         self._max_sample_characters = max_sample_characters
 
     async def extract(self, document: ParsedDocument) -> DocumentMetadata:
-        deterministic, present_fields = _extract_deterministic(document.content)
+        deterministic, present_fields = _extract_deterministic(document)
         missing_fields = {
             field
             for field in DocumentMetadata.model_fields
@@ -73,10 +73,10 @@ class MetadataExtractor:
         return DocumentMetadata.model_validate(merged)
 
 
-def _extract_deterministic(content: str) -> tuple[dict[str, object], set[str]]:
+def _extract_deterministic(document: ParsedDocument) -> tuple[dict[str, object], set[str]]:
     values: dict[str, object] = {}
     present: set[str] = set()
-    front_matter = _parse_front_matter(content)
+    front_matter = _parse_front_matter(document.content)
 
     field_mapping = {
         "title": "title",
@@ -94,7 +94,7 @@ def _extract_deterministic(content: str) -> tuple[dict[str, object], set[str]]:
         present.add(target_name)
 
     if "title" not in present:
-        heading = _first_heading(content)
+        heading = _first_heading_block(document.blocks)
         if heading is not None:
             values["title"] = heading
             present.add("title")
@@ -144,26 +144,10 @@ def _unquote(value: str) -> str:
     return stripped
 
 
-def _first_heading(content: str) -> str | None:
-    lines = content.splitlines()
-    inside_front_matter = bool(lines and lines[0].strip() == "---")
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if inside_front_matter:
-            if index > 0 and stripped == "---":
-                inside_front_matter = False
-            continue
-        if stripped.startswith("#"):
-            heading = stripped.lstrip("#").strip()
-            if heading:
-                return heading
-        if (
-            index + 1 < len(lines)
-            and stripped
-            and lines[index + 1].strip()
-            and set(lines[index + 1].strip()) <= {"=", "-"}
-        ):
-            return stripped
+def _first_heading_block(blocks: tuple[ParsedBlock, ...]) -> str | None:
+    for block in blocks:
+        if block.block_type == "heading":
+            return block.text
     return None
 
 

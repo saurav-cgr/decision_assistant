@@ -1,0 +1,30 @@
+{
+  "kind": "teams",
+  "tenant_id": "tenant-abc",
+  "team_id": "team-123",
+  "channel_id": "channel-456",
+  "conversation_id": "thread-789",
+  "message_url": "https://teams.microsoft.com/l/message/channel-456/thread-789",
+  "messages": [
+    {
+      "message_id": "msg-0001",
+      "ts": "2026-08-15T11:00:00Z",
+      "author": "Carol",
+      "text": "The beta stays employee-only.",
+      "attachments": []
+    },
+    {
+      "message_id": "msg-0002",
+      "ts": "2026-08-15T11:05:00Z",
+      "author": "Dave",
+      "text": "Confirmed. Jonah approves security.",
+      "attachments": [
+        {
+          "name": "notes.txt",
+          "mime_type": "text/plain",
+          "text": "Security notes."
+        }
+      ]
+    }
+  ]
+}

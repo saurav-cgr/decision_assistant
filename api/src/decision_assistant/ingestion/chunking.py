@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from hashlib import sha256
 
-from decision_assistant.ingestion.parsers import LineLocator, ParsedBlock, ParsedDocument
+from decision_assistant.ingestion.parsers import (
+    ParsedBlock,
+    ParsedDocument,
+    SourceLocator,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -11,7 +15,7 @@ class PassageDraft:
     content_hash: str
     start_offset: int
     end_offset: int
-    locator: LineLocator
+    locator: SourceLocator
 
 
 def chunk_document(
@@ -108,7 +112,7 @@ def _locator_for_range(
     blocks: tuple[ParsedBlock, ...],
     start: int,
     end: int,
-) -> LineLocator:
+) -> SourceLocator:
     covered = [
         block
         for block in blocks

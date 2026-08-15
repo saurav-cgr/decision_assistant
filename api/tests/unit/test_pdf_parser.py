@@ -52,6 +52,15 @@ def test_pdf_parser_preserves_page_numbers_and_offsets() -> None:
     )
 
 
+def test_pdf_pages_are_page_blocks_with_hard_boundaries() -> None:
+    parsed = parse_document(TEXT_PDF)
+
+    assert [block.block_type for block in parsed.blocks] == ["page", "page"]
+    assert [block.boundary_before for block in parsed.blocks] == ["none", "hard"]
+    assert all(block.group_path == () for block in parsed.blocks)
+    assert all(block.attributes == {} for block in parsed.blocks)
+
+
 def test_pdf_without_embedded_text_requires_ocr() -> None:
     with pytest.raises(DocumentParseError) as error:
         parse_document(SCANNED_EMPTY_PDF)
