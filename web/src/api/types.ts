@@ -107,9 +107,26 @@ export type RetrievalTraceResponse = {
   decision_candidates: RetrievalCandidate[];
   fused_results: RetrievalCandidate[];
   selected_passage_ids: string[];
+  selected_passage_metadata?: SelectedPassageMetadata[];
+  rerank?: RerankTrace | null;
   timings: Record<string, number>;
   configuration: Record<string, unknown>;
   created_at: string;
+};
+
+export type SelectedPassageMetadata = {
+  passage_id: string;
+  document_version_id: string;
+  chunking_profile: Record<string, unknown>;
+  source_kind: string;
+};
+
+export type RerankTrace = {
+  status: string;
+  input_passage_ids: string[];
+  output_passage_ids: string[];
+  profile: Record<string, unknown>;
+  fallback_reason: string | null;
 };
 
 export type DecisionStatus = "active" | "proposed" | "rejected" | "superseded";
@@ -294,10 +311,17 @@ export type EvaluationRun = EvaluationRunRequest & {
   generation_profile: Record<string, unknown>;
   embedding_profile: Record<string, unknown>;
   judge_profile: Record<string, unknown>;
+  corpus_snapshot?: CorpusSnapshotEntry[];
   aggregate_metrics: EvaluationMetrics | null;
   started_at: string | null;
   completed_at: string | null;
   results: EvaluationResult[];
+};
+
+export type CorpusSnapshotEntry = {
+  document_version_id: string;
+  chunking_profile: Record<string, unknown>;
+  source_kind: string;
 };
 
 export type EvaluationRunSummary = {

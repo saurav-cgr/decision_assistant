@@ -88,6 +88,7 @@ class EvaluationRunResponse(EvaluationModel):
     generation_profile: dict[str, Any]
     embedding_profile: dict[str, Any]
     judge_profile: dict[str, Any]
+    corpus_snapshot: list[dict[str, Any]] = Field(default_factory=list)
     aggregate_metrics: dict[str, Any] | None
     started_at: datetime | None
     completed_at: datetime | None

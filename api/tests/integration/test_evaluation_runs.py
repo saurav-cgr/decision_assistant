@@ -591,3 +591,75 @@ async def test_evaluation_api_starts_run_and_returns_completed_detail(
     assert detail.json()["completed_questions"] == 3
     assert detail.json()["total_questions"] == 3
     assert len(detail.json()["results"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_run_snapshots_active_corpus_and_ignores_later_changes(
+    db_session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
+
+    workspace = Workspace(name="Snapshot workspace", embedding_profile=None)
+    db_session.add(workspace)
+    await db_session.flush()
+    document = Document(
+        workspace_id=workspace.id,
+        display_name="snap.md",
+        media_type="text/markdown",
+    )
+    db_session.add(document)
+    await db_session.flush()
+    version = DocumentVersion(
+        document_id=document.id,
+        version_number=1,
+        checksum="a" * 64,
+        storage_path="snap.md",
+        normalized_content="Auth decision.",
+        chunking_profile=CURRENT_CHUNKING_PROFILE,
+        state="active",
+    )
+    db_session.add(version)
+    await db_session.flush()
+    document.active_version_id = version.id
+
+    dataset_path = tmp_path / "snap-questions.json"
+    write_dataset(dataset_path, version="snap-v1")
+    service_module = import_module("decision_assistant.evaluation.service")
+    schemas = import_module("decision_assistant.evaluation.schemas")
+    service = service_module.EvaluationService(
+        session=db_session,
+        dataset_path=dataset_path,
+        executor=RecordingExecutor(db_session),
+        judge=RecordingJudge(),
+    )
+
+    run_one = await service.create_run(
+        schemas.EvaluationRunRequest(
+            strategy="hybrid",
+            dataset_version="snap-v1",
+            judge_profile={"temperature": 0},
+        ),
+        workspace_id=workspace.id,
+    )
+    assert run_one.corpus_snapshot == [
+        {
+            "document_version_id": str(version.id),
+            "chunking_profile": CURRENT_CHUNKING_PROFILE,
+            "source_kind": "markdown",
+        }
+    ]
+
+    # Retire the active version; a later run must snapshot the empty corpus.
+    version.state = "retired"
+    document.active_version_id = None
+    await db_session.flush()
+    run_two = await service.create_run(
+        schemas.EvaluationRunRequest(
+            strategy="hybrid",
+            dataset_version="snap-v1",
+            judge_profile={"temperature": 0},
+        ),
+        workspace_id=workspace.id,
+    )
+    assert run_two.corpus_snapshot == []

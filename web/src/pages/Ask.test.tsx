@@ -238,6 +238,56 @@ describe("Ask", () => {
         "Rank 1",
       ),
     ).toBeVisible();
+    expect(
+      screen.queryByRole("region", { name: /reranker/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows reranker status, order, and latency without raw secrets", async () => {
+    api.answerQuestion.mockResolvedValue(response());
+    api.getRetrievalTrace.mockResolvedValue({
+      id: traceId,
+      request_id: "request-rerank-1",
+      normalized_question: "why was authentication postponed?",
+      filters: {},
+      semantic_candidates: [],
+      keyword_candidates: [],
+      decision_candidates: [],
+      fused_results: [
+        { passage_id: passageOne, rank: 1, fused_score: 0.03 },
+      ],
+      selected_passage_ids: [passageOne],
+      selected_passage_metadata: [
+        {
+          passage_id: passageOne,
+          document_version_id: "version-1",
+          chunking_profile: { algorithm: "structural-token-v1" },
+          source_kind: "markdown",
+        },
+      ],
+      rerank: {
+        status: "completed",
+        input_passage_ids: [passageOne],
+        output_passage_ids: [passageOne],
+        profile: { provider: "fake" },
+        fallback_reason: null,
+      },
+      timings: { total_ms: 84, rerank_ms: 12 },
+      configuration: { top_k: 5, rrf_k: 60, rerank_enabled: true },
+      created_at: "2026-08-11T04:00:00Z",
+    });
+    const user = userEvent.setup();
+    await renderAsk();
+    await ask();
+
+    await user.click(screen.getByRole("button", { name: /show retrieval trace/i }));
+
+    const region = await screen.findByRole("region", { name: /reranker/i });
+    expect(within(region).getByText("completed")).toBeVisible();
+    expect(within(region).getByText(/12 ms/)).toBeVisible();
+    expect(within(region).getAllByText(passageOne).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/api key/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/secret/i)).not.toBeInTheDocument();
   });
 
   it("shows the stable request ID when answering fails", async () => {

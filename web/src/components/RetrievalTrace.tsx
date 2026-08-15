@@ -4,6 +4,7 @@ import { getRetrievalTrace } from "../api/client";
 import type {
   RetrievalCandidate,
   RetrievalTraceResponse,
+  RerankTrace,
 } from "../api/types";
 
 type RetrievalTraceProps = {
@@ -15,8 +16,7 @@ type CandidateRegionProps = {
   candidates: RetrievalCandidate[];
 };
 
-function CandidateRegion({ label, candidates }: CandidateRegionProps) {
-  return (
+function CandidateRegion({ label, candidates }: CandidateRegionProps) {  return (
     <section className="trace-region" aria-label={label}>
       <h3>{label}</h3>
       {candidates.length === 0 ? (
@@ -38,6 +38,47 @@ function CandidateRegion({ label, candidates }: CandidateRegionProps) {
           ))}
         </ol>
       )}
+    </section>
+  );
+}
+
+type RerankerRegionProps = {
+  rerank: RerankTrace;
+  rerankMs?: number;
+};
+
+function RerankerRegion({ rerank, rerankMs }: RerankerRegionProps) {
+  const fallback = rerank.fallback_reason
+    ? ` · fallback: ${rerank.fallback_reason}`
+    : "";
+  return (
+    <section className="trace-region" aria-label="Reranker">
+      <h3>Reranker</h3>
+      <p>
+        Status <code>{rerank.status}</code>
+        {fallback}
+        {typeof rerankMs === "number" && <span> · {rerankMs} ms</span>}
+      </p>
+      <p>
+        <strong>Input order</strong>
+      </p>
+      <ol>
+        {rerank.input_passage_ids.map((passageId, index) => (
+          <li key={`${passageId}-in-${index}`}>
+            <code>{passageId}</code>
+          </li>
+        ))}
+      </ol>
+      <p>
+        <strong>Output order</strong>
+      </p>
+      <ol>
+        {rerank.output_passage_ids.map((passageId, index) => (
+          <li key={`${passageId}-out-${index}`}>
+            <code>{passageId}</code>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -90,6 +131,12 @@ export function RetrievalTrace({ traceId }: RetrievalTraceProps) {
             candidates={trace.decision_candidates}
           />
           <CandidateRegion label="Fused results" candidates={trace.fused_results} />
+          {trace.rerank && (
+            <RerankerRegion
+              rerank={trace.rerank}
+              rerankMs={trace.timings.rerank_ms}
+            />
+          )}
         </div>
       )}
     </section>

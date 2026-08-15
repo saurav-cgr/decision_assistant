@@ -146,6 +146,7 @@ class EvaluationService:
                 await WorkspaceService(self._session).get_or_create_active()
             ).id
         await self._sync_questions(dataset, workspace_id)
+        corpus_snapshot = await self._build_corpus_snapshot(workspace_id)
         run = EvaluationRun(
             workspace_id=workspace_id,
             strategy=request.strategy,
@@ -158,11 +159,37 @@ class EvaluationService:
             generation_profile=self._generation_profile,
             embedding_profile=self._embedding_profile,
             judge_profile=self._judge_profile,
+            corpus_snapshot=corpus_snapshot,
             aggregate_metrics=None,
         )
         self._session.add(run)
         await self._session.flush()
         return run
+
+    async def _build_corpus_snapshot(
+        self,
+        workspace_id: UUID,
+    ) -> list[dict[str, object]]:
+        rows = await self._session.execute(
+            select(DocumentVersion, Document.media_type)
+            .join(Document, Document.id == DocumentVersion.document_id)
+            .where(
+                Document.workspace_id == workspace_id,
+                DocumentVersion.state == "active",
+                Document.active_version_id == DocumentVersion.id,
+            )
+        )
+        return sorted(
+            (
+                {
+                    "document_version_id": str(version.id),
+                    "chunking_profile": version.chunking_profile,
+                    "source_kind": _source_kind_from_media_type(media_type),
+                }
+                for version, media_type in rows
+            ),
+            key=lambda entry: entry["document_version_id"],
+        )
 
     async def execute_run(self, run_id: UUID) -> None:
         run = await self._require_run(run_id)
@@ -271,6 +298,7 @@ class EvaluationService:
             generation_profile=run.generation_profile,
             embedding_profile=run.embedding_profile,
             judge_profile=run.judge_profile,
+            corpus_snapshot=run.corpus_snapshot,
             aggregate_metrics=run.aggregate_metrics,
             started_at=run.started_at,
             completed_at=run.completed_at,
@@ -788,6 +816,19 @@ class GenerationClaimJudge:
             ClaimJudgeOutput,
         )
         return result.model_dump(mode="json")
+
+
+def _source_kind_from_media_type(media_type: str | None) -> str:
+    media_type = (media_type or "").lower()
+    if media_type == "text/markdown":
+        return "markdown"
+    if media_type == "text/plain":
+        return "text"
+    if media_type == "application/pdf":
+        return "pdf"
+    if "wordprocessingml" in media_type:
+        return "docx"
+    return "text"
 
 
 class RuntimeEvaluationExecutor:
