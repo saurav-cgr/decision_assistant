@@ -12,22 +12,52 @@ This change covers three related improvements:
 2. Add an optional schema-constrained LLM reranker between Reciprocal Rank Fusion (RRF) and final evidence selection.
 3. Separate trusted application instructions from user questions and untrusted document evidence at the provider boundary.
 
-The existing guarantees remain: workspace isolation, active-version-only retrieval, inspectable traces, exact citations, deterministic post-generation verification, abstention when evidence is insufficient, and provider abstraction across Gemini and Ollama.
+The existing guarantees remain: workspace isolation, active-version-only retrieval, inspectable traces, exact citations, deterministic post-generation verification, abstention when evidence is insufficient, and provider abstraction across Gemini and Ollama. The normalized parser contract must also accept conversation-shaped sources such as Slack and Teams without requiring source-specific logic in chunking, retrieval, or answering.
 
-Conversation memory, query rewriting, retrieval decomposition, local cross-encoder deployment, and changes to answer-verification policy are out of scope.
+Conversation memory, query rewriting, retrieval decomposition, local cross-encoder deployment, changes to answer-verification policy, and actual Slack/Teams authentication or connector implementation are out of scope. This design makes their future source adapters plug-compatible.
 
 ## 2. Token-Budgeted Structural Chunking
 
-### 2.1 Algorithm
+### 2.1 Source-neutral block contract
 
-The parser contract expands `ParsedBlock` with `block_type` (`heading`, `paragraph`, `table_cell`, or `page`) and optional `heading_level`. Parsers populate these fields deterministically:
+`ParsedBlock` becomes a source-neutral normalization contract rather than a closed file-layout enum. It contains:
+
+```python
+ParsedBlock(
+    text: str,
+    block_type: str,
+    group_path: tuple[str, ...],
+    boundary_before: Literal["hard", "soft", "none"],
+    attributes: dict[str, str | int | float | bool | None],
+    locator: SourceLocator,
+    start_offset: int,
+    end_offset: int,
+)
+```
+
+- `block_type` is an extensible normalized label. Initial labels are `heading`, `paragraph`, `table_cell`, `page`, `message`, `attachment`, `code`, and `list_item`; adding a source adapter does not require changing the chunker.
+- `group_path` is an ordered tuple of namespaced stable keys from broad to narrow, for example `("channel:C123", "thread:171234")` or `("heading-1:architecture#1", "heading-2:storage#1")`. It carries hierarchy without embedding Slack-, Teams-, Markdown-, or DOCX-specific fields in the chunker.
+- `boundary_before="hard"` prevents combination with the preceding block; `soft` is a preferred split; `none` permits normal accumulation. The source adapter owns this classification.
+- `attributes` carries bounded context useful for rendering and retrieval, such as author display name, UTC timestamp, heading level, language, attachment name, or MIME type. Secrets, auth tokens, full connector payloads, reactions, and unrelated platform metadata are excluded.
+- `SourceLocator` replaces the file-only `LineLocator` alias with a JSON-compatible discriminated mapping. Existing `lines`, `pdf_page`, and `docx_paragraphs` shapes remain valid; conversation shapes add scalar IDs/URLs and `list[str]` only where a passage spans multiple messages.
+- `locator` carries durable source identity needed to navigate back to evidence. Offsets continue to address the canonical normalized document content.
+
+Parsers/source adapters populate these fields deterministically:
 
 - Markdown ATX and Setext headings become `heading` blocks with levels 1–6; other Markdown/text blocks become `paragraph`.
 - DOCX paragraphs whose style name maps to `Heading 1` through `Heading 6` become `heading`; other paragraphs become `paragraph`; table paragraphs become `table_cell`.
 - PDF extraction does not infer headings from typography because `pypdf` does not expose reliable style information. Each page remains a `page` block and is a hard structural boundary.
 - Plain `.txt` has paragraph blocks and no inferred headings.
+- A future Slack adapter emits one `message` block per message, using channel and thread IDs as `group_path`, and emits attachment text as adjacent `attachment` blocks in the same group.
+- A future Teams adapter emits one `message` block per channel/chat message, using team/channel/thread or chat/conversation IDs as `group_path`, with the same normalized behavior.
 
-During parsing, each non-heading block also receives a `section_path` derived from the active heading stack. Heading text remains in normalized document content, so offsets and hashes retain their current exact-source semantics. Existing locator fields are unchanged.
+File headings update the active `group_path`. A new Markdown/DOCX section, PDF page, Slack/Teams channel, or Slack/Teams thread starts with a hard boundary. Messages inside one thread remain chronological and use soft boundaries, so they may share a chunk but never mix with another thread or channel.
+
+Conversation adapters build canonical transcript text that includes bounded provenance before message content, for example `[2026-08-15T10:20:00Z] Alice: Decision text`. This makes author and time available to embeddings and answer evidence while preserving deterministic offsets. Platform message IDs, channel/chat IDs, thread IDs, and navigable message URLs remain in locators. A chunk covering several messages receives a range locator containing source kind, group IDs, first message ID, last message ID, and their URLs.
+
+Heading text and canonical transcript prefixes remain in normalized document content, so offsets and hashes retain exact normalized-source semantics.
+
+### 2.2 Chunking algorithm
 
 The chunker consumes these enriched normalized blocks and splits content in this order:
 
@@ -43,15 +73,17 @@ Adjacent units are accumulated into a chunk until adding the next unit would exc
 - overlap: up to 60 budgeting tokens, drawn from complete trailing sentences or blocks;
 - existing 100,000-character provider input ceiling remains an independent hard guard.
 
-Chunks do not cross explicit Markdown/DOCX section boundaries or PDF page boundaries merely to reach the target. A heading is grouped with the first content in its section when the hard limit permits. Small adjacent units inside one section may be combined. Empty/whitespace-only units are discarded. Oversized paragraphs, table cells, and pages use sentence then token-window fallback.
+Chunks never cross hard boundaries. A heading is grouped with the first content in its section when the hard limit permits. Messages in one thread are accumulated chronologically; complete message blocks are preferred for overlap. Small adjacent units inside one group may be combined. Empty/whitespace-only units are discarded. Oversized paragraphs, table cells, pages, messages, and attachments use sentence then token-window fallback.
 
-### 2.2 Token counter
+The chunker produces a source-neutral range locator from all covered block locators. File locators retain current line/page/paragraph behavior. Conversation locators identify the exact channel/chat, thread/conversation, and first/last messages. Retrieval and answering consume passage content and locators uniformly; they contain no Slack/Teams branches.
+
+### 2.3 Token counter
 
 Introduce a `TokenCounter` protocol so chunking does not depend directly on a provider adapter. The initial implementation uses a pinned local `tiktoken` encoding (`cl100k_base`) for deterministic budgeting. This is an approximation, not a claim to reproduce Gemini's private tokenizer. The conservative 600-token budget remains far below the embedding model's input limit, and live-provider contract tests cover representative worst-case text.
 
 The counter must return stable counts offline. Network `count_tokens` calls are not used during chunking because they would add ingestion latency, remote dependency, and partial-failure modes.
 
-### 2.3 Stability and rollout
+### 2.4 Stability and rollout
 
 Add a dedicated non-null `DocumentVersion.chunking_profile` JSONB column. Legacy rows are backfilled with `{"algorithm":"legacy-character-v1","max_characters":1500,"overlap_characters":150}`. New versions store `{"algorithm":"structural-token-v1","encoding":"cl100k_base","target_tokens":450,"max_tokens":600,"overlap_tokens":60}`. Passages do not duplicate this data and `Passage.embedding_profile` remains embedding-only, preserving its exact-equality migration guard. Retrieval obtains a passage's chunking profile by joining its document version. Chunk hashes remain SHA-256 of exact content; passage offsets and locators retain current meanings.
 
@@ -70,7 +102,7 @@ Reprocessing uses the existing per-document `IngestionJob` and background dispat
 
 Reprocessing never mutates passages in place. Existing user-corrected decisions on a retired version move to `needs_review` under current behavior. Request/job IDs preserve observability.
 
-Mixed chunking versions are allowed because embeddings remain in the same embedding space. Retrieval traces record selected passages' chunking versions so evaluation can distinguish legacy and new results.
+Mixed chunking versions and source kinds are allowed because embeddings remain in the same embedding space. Retrieval traces record selected passages' chunking versions and source kinds so evaluation can distinguish legacy/new and file/conversation results.
 
 ## 3. Schema-Constrained Reranking
 
@@ -165,7 +197,8 @@ Generation prompt contract versions advance to `gemini-json-v2` and `ollama-json
 
 ```text
 stored source
-  -> parse into structural blocks
+  -> source adapter
+  -> canonical source-neutral blocks
   -> token-budgeted structural chunks
   -> document-purpose embeddings
   -> immutable active passages
@@ -186,6 +219,8 @@ question
 ## 6. Error Handling and Safety
 
 - Chunking never silently truncates source content.
+- Chunking never combines blocks across a hard group boundary such as a channel, chat, or thread.
+- Canonical conversation transcript rendering is deterministic and excludes connector secrets and irrelevant platform payloads.
 - Oversized indivisible units are split deterministically and remain reconstructable through offsets.
 - Reprocessing stages new versions and preserves the previous active version on failure.
 - Reranker failures fall back to RRF and are stored in traces.
@@ -200,7 +235,9 @@ question
 ### 7.1 Unit and integration tests
 
 - deterministic token counts and stable chunk output;
-- target/hard limits, section boundaries, sentence fallback, overlap, offsets, hashes, PDF pages, DOCX paragraph locators;
+- target/hard limits, generic hard/soft boundaries, sentence fallback, overlap, offsets, hashes, PDF pages, DOCX paragraph locators;
+- source-neutral block-contract tests proving the chunker does not branch on source platform;
+- synthetic Slack/Teams-normalized fixtures proving chronological thread grouping, no cross-thread/channel mixing, canonical author/time rendering, attachment handling, secret-field exclusion, and message-range locators;
 - legacy/new chunking-version coexistence;
 - reprocessing dry-run, atomic activation, source-missing failure, and correction `needs_review` behavior;
 - RRF candidate cap and deterministic fallback;
@@ -227,9 +264,10 @@ Do not enable reranking by default unless top-five retrieval hit rate or answer 
 ## 8. Delivery Sequence
 
 1. Introduce `GenerationRequest`; migrate every generation call site and adapter test.
-2. Add token counter, structural chunker, version persistence, and tests.
-3. Add dry-run and atomic document reprocessing for legacy active versions.
-4. Add reranker interface, generation-backed implementation, validation, fallback, and configuration.
-5. Extend retrieval traces and evaluation snapshots.
-6. Run and persist the legacy benchmark baseline; reprocess the benchmark corpus; run new-chunk RRF and reranked comparisons.
-7. Enable reranking only if the evaluation gate supports it.
+2. Expand the source-neutral block contract; adapt file parsers; add synthetic conversation-adapter contract fixtures.
+3. Add token counter, structural chunker, version persistence, and tests.
+4. Add dry-run and atomic document reprocessing for legacy active versions.
+5. Add reranker interface, generation-backed implementation, validation, fallback, and configuration.
+6. Extend retrieval traces and evaluation snapshots.
+7. Run and persist the legacy benchmark baseline; reprocess the benchmark corpus; run new-chunk RRF and reranked comparisons.
+8. Enable reranking only if the evaluation gate supports it.
