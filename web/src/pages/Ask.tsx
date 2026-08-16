@@ -1,9 +1,21 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
-import { answerQuestion } from "../api/client";
-import type { QuestionResponse } from "../api/types";
+import {
+  answerQuestion,
+  getQuestionHistoryItem,
+  listQuestionHistory,
+} from "../api/client";
+import type {
+  QuestionHistoryListResponse,
+  QuestionHistorySummary,
+  QuestionResponse,
+} from "../api/types";
 import { CitationList } from "../components/CitationList";
 import { RetrievalTrace } from "../components/RetrievalTrace";
+import "./Ask.css";
+
+const HISTORY_PAGE_SIZE = 5;
+const SEARCH_DEBOUNCE_MS = 250;
 
 type DisplayError = {
   message: string;
@@ -26,9 +38,51 @@ export function Ask() {
   const [result, setResult] = useState<QuestionResponse | null>(null);
   const [error, setError] = useState<DisplayError | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingHistoryId, setLoadingHistoryId] = useState<string | null>(null);
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const [history, setHistory] = useState<QuestionHistoryListResponse | null>(null);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setHistoryPage(1);
+      setHistoryQuery(historySearch.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [historySearch]);
+
+  useEffect(() => {
+    let ignore = false;
+    setHistoryLoading(true);
+    setHistoryError(false);
+    void listQuestionHistory(historyQuery, historyPage, HISTORY_PAGE_SIZE)
+      .then((response) => {
+        if (!ignore) setHistory(response);
+      })
+      .catch(() => {
+        if (!ignore) setHistoryError(true);
+      })
+      .finally(() => {
+        if (!ignore) setHistoryLoading(false);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [historyPage, historyQuery, historyRefresh]);
+
+  const refreshHistory = () => {
+    setHistorySearch("");
+    setHistoryQuery("");
+    setHistoryPage(1);
+    setHistoryRefresh((value) => value + 1);
+  };
+
+  const ask = async (forceRefresh = false) => {
     const normalized = question.trim();
     if (!normalized || loading) return;
 
@@ -36,11 +90,32 @@ export function Ask() {
     setResult(null);
     setError(null);
     try {
-      setResult(await answerQuestion(normalized));
+      setResult(await answerQuestion(normalized, forceRefresh));
+      refreshHistory();
     } catch (caught) {
       setError(errorDetails(caught));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void ask();
+  };
+
+  const restoreHistoryItem = async (item: QuestionHistorySummary) => {
+    if (loadingHistoryId) return;
+    setLoadingHistoryId(item.id);
+    setError(null);
+    try {
+      const saved = await getQuestionHistoryItem(item.id);
+      setQuestion(item.question);
+      setResult(saved);
+    } catch (caught) {
+      setError(errorDetails(caught));
+    } finally {
+      setLoadingHistoryId(null);
     }
   };
 
@@ -49,6 +124,7 @@ export function Ask() {
       (citation, index) => [citation.passage_id, index + 1] as const,
     ),
   );
+  const historyItems = history?.items ?? [];
 
   return (
     <section className="ask-page" aria-labelledby="ask-title">
@@ -78,6 +154,97 @@ export function Ask() {
         </div>
       </form>
 
+      <section
+        className="question-history"
+        aria-labelledby="question-history-title"
+      >
+        <div className="question-history__heading">
+          <div>
+            <p className="eyebrow">Saved in this workspace</p>
+            <h2 id="question-history-title">Previous questions</h2>
+          </div>
+          <label>
+            <span>Search previous questions</span>
+            <input
+              type="search"
+              value={historySearch}
+              onChange={(event) => setHistorySearch(event.target.value)}
+              placeholder="Search questions"
+            />
+          </label>
+        </div>
+
+        {historyError ? (
+          <div className="question-history__error" role="alert">
+            <span>Previous questions could not be loaded.</span>
+            <button
+              type="button"
+              onClick={() => setHistoryRefresh((value) => value + 1)}
+            >
+              Try again
+            </button>
+          </div>
+        ) : historyLoading && history === null ? (
+          <p className="question-history__empty" role="status">
+            Loading previous questions…
+          </p>
+        ) : historyItems.length > 0 ? (
+          <ol aria-label="Previous questions" aria-busy={historyLoading}>
+            {historyItems.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  aria-label={item.question}
+                  disabled={loadingHistoryId === item.id}
+                  onClick={() => void restoreHistoryItem(item)}
+                >
+                  <span className="question-history__question">
+                    <strong>{item.question}</strong>
+                    <small>
+                      {item.state ?? "unavailable"}
+                      {item.confidence ? ` · ${item.confidence} confidence` : ""}
+                      {item.stale ? " · corpus changed" : ""}
+                    </small>
+                  </span>
+                  <time dateTime={item.last_asked_at}>
+                    {new Date(item.last_asked_at).toLocaleString()}
+                  </time>
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="question-history__empty">
+            {historyQuery ? "No matching questions." : "No previous questions yet."}
+          </p>
+        )}
+
+        {history && history.total_pages > 1 && (
+          <nav
+            className="question-history__pagination"
+            aria-label="Question history pages"
+          >
+            <button
+              type="button"
+              disabled={historyLoading || history.page <= 1}
+              onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
+            >
+              Previous page
+            </button>
+            <span>
+              Page {history.page} of {history.total_pages}
+            </span>
+            <button
+              type="button"
+              disabled={historyLoading || history.page >= history.total_pages}
+              onClick={() => setHistoryPage((page) => page + 1)}
+            >
+              Next page
+            </button>
+          </nav>
+        )}
+      </section>
+
       {error && (
         <div className="answer-error" role="alert">
           <strong>{error.message}</strong>
@@ -98,6 +265,27 @@ export function Ask() {
             </div>
           </div>
 
+          {(result.cached || result.stale) && (
+            <div
+              className={`cached-answer-status${
+                result.stale ? " cached-answer-status--stale" : ""
+              }`}
+            >
+              <span>
+                {result.stale
+                  ? "Corpus changed since this answer was generated."
+                  : "Saved answer — no model tokens used."}
+              </span>
+              <button
+                type="button"
+                onClick={() => void ask(true)}
+                disabled={loading}
+              >
+                {loading ? "Asking…" : "Ask again"}
+              </button>
+            </div>
+          )}
+
           <p className="answer-text">{result.answer}</p>
 
           {result.claims.length > 0 && (
@@ -108,8 +296,7 @@ export function Ask() {
                   .filter((number): number is number => number !== undefined);
                 return (
                   <li key={`${claim.text}-${index}`}>
-                    {claim.text}{" "}
-                    {numbers.map((number) => `[${number}]`).join("")}
+                    {claim.text} {numbers.map((number) => `[${number}]`).join("")}
                   </li>
                 );
               })}

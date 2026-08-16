@@ -10,6 +10,7 @@ import type {
   EvaluationRunRequest,
   EvaluationRunSummary,
   QuestionResponse,
+  QuestionHistoryListResponse,
   RetrievalTraceResponse,
   RetryResponse,
   TimelineResponse,
@@ -133,12 +134,38 @@ export function listDocuments(): Promise<DocumentListResponse> {
   return apiRequest<DocumentListResponse>(projectPath("/documents"));
 }
 
-export function answerQuestion(question: string): Promise<QuestionResponse> {
+export function answerQuestion(
+  question: string,
+  forceRefresh = false,
+): Promise<QuestionResponse> {
   return apiRequest<QuestionResponse>(projectPath("/questions"), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, force_refresh: forceRefresh }),
   });
+}
+
+export function listQuestionHistory(
+  query: string,
+  page: number,
+  pageSize: number,
+): Promise<QuestionHistoryListResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  if (query) params.set("query", query);
+  return apiRequest<QuestionHistoryListResponse>(
+    projectPath(`/questions/history?${params.toString()}`),
+  );
+}
+
+export function getQuestionHistoryItem(
+  historyId: string,
+): Promise<QuestionResponse> {
+  return apiRequest<QuestionResponse>(
+    projectPath(`/questions/history/${encodeURIComponent(historyId)}`),
+  );
 }
 
 export function getRetrievalTrace(traceId: string): Promise<RetrievalTraceResponse> {

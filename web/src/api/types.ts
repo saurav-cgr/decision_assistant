@@ -86,6 +86,28 @@ export type QuestionResponse = {
   conflicts: EvidenceConflict[];
   unsupported_facets: string[];
   trace_id: string;
+  history_id: string;
+  answered_at: string;
+  cached: boolean;
+  stale: boolean;
+};
+
+export type QuestionHistorySummary = {
+  id: string;
+  question: string;
+  state: AnswerState | null;
+  confidence: Confidence | null;
+  answered_at: string;
+  last_asked_at: string;
+  stale: boolean;
+};
+
+export type QuestionHistoryListResponse = {
+  items: QuestionHistorySummary[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
 };
 
 export type RetrievalCandidate = {
