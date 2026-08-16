@@ -15,14 +15,39 @@ Host requirements:
 - No host Python, Node, npm, or PostgreSQL — every command runs through Docker Compose
 
 ```bash
-git clone <this-repo> && cd decision_assistant
-cp .env.example .env          # add your GEMINI_API_KEY to .env
-docker compose up -d --wait   # starts db, api, web
-open http://localhost:5173    # web UI
+git clone <this-repo>
+cd decision_assistant
+
+# Keep an existing .env unchanged. Add GEMINI_API_KEY to it before continuing.
+cp -n .env.example .env
+
+# Clean rebuild. WARNING: this deletes this project's Docker volumes and data.
+docker compose down \
+  --volumes \
+  --remove-orphans \
+  --rmi all
+docker compose build --no-cache --pull
+
+# Start PostgreSQL, create the schema, then start the application.
+docker compose up -d db --wait
+docker compose run --rm api alembic upgrade head
+docker compose up -d api web --wait
+
+# Verify the migration and service readiness.
+docker compose exec api alembic current
+curl -i http://localhost:8000/ready
+docker compose ps
+
+# macOS: open the web UI. On other systems, visit the same URL in a browser.
+open http://localhost:5173
 ```
 
-- **Unversioned `GET /health`** — process/database liveness. Stays green in provider-degraded or migration-pending states.
-- **Unversioned `GET /ready`** — `200` only when the database is reachable, the selected providers have their required configuration, and no embedding migration is pending; otherwise a sanitized `503`. It checks configuration *presence*, not remote credential validity.
+After a normal code change, a destructive clean rebuild is usually unnecessary. Run
+`docker compose build`, `docker compose run --rm api alembic upgrade head`, and
+`docker compose up -d --wait` instead.
+
+- **Unversioned `GET /health`** — process/database liveness. Stays green in provider-degraded, schema-migration-pending, or corpus-reset-required states.
+- **Unversioned `GET /ready`** — `200` only when the database schema is current, the selected providers have their required configuration, and no corpus reset is required; otherwise a sanitized `503`. It checks configuration *presence*, not remote credential validity.
 - **`/docs`** — interactive FastAPI OpenAPI documentation.
 
 The API binds locally by default, has no authentication, and must not be exposed publicly.
@@ -72,7 +97,7 @@ All public business endpoints use the `/api/v1` prefix. `/health`, `/ready`, `/d
 
 | Module | Responsibility |
 |---|---|
-| `workspace` | Single workspace, configuration, corpus-active embedding profile, migration guard. |
+| `workspace` | Single workspace, configuration, corpus-active embedding/chunking profiles, and corpus-reset guard. |
 | `documents` | Upload validation, persistence, metadata, source rendering, ingestion status. |
 | `ingestion` | Parsing, normalization, chunking, change detection, background execution, retries. |
 | `decisions` | Extraction, validation, manual correction, evidence associations, relationships. |
@@ -138,8 +163,12 @@ This does **not** delete `uploads_data`, `ollama_data`, or `web_node_modules` vo
 The reingestion script creates/activates the target workspace, uploads every supported file in stable filename order, polls each job, and prints a machine-readable manifest (checksum, document ID, active version ID, passage count):
 
 ```bash
-docker compose up -d api web
-python scripts/ingest_corpus.py --source-directory sample_data/atlas --workspace-name Atlas
+docker compose up -d api web --wait
+docker compose run --rm -T api \
+  python /workspace/scripts/ingest_corpus.py \
+  --api-origin http://api:8000 \
+  --source-directory /workspace/sample_data/atlas \
+  --workspace-name Atlas
 ```
 
 It never reads old database rows or uploads to reconstruct sources; all sources must exist under `sample_data`, fixtures, scripts, or an explicit external directory.
@@ -282,7 +311,7 @@ make smoke           # bash scripts/smoke.sh (defaults to fake mode)
 ```
 
 - Unit: parsing, chunking, locators, RRF, evidence alignment, citation validation, abstention, timeline ordering, provider fakes.
-- Integration: PostgreSQL full-text/vector queries, staged ingestion transactions, re-index preservation, API endpoints, embedding migration.
+- Integration: PostgreSQL full-text/vector queries, staged ingestion transactions, active-version replacement, corpus-reset guards, and API endpoints.
 - Provider contract: mocked-transport Gemini request mapping (purpose formatting, schema, cardinality/order/dimension/finite-value validation, retry/error classification, secret redaction); optional Ollama contracts; deterministic fakes.
 - Frontend: upload/status, citations, conflicts, errors, polling, corrections, timeline rendering.
 - Smoke: fake-provider Compose flow runs deterministically; a separately marked live Gemini acceptance repeats the full cited-answer flow. Live-provider tests are marked `live_provider` and excluded from the deterministic suite.
@@ -308,7 +337,7 @@ Tests do not require live model output except the explicitly marked Gemini accep
 
 - Modular monolith: boundaries are visible without distributed-operations overhead.
 - FastAPI background tasks are in-process; an API restart interrupts non-durable jobs.
-- RRF is transparent and deterministic; a reranking model is deferred until evaluation justifies it.
+- RRF is transparent and deterministic; the implemented schema-constrained reranker remains disabled by default until evaluation justifies enabling it.
 - Gemini removes local model download/CPU and improves demo reliability but adds network, quota, vendor, and data-governance dependencies.
 - Exact source anchors are reliable for normalized extracted text, not pixel-perfect PDF coordinates.
 - The evaluation set is intentionally small and project-specific — results demonstrate disciplined measurement, not broad production generalization.
