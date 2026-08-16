@@ -25,18 +25,33 @@ def test_mrr_counts_miss_as_zero() -> None:
     assert metrics.mean_reciprocal_rank([], []) == 0.0
 
 
-def test_citation_rates_separate_structure_from_gold_relevance() -> None:
+def test_citation_rates_separate_structure_from_claim_support() -> None:
     metrics = import_module("decision_assistant.evaluation.metrics")
     checks = [
-        {"structurally_valid": True, "gold_relevant": True},
-        {"structurally_valid": True, "gold_relevant": False},
-        {"structurally_valid": False, "gold_relevant": True},
+        {"structurally_valid": True, "supports_claim": True},
+        {"structurally_valid": True, "supports_claim": False},
+        {"structurally_valid": False, "supports_claim": True},
     ]
 
     rates = metrics.citation_rates(checks)
 
     assert rates.structural_validity == pytest.approx(2 / 3)
     assert rates.correctness == pytest.approx(1 / 3)
+
+
+def test_gold_citation_coverage_is_question_level() -> None:
+    metrics = import_module("decision_assistant.evaluation.metrics")
+
+    assert metrics.gold_citation_coverage(
+        [
+            [
+                {"matches_gold_evidence": False},
+                {"matches_gold_evidence": True},
+            ],
+            [{"matches_gold_evidence": False}],
+        ]
+    ) == 0.5
+    assert metrics.gold_citation_coverage([]) == 0.0
 
 
 def test_answer_abstention_accuracy_is_question_level() -> None:

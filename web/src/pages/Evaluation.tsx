@@ -11,7 +11,7 @@ import { EvaluationResults } from "../components/EvaluationResults";
 const POLL_INTERVAL_MS = 2_000;
 
 const benchmarkConfiguration: Omit<EvaluationRunRequest, "strategy"> = {
-  dataset_version: import.meta.env.VITE_EVALUATION_DATASET_VERSION || "atlas-v1",
+  dataset_version: import.meta.env.VITE_EVALUATION_DATASET_VERSION || "atlas-v3",
   configuration: {
     top_k: Number(import.meta.env.VITE_EVALUATION_TOP_K || 5),
     rrf_k: Number(import.meta.env.VITE_EVALUATION_RRF_K || 60),
@@ -64,7 +64,11 @@ export function Evaluation() {
         const summaries = await listEvaluationRuns();
         if (!mounted.current) return;
         const loadFor = async (strategy: EvaluationStrategy) => {
-          const summary = summaries.find((item) => item.strategy === strategy);
+          const summary = summaries.find(
+            (item) =>
+              item.strategy === strategy &&
+              item.dataset_version === benchmarkConfiguration.dataset_version,
+          );
           if (!summary) return;
           const run = await getEvaluationRun(summary.id);
           if (!mounted.current) return;

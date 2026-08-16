@@ -54,8 +54,25 @@ class EvaluationRunRequest(EvaluationModel):
         return self
 
 
+class CitationAssessment(EvaluationModel):
+    claim_index: Annotated[int, Field(ge=0)]
+    passage_id: Annotated[str, Field(min_length=1)]
+    supported: bool
+    reason: Annotated[str, Field(min_length=1)]
+
+
+class ClaimAssessment(EvaluationModel):
+    claim_index: Annotated[int, Field(ge=0)]
+    supported: bool
+    reason: str | None = None
+
+
 class ClaimJudgeOutput(EvaluationModel):
-    claims: list[dict[str, Any]] = Field(default_factory=list)
+    claims: list[ClaimAssessment] = Field(default_factory=list)
+    citation_assessments: list[CitationAssessment] = Field(default_factory=list)
+    facet_outcomes: dict[
+        str, Literal["answer", "abstain", "partial"]
+    ] = Field(default_factory=dict)
     supported_claims: int = 0
     total_claims: int = 0
 

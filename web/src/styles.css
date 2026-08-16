@@ -499,6 +499,7 @@ a {
 }
 
 .evaluation-diagnostic {
+  min-width: 0;
   margin-top: 14px;
   padding: 14px;
   background: #f3f1e9;
@@ -516,10 +517,15 @@ a {
 }
 
 .evaluation-diagnostic dl {
-  display: flex;
-  gap: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   margin: 12px 0;
   font-size: 0.72rem;
+}
+
+.evaluation-diagnostic dl > div {
+  min-width: 0;
 }
 
 .evaluation-diagnostic dt {
@@ -529,6 +535,37 @@ a {
 .evaluation-diagnostic dd {
   margin: 2px 0 0;
   font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.evaluation-facet-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evaluation-facet-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.evaluation-facet-list span {
+  min-width: 0;
+  color: var(--muted);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.evaluation-citation-diagnostics,
+.evaluation-citation-diagnostics li,
+.evaluation-diagnostic details {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .evaluation-diagnostic summary {
@@ -539,6 +576,8 @@ a {
 }
 
 .evaluation-diagnostic pre {
+  box-sizing: border-box;
+  width: 100%;
   max-height: 280px;
   overflow: auto;
   padding: 10px;
@@ -1578,6 +1617,10 @@ a {
   }
 
   .metric-summary dl {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-diagnostic dl {
     grid-template-columns: 1fr;
   }
 }

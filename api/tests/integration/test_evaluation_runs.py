@@ -59,6 +59,7 @@ def write_dataset(path: Path, *, version: str = DATASET_VERSION) -> Path:
                 "expected_passages": [{"passage_id": "gold-1"}],
                 "expected_status": "active",
                 "expectation": "answer",
+                "facets": {"reason": "answer"},
                 "tags": ["authentication"],
             },
             {
@@ -69,6 +70,7 @@ def write_dataset(path: Path, *, version: str = DATASET_VERSION) -> Path:
                 "expected_passages": [{"passage_id": "gold-2"}],
                 "expected_status": "active",
                 "expectation": "answer",
+                "facets": {"owner": "answer"},
                 "tags": ["owner"],
             },
             {
@@ -79,6 +81,7 @@ def write_dataset(path: Path, *, version: str = DATASET_VERSION) -> Path:
                 "expected_passages": [],
                 "expected_status": None,
                 "expectation": "abstain",
+                "facets": {"billing_owner": "abstain"},
                 "tags": ["abstention"],
             },
         ],
@@ -148,14 +151,28 @@ class RecordingExecutor:
                     if should_abstain
                     else question.expected_answer_summary
                 ),
-                "claims": [] if should_abstain else [{"text": "Supported claim"}],
+                "claims": []
+                if should_abstain
+                else [
+                    {
+                        "text": "Supported claim",
+                        "passage_ids": [expected_passage_ids[0]],
+                    }
+                ],
                 "citations": []
                 if should_abstain
                 else [{"passage_id": expected_passage_ids[0]}],
             },
             "citation_checks": []
             if should_abstain
-            else [{"structurally_valid": True, "gold_relevant": True}],
+            else [
+                {
+                    "passage_id": expected_passage_ids[0],
+                    "document_name": "gold.md",
+                    "structurally_valid": True,
+                    "matches_gold_evidence": True,
+                }
+            ],
             "actual_values": {
                 "expectation": "abstain" if should_abstain else "answer"
             },
@@ -177,6 +194,15 @@ class RecordingJudge:
         self.calls.append((request, profile))
         return {
             "claims": [{"claim_index": 0, "supported": True}],
+            "citation_assessments": [
+                {
+                    "claim_index": 0,
+                    "passage_id": "gold-1",
+                    "supported": True,
+                    "reason": "The passage supports the claim.",
+                }
+            ],
+            "facet_outcomes": {"reason": "answer"},
             "supported_claims": 1,
             "total_claims": 1,
         }
@@ -437,14 +463,43 @@ async def test_run_completes_with_progress_isolated_failures_and_judge_audit(
 
     judged = result_by_id["q1"]
     assert judged.judge_prompt is not None
-    assert "claim-support-v1" in judged.judge_prompt
+    assert "claim-support-v3" in judged.judge_prompt
     assert "Why was authentication postponed?" in judged.judge_prompt
     assert judged.judge_profile == JUDGE_PROFILE
     assert judged.judge_output == {
         "claims": [{"claim_index": 0, "supported": True}],
+        "citation_assessments": [
+            {
+                "claim_index": 0,
+                "passage_id": "gold-1",
+                "supported": True,
+                "reason": "The passage supports the claim.",
+            }
+        ],
+        "facet_outcomes": {"reason": "answer"},
         "supported_claims": 1,
         "total_claims": 1,
     }
+    assert judged.actual_values == {
+        "expectation": "answer",
+        "facets": {"reason": "answer"},
+    }
+    assert judged.citation_checks == {
+        "checks": [
+            {
+                "claim_index": 0,
+                "claim": "Supported claim",
+                "passage_id": "gold-1",
+                "document_name": "gold.md",
+                "structurally_valid": True,
+                "matches_gold_evidence": True,
+                "supports_claim": True,
+                "reason": "The passage supports the claim.",
+            }
+        ]
+    }
+    assert run.aggregate_metrics["gold_citation_coverage"] == 0.5
+    assert run.aggregate_metrics["facet_abstention_accuracy"] == pytest.approx(2 / 3)
     assert judge.calls[0][1] == JUDGE_PROFILE
 
 

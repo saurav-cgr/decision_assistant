@@ -43,7 +43,7 @@ def test_atlas_assets_exist_and_dataset_matches_runtime_schema(
 
     dataset = EvaluationDataset.model_validate(raw_dataset)
 
-    assert dataset.version == "atlas-v1"
+    assert dataset.version == "atlas-v3"
     assert len(dataset.questions) == 20
 
 

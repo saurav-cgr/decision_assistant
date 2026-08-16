@@ -95,16 +95,18 @@ def test_judge_request_keeps_evaluation_payload_only_in_user() -> None:
         question,
         "Authentication was postponed for stability.",
         {"claims": [{"text": "Supported claim"}]},
+        ["reason"],
     )
 
     system = request.system_instruction
     user = request.user_content
 
-    assert "claim-support-v1" in system
+    assert "claim-support-v3" in system
     assert "untrusted" in system
     assert question not in system
 
     assert "<evaluation>" in user
     assert question in user
     assert "Authentication was postponed for stability." in user
-    assert "claim-support-v1" not in user
+    assert '"facets": ["reason"]' in user
+    assert "claim-support-v3" not in user

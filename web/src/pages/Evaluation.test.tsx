@@ -15,7 +15,7 @@ vi.mock("../api/client", () => ({
 }));
 
 const sharedRequest = {
-  dataset_version: "atlas-v1",
+  dataset_version: "atlas-v3",
   configuration: { top_k: 5, rrf_k: 60 },
 };
 
@@ -41,18 +41,44 @@ const results = [
     },
     generated_output: { state: "answered", answer: "Billing was prioritized." },
     citation_checks: {
-      checks: [{ structurally_valid: true, gold_relevant: true }],
+      checks: [
+        {
+          claim_index: 0,
+          claim: "Billing was prioritized.",
+          passage_id: "passage-auth",
+          document_name: "plan.md",
+          structurally_valid: true,
+          matches_gold_evidence: true,
+          supports_claim: true,
+          reason: "Direct support.",
+        },
+        {
+          claim_index: 0,
+          claim: "Billing was prioritized.",
+          passage_id: "passage-later",
+          document_name: "later.md",
+          structurally_valid: true,
+          matches_gold_evidence: false,
+          supports_claim: true,
+          reason: "Corroborating support.",
+        },
+      ],
     },
     expected_values: {
       question: "Why was authentication postponed?",
       expectation: "answer",
+      facets: { reason: "answer" },
       expected_passages: [{ passage_id: "passage-auth" }],
     },
-    actual_values: { expectation: "answer" },
+    actual_values: { expectation: "answer", facets: { reason: "answer" } },
     latency_ms: 42,
     judge_prompt: "stored judge prompt",
     judge_profile: { temperature: 0 },
-    judge_output: { claims: [{ supported: true }] },
+    judge_output: {
+      claims: [{ supported: true }],
+      citation_assessments: [],
+      facet_outcomes: {},
+    },
     failure_reason: null,
   },
   {
@@ -62,14 +88,23 @@ const results = [
     retrieved_ranks: { ids: [], document_ids: [], ranks: {} },
     generated_output: { state: "answered", answer: "PostgreSQL was selected." },
     citation_checks: {
-      checks: [{ structurally_valid: false, gold_relevant: false }],
+      checks: [{
+        claim_index: 0,
+        claim: "PostgreSQL was selected.",
+        passage_id: "unrelated",
+        structurally_valid: false,
+        matches_gold_evidence: false,
+        supports_claim: false,
+        reason: "Citation does not support the claim.",
+      }],
     },
     expected_values: {
       question: "Why was CockroachDB rejected?",
       expectation: "abstain",
+      facets: { vendor: "abstain" },
       expected_passages: [],
     },
-    actual_values: { expectation: "answer" },
+    actual_values: { expectation: "answer", facets: { vendor: "answer" } },
     latency_ms: 56,
     judge_prompt: null,
     judge_profile: null,
@@ -96,6 +131,7 @@ function completedRun(
       mean_reciprocal_rank: strategy === "hybrid" ? 0.76 : 0.61,
       citation_structural_validity: 0.95,
       citation_correctness: 0.9,
+      gold_citation_coverage: 0.85,
       abstention_accuracy: 0.8,
       facet_abstention_accuracy: 0.75,
       answer_faithfulness: 0.88,
@@ -136,6 +172,27 @@ afterEach(() => {
 });
 
 describe("Evaluation dashboard", () => {
+  it("ignores persisted runs from older dataset versions", async () => {
+    const currentSemantic = completedRun("semantic");
+    const oldHybrid = completedRun("hybrid", { dataset_version: "atlas-v1" });
+    api.listEvaluationRuns.mockResolvedValue([currentSemantic, oldHybrid]);
+    api.getEvaluationRun.mockImplementation((id: string) =>
+      Promise.resolve(id === currentSemantic.id ? currentSemantic : oldHybrid),
+    );
+
+    await renderEvaluation();
+
+    expect(
+      await screen.findByRole("region", { name: /semantic evaluation/i }),
+    ).toBeVisible();
+    expect(api.getEvaluationRun).toHaveBeenCalledTimes(1);
+    expect(api.getEvaluationRun).toHaveBeenCalledWith(currentSemantic.id);
+    expect(screen.queryByText("Configuration mismatch")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /start hybrid evaluation/i }),
+    ).toBeEnabled();
+  });
+
   it("starts semantic and hybrid runs from one reproducible configuration", async () => {
     api.startEvaluationRun.mockImplementation(
       ({ strategy }: { strategy: "semantic" | "hybrid" }) =>
@@ -225,6 +282,7 @@ describe("Evaluation dashboard", () => {
     ).toBeVisible();
     expect(within(hybridMetrics).getByText("Mean reciprocal rank")).toBeVisible();
     expect(within(hybridMetrics).getByText("Citation correctness")).toBeVisible();
+    expect(within(hybridMetrics).getByText("Gold citation coverage")).toBeVisible();
     expect(within(hybridMetrics).getByText("Answer faithfulness")).toBeVisible();
     expect(within(hybridMetrics).getByText("Abstention accuracy")).toBeVisible();
     expect(within(hybridMetrics).getByText("42 ms")).toBeVisible();
@@ -247,14 +305,22 @@ describe("Evaluation dashboard", () => {
       .getByText("unsupported-vendor")
       .closest("tr");
     expect(failedRow).not.toBeNull();
-    expect(within(failedRow!).getByText("Citation failure")).toBeVisible();
+    expect(within(failedRow!).getByText("Unsupported citation")).toBeVisible();
     expect(within(failedRow!).getByText("Abstention failure")).toBeVisible();
+    expect(within(failedRow!).getByText("Facet failure")).toBeVisible();
     expect(
       within(failedRow!).getByRole("link", { name: /view diagnostics/i }),
     ).toHaveAttribute("href", "#diagnostic-result-unsupported");
+    const diagnostic = screen.getByRole("region", {
+      name: /diagnostic result-unsupported/i,
+    });
+    expect(diagnostic).toBeVisible();
     expect(
-      screen.getByRole("region", { name: /diagnostic result-unsupported/i }),
-    ).toBeVisible();
+      within(diagnostic).getByRole("list", { name: /expected facets/i }),
+    ).toHaveTextContent("vendorabstain");
+    expect(
+      within(diagnostic).getByRole("list", { name: /actual facets/i }),
+    ).toHaveTextContent("vendoranswer");
   });
 
   it("blocks side-by-side comparison when run snapshots differ", async () => {

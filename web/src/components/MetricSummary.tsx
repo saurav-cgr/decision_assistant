@@ -27,7 +27,12 @@ const ratioMetrics: Array<{
   {
     key: "citation_correctness",
     label: "Citation correctness",
-    definition: "Valid citations point to expected evidence.",
+    definition: "Structurally valid citations support their linked claims.",
+  },
+  {
+    key: "gold_citation_coverage",
+    label: "Gold citation coverage",
+    definition: "Answers cite at least one benchmark gold source.",
   },
   {
     key: "answer_faithfulness",

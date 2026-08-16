@@ -5,6 +5,24 @@ type EvaluationResultsProps = {
   run: EvaluationRun;
 };
 
+function FacetList({ value, label }: { value: unknown; label: string }) {
+  const entries =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.entries(value)
+      : [];
+  if (entries.length === 0) return <span>None</span>;
+  return (
+    <ul className="evaluation-facet-list" aria-label={label}>
+      {entries.map(([facet, outcome]) => (
+        <li key={facet}>
+          <span>{facet.replaceAll("_", " ")}</span>
+          <strong>{String(outcome)}</strong>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function expectedIdentifiers(result: EvaluationResult): string[] {
   const passages = result.expected_values.expected_passages;
   if (Array.isArray(passages)) {
@@ -34,7 +52,15 @@ function citationFailed(result: EvaluationResult): boolean {
   const checks = result.citation_checks.checks || [];
   return checks.some(
     (check) =>
-      check.structurally_valid !== true || check.gold_relevant !== true,
+      check.structurally_valid !== true || check.supports_claim !== true,
+  );
+}
+
+function goldCoverageFailed(result: EvaluationResult): boolean {
+  const expectation = result.expected_values.expectation;
+  if (expectation !== "answer" && expectation !== "partial") return false;
+  return !(result.citation_checks.checks || []).some(
+    (check) => check.matches_gold_evidence === true,
   );
 }
 
@@ -44,9 +70,29 @@ function abstentionFailed(result: EvaluationResult): boolean {
   );
 }
 
+function facetFailed(result: EvaluationResult): boolean {
+  const expected = result.expected_values.facets;
+  const actual = result.actual_values.facets;
+  if (!expected || typeof expected !== "object" || Array.isArray(expected)) {
+    return false;
+  }
+  const actualFacets =
+    actual && typeof actual === "object" && !Array.isArray(actual)
+      ? actual
+      : {};
+  return Object.entries(expected).some(
+    ([facet, outcome]) =>
+      (actualFacets as Record<string, unknown>)[facet] !== outcome,
+  );
+}
+
 function hasFailure(result: EvaluationResult): boolean {
   return Boolean(
-    result.failure_reason || citationFailed(result) || abstentionFailed(result),
+    result.failure_reason ||
+      citationFailed(result) ||
+      goldCoverageFailed(result) ||
+      abstentionFailed(result) ||
+      facetFailed(result),
   );
 }
 
@@ -117,7 +163,9 @@ export function EvaluationResults({ run }: EvaluationResultsProps) {
               {run.results.map((result) => {
                 const rank = retrievalRank(result);
                 const citationFailure = citationFailed(result);
+                const goldFailure = goldCoverageFailed(result);
                 const abstentionFailure = abstentionFailed(result);
+                const facetFailure = facetFailed(result);
                 return (
                   <tr key={result.id}>
                     <th scope="row">{result.external_id}</th>
@@ -128,8 +176,10 @@ export function EvaluationResults({ run }: EvaluationResultsProps) {
                     <td>
                       <div className="result-flags">
                         {result.failure_reason && <span>Execution failure</span>}
-                        {citationFailure && <span>Citation failure</span>}
+                        {citationFailure && <span>Unsupported citation</span>}
+                        {goldFailure && <span>Gold evidence missing</span>}
                         {abstentionFailure && <span>Abstention failure</span>}
+                        {facetFailure && <span>Facet failure</span>}
                         {!hasFailure(result) && <span className="result-pass">Passed</span>}
                       </div>
                     </td>
@@ -166,7 +216,48 @@ export function EvaluationResults({ run }: EvaluationResultsProps) {
               <dt>Actual</dt>
               <dd>{String(result.actual_values.expectation || "unspecified")}</dd>
             </div>
+            <div>
+              <dt>Expected facets</dt>
+              <dd>
+                <FacetList
+                  value={result.expected_values.facets}
+                  label="Expected facets"
+                />
+              </dd>
+            </div>
+            <div>
+              <dt>Actual facets</dt>
+              <dd>
+                <FacetList
+                  value={result.actual_values.facets}
+                  label="Actual facets"
+                />
+              </dd>
+            </div>
           </dl>
+          {(result.citation_checks.checks || []).length > 0 && (
+            <div className="evaluation-citation-diagnostics">
+              <h4>Citation diagnostics</h4>
+              <ul>
+                {(result.citation_checks.checks || []).map((check, index) => (
+                  <li key={`${check.claim_index}-${check.passage_id}-${index}`}>
+                    <strong>
+                      {check.document_name || check.passage_id}
+                    </strong>{" "}
+                    — claim {check.claim_index === null ? "unlinked" : check.claim_index + 1}:{" "}
+                    {check.structurally_valid !== true
+                      ? "structurally invalid"
+                      : check.supports_claim !== true
+                        ? "does not support claim"
+                        : check.matches_gold_evidence
+                          ? "supports claim; matches gold evidence"
+                          : "supports claim; alternative evidence"}
+                    {check.reason ? ` — ${check.reason}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <details>
             <summary>Stored diagnostic payload</summary>
             <pre>{JSON.stringify(result, null, 2)}</pre>

@@ -251,23 +251,25 @@ What is **never** sent: original binary files, local storage paths, database cre
 
 ## Evaluation
 
-The versioned benchmark (`evaluation/questions.json`, dataset `atlas-v1`) contains ~20 questions covering multi-part questions, supersession, conflicts, and unsupported/abstain cases, with expected claims, document/passage locators, expected status, and answer-or-abstain expectations.
+The versioned benchmark (`evaluation/questions.json`, dataset `atlas-v3`) contains ~20 questions covering multi-part questions, supersession, conflicts, and unsupported/abstain cases, with expected claims, document/passage locators, expected status, and answer-or-abstain expectations.
 
 ### Metrics
 
 - **Top-five retrieval hit rate** — fraction of answerable questions with at least one expected passage (or document) in the top five.
 - **Mean Reciprocal Rank** — mean reciprocal position of the first expected result; a miss scores 0.
-- **Citation correctness** — fraction of citations passing structural validation *and* pointing to a gold-relevant passage/document. Structural validity is reported separately.
+- **Citation correctness** — fraction of structurally valid claim-citation links that the temperature-zero judge confirms support their claims; valid alternative evidence is accepted.
+- **Gold citation coverage** — fraction of answerable questions citing at least one benchmark gold passage/document. This stays separate from citation correctness and retrieval ranking.
 - **Answer faithfulness** — fraction of generated atomic claims judged supported by their cited passages, using a versioned temperature-zero judge with stored output.
-- **Abstention accuracy** — classification accuracy against the expected answer-versus-abstain label; partial abstentions scored per facet.
+- **Abstention accuracy** — question-level classification accuracy against the expected answer/partial/abstain outcome.
+- **Facet abstention accuracy** — per-facet accuracy for whether each part of a multi-part question was answered, partially answered, or withheld.
 - **Latency** — median and p95 end-to-end, plus retrieval/generation/verification stage timings.
 
 ### Running the benchmark
 
 ```bash
 # Start semantic-only and hybrid runs from the Evaluation dashboard, or via the API:
-# POST /api/v1/evaluations/runs {"strategy": "hybrid"}
-# GET  /api/v1/evaluations/runs/{id}
+# POST /api/v1/workspaces/{workspace_id}/evaluations/runs {"strategy": "hybrid", ...}
+# GET  /api/v1/workspaces/{workspace_id}/evaluations/runs/{id}
 ```
 
 **Measured results are populated after a live Gemini run** (requires `GEMINI_API_KEY`). They are deliberately not fabricated here. The target for the definition of done is a hybrid top-five hit rate of at least 80% on answerable questions.

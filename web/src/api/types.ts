@@ -269,6 +269,17 @@ export type EvaluationRunRequest = {
   configuration: Record<string, unknown>;
 };
 
+export type EvaluationCitationCheck = {
+  claim_index: number | null;
+  claim: string;
+  passage_id: string;
+  document_name?: string;
+  structurally_valid: boolean;
+  matches_gold_evidence: boolean;
+  supports_claim: boolean;
+  reason: string;
+};
+
 export type EvaluationResult = {
   id: string;
   question_id: string;
@@ -279,7 +290,7 @@ export type EvaluationResult = {
     ranks?: Record<string, number>;
   };
   generated_output: Record<string, unknown> | null;
-  citation_checks: { checks?: Array<Record<string, unknown>> };
+  citation_checks: { checks?: EvaluationCitationCheck[] };
   expected_values: Record<string, unknown>;
   actual_values: Record<string, unknown>;
   latency_ms: number | null;
@@ -294,6 +305,7 @@ export type EvaluationMetrics = {
   mean_reciprocal_rank: number;
   citation_structural_validity: number;
   citation_correctness: number;
+  gold_citation_coverage: number;
   abstention_accuracy: number;
   facet_abstention_accuracy: number;
   answer_faithfulness: number;

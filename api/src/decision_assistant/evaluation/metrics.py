@@ -51,13 +51,25 @@ def citation_rates(checks: Sequence[dict[str, bool]]) -> CitationRates:
         return CitationRates(0.0, 0.0)
     structural = sum(bool(check.get("structurally_valid")) for check in checks)
     correct = sum(
-        bool(check.get("structurally_valid")) and bool(check.get("gold_relevant"))
+        bool(check.get("structurally_valid")) and bool(check.get("supports_claim"))
         for check in checks
     )
     return CitationRates(
         structural_validity=structural / len(checks),
         correctness=correct / len(checks),
     )
+
+
+def gold_citation_coverage(
+    checks_by_question: Sequence[Sequence[dict[str, object]]],
+) -> float:
+    if not checks_by_question:
+        return 0.0
+    covered = sum(
+        any(bool(check.get("matches_gold_evidence")) for check in checks)
+        for checks in checks_by_question
+    )
+    return covered / len(checks_by_question)
 
 
 def answer_abstention_accuracy(
