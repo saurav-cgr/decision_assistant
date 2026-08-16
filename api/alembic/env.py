@@ -5,6 +5,7 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import decision_assistant.answering.history_models  # noqa: F401
 from decision_assistant.config import get_settings
 from decision_assistant.models import Base
 

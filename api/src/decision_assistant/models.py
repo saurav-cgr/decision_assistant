@@ -62,6 +62,10 @@ class Workspace(TimestampMixin, Base):
             unique=True,
             postgresql_where=text("is_active = true"),
         ),
+        CheckConstraint(
+            "knowledge_revision >= 1",
+            name="ck_workspaces_knowledge_revision_positive",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -73,6 +77,9 @@ class Workspace(TimestampMixin, Base):
         Boolean, default=False, server_default=text("false")
     )
     embedding_profile: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    knowledge_revision: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1")
+    )
 
 
 class Document(TimestampMixin, Base):

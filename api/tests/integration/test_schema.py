@@ -252,6 +252,101 @@ async def test_retrieval_and_evaluation_columns_round_trip(
     assert run.scalar_one() == snapshot
 
 
+@pytest.mark.asyncio
+async def test_question_answer_history_schema_enforces_cache_identity(
+    db_session: AsyncSession,
+) -> None:
+    workspace_id = uuid4()
+    await db_session.execute(
+        text("INSERT INTO workspaces (id, name) VALUES (:id, :name)"),
+        {"id": workspace_id, "name": "Question history workspace"},
+    )
+    revision = await db_session.scalar(
+        text("SELECT knowledge_revision FROM workspaces WHERE id = :id"),
+        {"id": workspace_id},
+    )
+    assert revision == 1
+
+    trace_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO retrieval_traces "
+            "(id, workspace_id, request_id, normalized_question) "
+            "VALUES (:id, :workspace_id, :request_id, :question)"
+        ),
+        {
+            "id": trace_id,
+            "workspace_id": workspace_id,
+            "request_id": "history-request",
+            "question": "why was authentication postponed?",
+        },
+    )
+    answer_id = uuid4()
+    response = {
+        "answer": "Authentication was postponed.",
+        "state": "answered",
+        "confidence": "high",
+        "claims": [],
+        "citations": [],
+        "conflicts": [],
+        "unsupported_facets": [],
+        "trace_id": str(trace_id),
+    }
+    await db_session.execute(
+        text(
+            "INSERT INTO question_answers "
+            "(id, workspace_id, trace_id, question, normalized_question, response, "
+            "knowledge_revision) "
+            "VALUES (:id, :workspace_id, :trace_id, :question, "
+            ":normalized_question, :response, 1)"
+        ),
+        {
+            "id": answer_id,
+            "workspace_id": workspace_id,
+            "trace_id": trace_id,
+            "question": "Why was authentication postponed?",
+            "normalized_question": "why was authentication postponed?",
+            "response": json.dumps(response),
+        },
+    )
+
+    stored = await db_session.execute(
+        text(
+            "SELECT response, response_schema_version, knowledge_revision "
+            "FROM question_answers WHERE id = :id"
+        ),
+        {"id": answer_id},
+    )
+    assert stored.one() == (response, 1, 1)
+
+    indexes = await db_session.scalars(
+        text(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE schemaname = 'public' AND tablename = 'question_answers'"
+        )
+    )
+    assert "ix_question_answers_workspace_last_asked" in set(indexes)
+
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text(
+                "INSERT INTO question_answers "
+                "(id, workspace_id, trace_id, question, normalized_question, "
+                "response, knowledge_revision) "
+                "VALUES (:id, :workspace_id, :trace_id, :question, "
+                ":normalized_question, :response, 1)"
+            ),
+            {
+                "id": uuid4(),
+                "workspace_id": workspace_id,
+                "trace_id": trace_id,
+                "question": "WHY was authentication postponed?",
+                "normalized_question": "why was authentication postponed?",
+                "response": json.dumps(response),
+            },
+        )
+
+
 def test_migration_source_has_no_legacy_backfill_or_profile_path() -> None:
     from pathlib import Path
 
