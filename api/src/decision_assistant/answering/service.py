@@ -268,6 +268,7 @@ class AnswerService:
             )
             fields.append(
                 DecisionFieldEvidence(
+                    decision_id=decision.id,
                     field_name=field_name,
                     value=value,
                     passage_id=evidence.passage_id,
@@ -298,16 +299,22 @@ class AnswerService:
 def detect_evidence_conflicts(
     fields: Iterable[DecisionFieldEvidence],
 ) -> list[EvidenceConflict]:
-    values_by_facet: dict[str, dict[str, list[UUID]]] = {}
+    # A conflict is only meaningful within a single decision and a single
+    # contradicted field (e.g. status or effective_date), never between two
+    # unrelated decision statements.
+    values_by_facet: dict[tuple[UUID, str], dict[str, list[UUID]]] = {}
     for field in fields:
         if field.support_state != "supported":
             continue
-        values_by_facet.setdefault(field.field_name, {}).setdefault(
+        if field.field_name == "statement":
+            continue
+        key = (field.decision_id, field.field_name)
+        values_by_facet.setdefault(key, {}).setdefault(
             field.value.casefold(), []
         ).append(field.passage_id)
 
     conflicts: list[EvidenceConflict] = []
-    for facet, values in values_by_facet.items():
+    for (_, facet), values in values_by_facet.items():
         if len(values) < 2:
             continue
         passage_ids = list(

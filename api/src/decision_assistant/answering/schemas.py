@@ -88,6 +88,7 @@ class EvidencePassage(AnswerModel):
 
 
 class DecisionFieldEvidence(AnswerModel):
+    decision_id: UUID
     field_name: Annotated[str, Field(min_length=1)]
     value: Annotated[str, Field(min_length=1)]
     passage_id: UUID

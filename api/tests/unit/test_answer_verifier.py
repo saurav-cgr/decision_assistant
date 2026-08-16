@@ -11,7 +11,10 @@ from decision_assistant.answering.schemas import (
     EvidencePassage,
     GeneratedAnswer,
 )
-from decision_assistant.answering.service import build_evidence_pack
+from decision_assistant.answering.service import (
+    build_evidence_pack,
+    detect_evidence_conflicts,
+)
 from decision_assistant.answering.verifier import AnswerVerifier
 
 
@@ -155,6 +158,7 @@ def test_verifier_rejects_uncited_central_claim() -> None:
 def test_evidence_pack_excludes_unsupported_corrected_field() -> None:
     fields = [
         DecisionFieldEvidence(
+            decision_id=uuid4(),
             field_name="owner",
             value="Maya",
             passage_id=PASSAGE_ID,
@@ -162,6 +166,7 @@ def test_evidence_pack_excludes_unsupported_corrected_field() -> None:
             support_state="unsupported",
         ),
         DecisionFieldEvidence(
+            decision_id=uuid4(),
             field_name="status",
             value="proposed",
             passage_id=PASSAGE_ID,
@@ -173,6 +178,82 @@ def test_evidence_pack_excludes_unsupported_corrected_field() -> None:
     pack = build_evidence_pack([evidence_passage()], fields)
 
     assert [field.field_name for field in pack.decision_fields] == ["status"]
+
+
+def test_different_decisions_do_not_conflict_on_same_field() -> None:
+    fields = [
+        DecisionFieldEvidence(
+            decision_id=uuid4(),
+            field_name="status",
+            value="proposed",
+            passage_id=PASSAGE_ID,
+            provenance="extracted",
+            support_state="supported",
+        ),
+        DecisionFieldEvidence(
+            decision_id=uuid4(),
+            field_name="status",
+            value="active",
+            passage_id=SECOND_PASSAGE_ID,
+            provenance="extracted",
+            support_state="supported",
+        ),
+    ]
+
+    assert detect_evidence_conflicts(fields) == []
+
+
+def test_same_decision_same_field_conflicts_across_passages() -> None:
+    decision_id = uuid4()
+    fields = [
+        DecisionFieldEvidence(
+            decision_id=decision_id,
+            field_name="effective_date",
+            value="2026-07-15",
+            passage_id=PASSAGE_ID,
+            provenance="extracted",
+            support_state="supported",
+        ),
+        DecisionFieldEvidence(
+            decision_id=decision_id,
+            field_name="effective_date",
+            value="2026-07-22",
+            passage_id=SECOND_PASSAGE_ID,
+            provenance="extracted",
+            support_state="supported",
+        ),
+    ]
+
+    assert detect_evidence_conflicts(fields) == [
+        EvidenceConflict(
+            facet="effective_date",
+            passage_ids=[PASSAGE_ID, SECOND_PASSAGE_ID],
+        )
+    ]
+
+
+def test_statement_facet_never_conflicts() -> None:
+    decision_id = uuid4()
+    fields = [
+        DecisionFieldEvidence(
+            decision_id=decision_id,
+            field_name="statement",
+            value="Begin the beta on July 15.",
+            passage_id=PASSAGE_ID,
+            provenance="extracted",
+            support_state="supported",
+        ),
+        DecisionFieldEvidence(
+            decision_id=decision_id,
+            field_name="statement",
+            value="Use 500-token chunks.",
+            passage_id=SECOND_PASSAGE_ID,
+            provenance="extracted",
+            support_state="supported",
+        ),
+    ]
+
+    assert detect_evidence_conflicts(fields) == []
 
 
 def test_verifier_returns_conflict_with_both_citations() -> None:
