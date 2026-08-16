@@ -98,6 +98,10 @@ async def test_unchanged_checksum_skips_new_version(
     assert repeated.skipped is True
     assert repeated.version_id == first.version_id
     assert count == 1
+    workspace = await db_session.get(Workspace, document.workspace_id)
+    assert workspace is not None
+    await db_session.refresh(workspace)
+    assert workspace.knowledge_revision == 2
 
 
 @pytest.mark.asyncio

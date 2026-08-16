@@ -7,7 +7,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.answering.router import get_answer_service
+from decision_assistant.answering.history_service import QuestionHistoryService
+from decision_assistant.answering.router import (
+    get_answer_service,
+    get_question_history_service,
+)
 from decision_assistant.answering.service import AnswerService
 from decision_assistant.config import Settings
 from decision_assistant.decisions.extractor import DecisionExtractor
@@ -186,6 +190,9 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
             generation_provider=answer_provider,
         )
         app.dependency_overrides[get_answer_service] = lambda: answer_service
+        app.dependency_overrides[get_question_history_service] = (
+            lambda: QuestionHistoryService(db_session)
+        )
         app.dependency_overrides[get_retrieval_service] = lambda: retrieval_service
 
         supported = await client.post(

@@ -1,9 +1,15 @@
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.answering.schemas import QuestionRequest, QuestionResponse
+from decision_assistant.answering.history_service import QuestionHistoryService
+from decision_assistant.answering.schemas import (
+    QuestionAnswerResponse,
+    QuestionHistoryListResponse,
+    QuestionRequest,
+)
 from decision_assistant.answering.service import AnswerService
 from decision_assistant.config import get_settings
 from decision_assistant.db import get_session
@@ -58,15 +64,60 @@ def get_answer_service(
     )
 
 
-@router.post("/questions", response_model=QuestionResponse)
+def get_question_history_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> QuestionHistoryService:
+    return QuestionHistoryService(session)
+
+
+@router.post("/questions", response_model=QuestionAnswerResponse)
 async def answer_question(
     payload: QuestionRequest,
     request: Request,
     workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
-    service: Annotated[AnswerService, Depends(get_answer_service)],
-) -> QuestionResponse:
-    return await service.answer(
+    answer_service: Annotated[AnswerService, Depends(get_answer_service)],
+    history_service: Annotated[
+        QuestionHistoryService,
+        Depends(get_question_history_service),
+    ],
+) -> QuestionAnswerResponse:
+    return await history_service.answer(
         payload,
+        answer_service=answer_service,
         request_id=request.state.request_id,
+        workspace_id=workspace.workspace_id,
+    )
+
+
+@router.get("/questions/history", response_model=QuestionHistoryListResponse)
+async def list_question_history(
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+    history_service: Annotated[
+        QuestionHistoryService,
+        Depends(get_question_history_service),
+    ],
+    query: Annotated[str | None, Query(max_length=2_000)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> QuestionHistoryListResponse:
+    return await history_service.list_history(
+        workspace_id=workspace.workspace_id,
+        query=query,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/questions/history/{history_id}", response_model=QuestionAnswerResponse)
+async def get_question_history_item(
+    history_id: UUID,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+    history_service: Annotated[
+        QuestionHistoryService,
+        Depends(get_question_history_service),
+    ],
+) -> QuestionAnswerResponse:
+    return await history_service.get_history_item(
+        history_id,
         workspace_id=workspace.workspace_id,
     )

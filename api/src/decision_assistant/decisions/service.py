@@ -28,6 +28,7 @@ from decision_assistant.models import (
     DocumentVersion,
     Passage,
 )
+from decision_assistant.workspace.revision import bump_knowledge_revision
 
 
 class DecisionApiError(ApplicationError):
@@ -206,6 +207,26 @@ class DecisionService:
                 current_states=current_states,
             )
             await self._session.flush()
+            resolved_workspace_id = workspace_id
+            if resolved_workspace_id is None:
+                resolved_workspace_id = await self._session.scalar(
+                    select(Document.workspace_id)
+                    .join(
+                        DocumentVersion,
+                        DocumentVersion.document_id == Document.id,
+                    )
+                    .where(DocumentVersion.id == decision.document_version_id)
+                )
+            if resolved_workspace_id is None:
+                raise DecisionApiError(
+                    "workspace_not_found",
+                    "Decision workspace not found",
+                    404,
+                )
+            await bump_knowledge_revision(
+                self._session,
+                resolved_workspace_id,
+            )
         return await self.get_decision(decision.id)
 
     async def create_relation(

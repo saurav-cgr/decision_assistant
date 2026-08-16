@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
 from typing import Annotated, Any, Literal
@@ -135,6 +136,7 @@ class VerificationResult(AnswerModel):
 
 class QuestionRequest(AnswerModel):
     question: Annotated[str, Field(min_length=1, max_length=2_000)]
+    force_refresh: bool = False
 
     @field_validator("question")
     @classmethod
@@ -154,3 +156,28 @@ class QuestionResponse(AnswerModel):
     conflicts: list[EvidenceConflict] = Field(default_factory=list)
     unsupported_facets: list[str] = Field(default_factory=list)
     trace_id: UUID
+
+
+class QuestionAnswerResponse(QuestionResponse):
+    history_id: UUID
+    answered_at: datetime
+    cached: bool
+    stale: bool
+
+
+class QuestionHistorySummary(AnswerModel):
+    id: UUID
+    question: str
+    state: AnswerState | None
+    confidence: ConfidenceCategory | None
+    answered_at: datetime
+    last_asked_at: datetime
+    stale: bool
+
+
+class QuestionHistoryListResponse(AnswerModel):
+    items: list[QuestionHistorySummary]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int

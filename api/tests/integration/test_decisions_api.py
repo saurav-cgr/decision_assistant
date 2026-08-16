@@ -330,6 +330,10 @@ async def test_supported_correction_replaces_field_evidence_and_records_revision
     assert owner_evidence[0].start_offset == original_source.index(quote)
     await decisions_api.session.refresh(decisions_api.active_passage)
     assert decisions_api.active_passage.content == original_source
+    workspace = await decisions_api.session.get(Workspace, WORKSPACE_ID)
+    assert workspace is not None
+    await decisions_api.session.refresh(workspace)
+    assert workspace.knowledge_revision == 2
 
 
 @pytest.mark.asyncio

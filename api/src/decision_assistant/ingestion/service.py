@@ -31,6 +31,7 @@ from decision_assistant.workspace.embedding_profile import (
     acquire_workspace_embedding_lock,
     get_corpus_state,
 )
+from decision_assistant.workspace.revision import bump_knowledge_revision
 
 
 class IngestionError(ApplicationError):
@@ -338,6 +339,7 @@ class IngestionService:
         version.state = "active"
         version.activated_at = datetime.now(timezone.utc)
         document.active_version_id = version.id
+        await bump_knowledge_revision(self._session, document.workspace_id)
         job.stage = "completed"
         job.status = "completed"
         job.progress = 100
