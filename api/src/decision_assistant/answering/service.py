@@ -7,6 +7,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from decision_assistant.answering.diagnostics import (
+    AnswerExecution,
+    AnswerExecutionDiagnostics,
+    AnswerOutcomeReason,
+    classify_outcome,
+    materialize_generated_answer,
+)
 from decision_assistant.answering.schemas import (
     AnswerState,
     Citation,
@@ -15,7 +22,6 @@ from decision_assistant.answering.schemas import (
     EvidenceConflict,
     EvidencePack,
     EvidencePassage,
-    GeneratedAnswer,
     GeneratedAnswerCandidate,
     QuestionRequest,
     QuestionResponse,
@@ -30,7 +36,9 @@ from decision_assistant.models import (
     Passage,
 )
 from decision_assistant.providers.base import GenerationProvider, GenerationRequest
-from decision_assistant.providers.orchestration import generate_with_repair
+from decision_assistant.providers.orchestration import (
+    generate_with_repair_diagnostics,
+)
 from decision_assistant.retrieval.schemas import RetrievalSearchRequest
 from decision_assistant.retrieval.service import HybridRetrievalService
 
@@ -105,6 +113,20 @@ class AnswerService:
         request_id: str,
         workspace_id: UUID | None = None,
     ) -> QuestionResponse:
+        execution = await self.answer_with_diagnostics(
+            request,
+            request_id=request_id,
+            workspace_id=workspace_id,
+        )
+        return execution.response
+
+    async def answer_with_diagnostics(
+        self,
+        request: QuestionRequest,
+        *,
+        request_id: str,
+        workspace_id: UUID | None = None,
+    ) -> AnswerExecution:
         retrieval = await self._retrieval_service.search(
             RetrievalSearchRequest(question=request.question),
             request_id=request_id,
@@ -116,17 +138,26 @@ class AnswerService:
         evidence_pack = build_evidence_pack(passages, fields)
 
         if not evidence_pack.passages:
-            return self._abstention(
+            response = self._abstention(
                 trace_id=retrieval.trace_id,
                 unsupported_facets=[request.question],
             )
+            return AnswerExecution(
+                response=response,
+                diagnostics=AnswerExecutionDiagnostics(
+                    outcome_reason=AnswerOutcomeReason.NO_EVIDENCE,
+                    generation_attempt_count=0,
+                ),
+            )
 
-        candidate = await generate_with_repair(
+        generation = await generate_with_repair_diagnostics(
             self._generation_provider,
             build_answer_request(request.question, evidence_pack),
             GeneratedAnswerCandidate,
         )
-        generated = materialize_generated_answer(candidate, evidence_pack)
+        candidate = generation.response
+        materialization = materialize_generated_answer(candidate, evidence_pack)
+        generated = materialization.answer
         detected_conflicts = detect_evidence_conflicts(
             evidence_pack.decision_fields
         )
@@ -144,28 +175,49 @@ class AnswerService:
             passage.passage_id: passage for passage in evidence_pack.passages
         }
         verification = self._verifier.verify(generated, passage_by_id)
+        diagnostics = AnswerExecutionDiagnostics(
+            outcome_reason=classify_outcome(
+                candidate,
+                verification,
+                materialization.dropped_citations,
+            ),
+            raw_candidate=candidate,
+            materialized_answer=generated,
+            dropped_citations=materialization.dropped_citations,
+            verifier_errors=verification.errors,
+            generation_attempt_count=generation.attempt_count,
+        )
         if not verification.valid:
-            return self._abstention(
-                trace_id=retrieval.trace_id,
-                unsupported_facets=generated.unsupported_facets
-                or [request.question],
+            return AnswerExecution(
+                response=self._abstention(
+                    trace_id=retrieval.trace_id,
+                    unsupported_facets=generated.unsupported_facets
+                    or [request.question],
+                ),
+                diagnostics=diagnostics,
             )
         if verification.state == AnswerState.ABSTAINED:
-            return self._abstention(
-                trace_id=retrieval.trace_id,
-                unsupported_facets=verification.unsupported_facets
-                or [request.question],
+            return AnswerExecution(
+                response=self._abstention(
+                    trace_id=retrieval.trace_id,
+                    unsupported_facets=verification.unsupported_facets
+                    or [request.question],
+                ),
+                diagnostics=diagnostics,
             )
 
-        return QuestionResponse(
-            answer=generated.answer,
-            state=verification.state,
-            confidence=generated.confidence,
-            claims=generated.claims,
-            citations=await self._source_citations(generated.citations),
-            conflicts=verification.conflicts,
-            unsupported_facets=verification.unsupported_facets,
-            trace_id=retrieval.trace_id,
+        return AnswerExecution(
+            response=QuestionResponse(
+                answer=generated.answer,
+                state=verification.state,
+                confidence=generated.confidence,
+                claims=generated.claims,
+                citations=await self._source_citations(generated.citations),
+                conflicts=verification.conflicts,
+                unsupported_facets=verification.unsupported_facets,
+                trace_id=retrieval.trace_id,
+            ),
+            diagnostics=diagnostics,
         )
 
     async def _source_citations(
@@ -331,40 +383,6 @@ def detect_evidence_conflicts(
                 EvidenceConflict(facet=facet, passage_ids=passage_ids)
             )
     return conflicts
-
-
-def materialize_generated_answer(
-    candidate: GeneratedAnswerCandidate,
-    evidence_pack: EvidencePack,
-) -> GeneratedAnswer:
-    passage_by_id = {
-        passage.passage_id: passage for passage in evidence_pack.passages
-    }
-    citations: list[Citation] = []
-    for selected in candidate.citations:
-        passage = passage_by_id.get(selected.passage_id)
-        if passage is None:
-            continue
-        start_offset = passage.content.find(selected.quote)
-        if start_offset < 0:
-            continue
-        citations.append(
-            Citation(
-                passage_id=selected.passage_id,
-                quote=selected.quote,
-                start_offset=start_offset,
-                end_offset=start_offset + len(selected.quote),
-                content_hash=passage.content_hash,
-            )
-        )
-    return GeneratedAnswer(
-        answer=candidate.answer,
-        claims=candidate.claims,
-        citations=citations,
-        conflicts=candidate.conflicts,
-        unsupported_facets=candidate.unsupported_facets,
-        confidence=candidate.confidence,
-    )
 
 
 def merge_conflicts(

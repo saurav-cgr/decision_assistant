@@ -1,4 +1,5 @@
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import Generic
 
 from decision_assistant.errors import ApplicationError
 from decision_assistant.providers.base import (
@@ -19,19 +20,40 @@ class ModelOutputInvalid(ApplicationError):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class GenerationExecution(Generic[ResponseModelT]):
+    response: ResponseModelT
+    attempt_count: int
+
+
 async def generate_with_repair(
     provider: GenerationProvider,
     request: GenerationRequest,
     response_model: type[ResponseModelT],
 ) -> ResponseModelT:
+    execution = await generate_with_repair_diagnostics(
+        provider,
+        request,
+        response_model,
+    )
+    return execution.response
+
+
+async def generate_with_repair_diagnostics(
+    provider: GenerationProvider,
+    request: GenerationRequest,
+    response_model: type[ResponseModelT],
+) -> GenerationExecution[ResponseModelT]:
     try:
-        return await provider.generate(request, response_model)
+        response = await provider.generate(request, response_model)
+        return GenerationExecution(response=response, attempt_count=1)
     except ProviderOutputInvalid:
         repair_request = _repair_request(request)
         if repair_request.total_characters > provider.max_prompt_characters:
             raise ModelOutputInvalid() from None
         try:
-            return await provider.generate(repair_request, response_model)
+            response = await provider.generate(repair_request, response_model)
+            return GenerationExecution(response=response, attempt_count=2)
         except ProviderOutputInvalid:
             raise ModelOutputInvalid() from None
 

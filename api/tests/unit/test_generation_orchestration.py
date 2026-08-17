@@ -10,6 +10,7 @@ from decision_assistant.providers.fakes import FakeGenerationProvider
 from decision_assistant.providers.orchestration import (
     ModelOutputInvalid,
     generate_with_repair,
+    generate_with_repair_diagnostics,
 )
 
 
@@ -32,6 +33,22 @@ async def test_schema_invalid_output_is_repaired_once() -> None:
     assert result == Output(value="fixed")
     assert len(provider.requests) == 2
     assert "REPAIR REQUIRED" in provider.requests[1].system_instruction
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_report_generation_attempt_count() -> None:
+    provider = FakeGenerationProvider(
+        [ProviderOutputInvalid(), {"value": "fixed"}]
+    )
+
+    execution = await generate_with_repair_diagnostics(
+        provider,
+        request(),
+        Output,
+    )
+
+    assert execution.response == Output(value="fixed")
+    assert execution.attempt_count == 2
 
 
 @pytest.mark.asyncio
