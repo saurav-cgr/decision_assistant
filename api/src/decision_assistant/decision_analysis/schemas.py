@@ -32,6 +32,12 @@ class StabilityLabel(StrEnum):
     INDETERMINATE = "indeterminate"
 
 
+class NarrativeStatus(StrEnum):
+    NOT_REQUESTED = "not_requested"
+    GENERATED = "generated"
+    UNAVAILABLE = "unavailable"
+
+
 class DecisionOption(DecisionAnalysisModel):
     id: Annotated[str, Field(min_length=1, max_length=80)]
     label: Annotated[str, Field(min_length=1, max_length=200)]
@@ -170,6 +176,18 @@ class DecisionVerification(DecisionAnalysisModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class GeneratedDecisionNarrative(DecisionAnalysisModel):
+    recommendation_option_id: str
+    summary: Annotated[str, Field(min_length=1, max_length=2_000)]
+    dominant_criterion_ids: list[str] = Field(default_factory=list)
+    tradeoffs: list[Annotated[str, Field(min_length=1, max_length=1_000)]] = (
+        Field(default_factory=list)
+    )
+    assumptions: list[Annotated[str, Field(min_length=1, max_length=1_000)]] = (
+        Field(default_factory=list)
+    )
+
+
 class DecisionAnalysisResponse(DecisionAnalysisModel):
     algorithm_version: str = "weighted-sum-v1"
     ranked_options: list[RankedOption]
@@ -178,3 +196,5 @@ class DecisionAnalysisResponse(DecisionAnalysisModel):
     sensitivity: SensitivityResult | None = None
     evidence_coverage: EvidenceCoverage
     verification: DecisionVerification
+    narrative: GeneratedDecisionNarrative | None = None
+    narrative_status: NarrativeStatus = NarrativeStatus.NOT_REQUESTED

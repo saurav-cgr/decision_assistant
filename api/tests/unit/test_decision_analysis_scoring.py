@@ -23,6 +23,7 @@ def request_for(
     cost_weight: str = "0.4",
     quality_weight: str = "0.6",
     sensitivity: SensitivityRequest | None = None,
+    narrative_requested: bool = False,
 ) -> DecisionAnalysisRequest:
     return DecisionAnalysisRequest(
         title="Choose deployment",
@@ -73,6 +74,7 @@ def request_for(
             ),
         ],
         sensitivity=sensitivity,
+        narrative_requested=narrative_requested,
     )
 
 
