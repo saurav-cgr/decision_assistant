@@ -8,6 +8,7 @@ Use this pack to test the deterministic decision-analysis API before adding pers
 - [Case intake template](case-intake-template.md): collect real, expert-reviewed decisions.
 - [Scoring rubric template](scoring-rubric-template.md): make ordinal scores consistent.
 - [Test report template](test-report-template.md): record results and discrepancies.
+- [Synthetic suite](synthetic-suite.md): ten repeatable API test cases and final checklist.
 
 ## Test sequence
 
