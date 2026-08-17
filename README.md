@@ -195,7 +195,7 @@ Parsers normalize every source into a **source-neutral block contract** (`Parsed
 - **System instruction** — stable application policy: task/role, evidence-only behavior, the untrusted-content / prompt-injection rule, citation and abstention requirements, and output semantics not already in the JSON Schema.
 - **User content** — request-specific data only: questions, delimited passages/evidence, candidates, and judge payloads. Document text and user questions are always untrusted user-role content.
 
-Repair attempts append a short schema-repair directive to the system instruction and leave user content byte-for-byte unchanged. Generation prompt contract versions are `gemini-json-v3` / `ollama-json-v3`.
+Schema-invalid provider output receives one schema-repair attempt. A structured answer rejected by citation materialization or verification receives at most one additional answer-repair call with allowlisted application error codes. Both repairs append trusted system guidance while preserving user content byte-for-byte. If answer repair fails, the service safely keeps the original abstention path. Generation prompt contract versions are `gemini-json-v3` / `ollama-json-v3`.
 
 ### Schema-constrained reranking
 

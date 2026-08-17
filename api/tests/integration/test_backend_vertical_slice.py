@@ -178,6 +178,14 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
                     "unsupported_facets": ["database encryption owner"],
                     "confidence": "none",
                 },
+                {
+                    "answer": "Insufficient evidence to answer that question.",
+                    "claims": [],
+                    "citations": [],
+                    "conflicts": [],
+                    "unsupported_facets": ["database encryption owner"],
+                    "confidence": "none",
+                },
             ]
         )
         retrieval_service = HybridRetrievalService(

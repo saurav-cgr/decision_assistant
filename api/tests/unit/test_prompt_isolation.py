@@ -3,10 +3,17 @@ from pathlib import Path
 from uuid import uuid4
 
 from decision_assistant.answering.schemas import (
+    AnswerState,
+    ConfidenceCategory,
     EvidencePack,
     EvidencePassage,
+    GeneratedAnswer,
     GeneratedAnswerCandidate,
+    VerificationError,
+    VerificationResult,
 )
+from decision_assistant.answering.diagnostics import CandidateEvaluation
+from decision_assistant.answering.repair import build_answer_repair_request
 from decision_assistant.answering.service import build_answer_request
 from decision_assistant.config import Settings
 from decision_assistant.decisions.extractor import (
@@ -87,6 +94,50 @@ def test_generation_prompt_version_defaults_are_synchronized() -> None:
         f"${{GEMINI_GENERATION_PROMPT_VERSION:-{version}}}"
         in (PROJECT_ROOT / "compose.yaml").read_text(encoding="utf-8")
     )
+
+
+def test_answer_repair_keeps_untrusted_feedback_out_of_system() -> None:
+    request = build_answer_request(
+        "Why was authentication postponed?",
+        EvidencePack(
+            passages=[
+                EvidencePassage(
+                    passage_id=uuid4(),
+                    content=INJECTION,
+                    content_hash=sha256(INJECTION.encode()).hexdigest(),
+                    active_version=True,
+                )
+            ]
+        ),
+    )
+    candidate = GeneratedAnswerCandidate(
+        answer="Insufficient evidence.",
+        confidence=ConfidenceCategory.NONE,
+    )
+    evaluation = CandidateEvaluation(
+        candidate=candidate,
+        materialized_answer=GeneratedAnswer(
+            answer=candidate.answer,
+            confidence=candidate.confidence,
+        ),
+        verification=VerificationResult(
+            valid=False,
+            state=AnswerState.ABSTAINED,
+            errors=[
+                VerificationError(
+                    code="central_claim_uncited",
+                    message=INJECTION,
+                )
+            ],
+        ),
+    )
+
+    repair = build_answer_repair_request(request, evaluation)
+
+    assert repair.user_content == request.user_content
+    assert INJECTION not in repair.system_instruction
+    assert "central_claim_uncited" in repair.system_instruction
+    assert "REPAIR REQUIRED" in repair.system_instruction
 
 
 def test_metadata_request_keeps_document_sample_only_in_user() -> None:

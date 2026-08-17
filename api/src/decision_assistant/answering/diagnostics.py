@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from enum import StrEnum
 from uuid import UUID
 
@@ -7,6 +8,7 @@ from decision_assistant.answering.schemas import (
     AnswerModel,
     AnswerState,
     Citation,
+    EvidenceConflict,
     EvidencePack,
     GeneratedAnswer,
     GeneratedAnswerCandidate,
@@ -14,6 +16,7 @@ from decision_assistant.answering.schemas import (
     VerificationError,
     VerificationResult,
 )
+from decision_assistant.answering.verifier import AnswerVerifier
 
 
 class AnswerOutcomeReason(StrEnum):
@@ -41,12 +44,25 @@ class MaterializationResult(AnswerModel):
     dropped_citations: list[DroppedCitation] = Field(default_factory=list)
 
 
+class CandidateEvaluation(AnswerModel):
+    candidate: GeneratedAnswerCandidate
+    materialized_answer: GeneratedAnswer
+    dropped_citations: list[DroppedCitation] = Field(default_factory=list)
+    verification: VerificationResult
+
+
 class AnswerExecutionDiagnostics(AnswerModel):
     outcome_reason: AnswerOutcomeReason
     raw_candidate: GeneratedAnswerCandidate | None = None
     materialized_answer: GeneratedAnswer | None = None
     dropped_citations: list[DroppedCitation] = Field(default_factory=list)
     verifier_errors: list[VerificationError] = Field(default_factory=list)
+    repair_attempted: bool = False
+    repair_candidate: GeneratedAnswerCandidate | None = None
+    repair_materialized_answer: GeneratedAnswer | None = None
+    repair_dropped_citations: list[DroppedCitation] = Field(default_factory=list)
+    repair_verifier_errors: list[VerificationError] = Field(default_factory=list)
+    repair_failure: str | None = None
     generation_attempt_count: int = Field(ge=0)
 
 
@@ -125,3 +141,39 @@ def classify_outcome(
     ):
         return AnswerOutcomeReason.MODEL_ABSTAINED
     return AnswerOutcomeReason.NO_SUPPORTED_CENTRAL_CLAIM
+
+
+def evaluate_candidate(
+    candidate: GeneratedAnswerCandidate,
+    evidence_pack: EvidencePack,
+    verifier: AnswerVerifier,
+    detected_conflicts: Iterable[EvidenceConflict] = (),
+) -> CandidateEvaluation:
+    materialization = materialize_generated_answer(candidate, evidence_pack)
+    generated = materialization.answer
+    conflicts = merge_conflicts(generated.conflicts, detected_conflicts)
+    if conflicts != generated.conflicts:
+        generated = generated.model_copy(update={"conflicts": conflicts})
+    passage_by_id = {
+        passage.passage_id: passage for passage in evidence_pack.passages
+    }
+    return CandidateEvaluation(
+        candidate=candidate,
+        materialized_answer=generated,
+        dropped_citations=materialization.dropped_citations,
+        verification=verifier.verify(generated, passage_by_id),
+    )
+
+
+def merge_conflicts(
+    generated: Iterable[EvidenceConflict],
+    detected: Iterable[EvidenceConflict],
+) -> list[EvidenceConflict]:
+    merged: list[EvidenceConflict] = []
+    seen: set[tuple[str, tuple[UUID, ...]]] = set()
+    for conflict in [*generated, *detected]:
+        key = (conflict.facet, tuple(conflict.passage_ids))
+        if key not in seen:
+            seen.add(key)
+            merged.append(conflict)
+    return merged

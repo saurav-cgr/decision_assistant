@@ -12,8 +12,9 @@ from decision_assistant.answering.diagnostics import (
     AnswerExecutionDiagnostics,
     AnswerOutcomeReason,
     classify_outcome,
-    materialize_generated_answer,
+    evaluate_candidate,
 )
+from decision_assistant.answering.repair import execute_answer_repair
 from decision_assistant.answering.schemas import (
     AnswerState,
     Citation,
@@ -160,42 +161,70 @@ class AnswerService:
                 ),
             )
 
+        answer_request = build_answer_request(request.question, evidence_pack)
         generation = await generate_with_repair_diagnostics(
             self._generation_provider,
-            build_answer_request(request.question, evidence_pack),
+            answer_request,
             GeneratedAnswerCandidate,
         )
         candidate = generation.response
-        materialization = materialize_generated_answer(candidate, evidence_pack)
-        generated = materialization.answer
         detected_conflicts = detect_evidence_conflicts(
             evidence_pack.decision_fields
         )
-        if detected_conflicts:
-            generated = generated.model_copy(
-                update={
-                    "conflicts": merge_conflicts(
-                        generated.conflicts,
-                        detected_conflicts,
-                    )
-                }
+        initial = evaluate_candidate(
+            candidate,
+            evidence_pack,
+            self._verifier,
+            detected_conflicts,
+        )
+        repair = await execute_answer_repair(
+            self._generation_provider,
+            answer_request,
+            initial,
+        )
+        final = (
+            evaluate_candidate(
+                repair.candidate,
+                evidence_pack,
+                self._verifier,
+                detected_conflicts,
             )
-
-        passage_by_id = {
-            passage.passage_id: passage for passage in evidence_pack.passages
-        }
-        verification = self._verifier.verify(generated, passage_by_id)
+            if repair.candidate is not None
+            else initial
+        )
+        generated = final.materialized_answer
+        verification = final.verification
         diagnostics = AnswerExecutionDiagnostics(
             outcome_reason=classify_outcome(
-                candidate,
+                final.candidate,
                 verification,
-                materialization.dropped_citations,
+                final.dropped_citations,
             ),
             raw_candidate=candidate,
-            materialized_answer=generated,
-            dropped_citations=materialization.dropped_citations,
-            verifier_errors=verification.errors,
-            generation_attempt_count=generation.attempt_count,
+            materialized_answer=initial.materialized_answer,
+            dropped_citations=initial.dropped_citations,
+            verifier_errors=initial.verification.errors,
+            repair_attempted=repair.requested,
+            repair_candidate=repair.candidate,
+            repair_materialized_answer=(
+                final.materialized_answer
+                if repair.candidate is not None
+                else None
+            ),
+            repair_dropped_citations=(
+                final.dropped_citations
+                if repair.candidate is not None
+                else []
+            ),
+            repair_verifier_errors=(
+                final.verification.errors
+                if repair.candidate is not None
+                else []
+            ),
+            repair_failure=repair.failure,
+            generation_attempt_count=(
+                generation.attempt_count + repair.provider_call_count
+            ),
         )
         if not verification.valid:
             return AnswerExecution(
@@ -393,20 +422,6 @@ def detect_evidence_conflicts(
                 EvidenceConflict(facet=facet, passage_ids=passage_ids)
             )
     return conflicts
-
-
-def merge_conflicts(
-    generated: Iterable[EvidenceConflict],
-    detected: Iterable[EvidenceConflict],
-) -> list[EvidenceConflict]:
-    merged: list[EvidenceConflict] = []
-    seen: set[tuple[str, tuple[UUID, ...]]] = set()
-    for conflict in [*generated, *detected]:
-        key = (conflict.facet, tuple(conflict.passage_ids))
-        if key not in seen:
-            seen.add(key)
-            merged.append(conflict)
-    return merged
 
 
 def _field_value(value: Any) -> str | None:
