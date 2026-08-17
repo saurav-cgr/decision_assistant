@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
 import { Ask } from "../pages/Ask";
 import { DecisionDetail } from "../pages/DecisionDetail";
+import { DecisionAnalysis } from "../pages/DecisionAnalysis";
 import { Evaluation } from "../pages/Evaluation";
 import { Timeline } from "../pages/Timeline";
 import { Workspace } from "../pages/Workspace";
@@ -39,6 +40,7 @@ export function AppRoutes() {
       <Route element={<AppShell />}>
         <Route index element={<Workspace />} />
         <Route path="ask" element={<Ask />} />
+        <Route path="decision-analysis" element={<DecisionAnalysis />} />
         <Route path="timeline" element={<Timeline />} />
         <Route path="decisions/:id" element={<DecisionDetail />} />
         <Route path="evaluation" element={<Evaluation />} />

@@ -10,6 +10,7 @@ import { WorkspaceSelector } from "./WorkspaceSelector";
 const navigation = [
   { label: "Workspace", to: "/", end: true },
   { label: "Ask", to: "/ask" },
+  { label: "Decision analysis", to: "/decision-analysis" },
   { label: "Timeline", to: "/timeline" },
   { label: "Evaluation", to: "/evaluation" },
 ] as const;
