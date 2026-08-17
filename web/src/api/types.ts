@@ -387,3 +387,102 @@ export type WorkspaceDetail = WorkspaceSummary & {
 };
 
 export type WorkspaceListResponse = { items: WorkspaceSummary[] };
+
+export type DecisionCriterionDirection = "benefit" | "cost";
+export type DecisionCriterionScale = "numeric" | "ordinal";
+export type DecisionScoreProvenance =
+  | "user_provided"
+  | "evidence_backed"
+  | "derived";
+
+export type DecisionAnalysisOption = {
+  id: string;
+  label: string;
+  description?: string | null;
+};
+
+export type DecisionAnalysisCriterion = {
+  id: string;
+  label: string;
+  direction: DecisionCriterionDirection;
+  weight: string;
+  scale: DecisionCriterionScale;
+};
+
+export type DecisionAnalysisScore = {
+  option_id: string;
+  criterion_id: string;
+  value: string;
+  provenance: DecisionScoreProvenance;
+  rationale?: string | null;
+  citations?: Array<{ passage_id: string; quote: string }>;
+};
+
+export type DecisionAnalysisRequest = {
+  title: string;
+  options: DecisionAnalysisOption[];
+  criteria: DecisionAnalysisCriterion[];
+  scores: DecisionAnalysisScore[];
+  sensitivity?: { range_percent: string; sample_count: number } | null;
+  narrative_requested?: boolean;
+};
+
+export type DecisionScoreContribution = {
+  criterion_id: string;
+  raw_value: string;
+  normalized_value: string;
+  weighted_contribution: string;
+  provenance: DecisionScoreProvenance;
+};
+
+export type DecisionRankedOption = {
+  option_id: string;
+  rank: number;
+  total_score: string;
+  contributions: DecisionScoreContribution[];
+};
+
+export type DecisionAnalysisResponse = {
+  algorithm_version: string;
+  ranked_options: DecisionRankedOption[];
+  tie_groups: string[][];
+  criterion_breakdowns: Array<{
+    criterion_id: string;
+    weight: string;
+    direction: DecisionCriterionDirection;
+    equal_values: boolean;
+    values: Array<{
+      option_id: string;
+      raw_value: string;
+      normalized_value: string;
+      provenance: DecisionScoreProvenance;
+    }>;
+  }>;
+  sensitivity: {
+    baseline_winner_option_id: string;
+    stability: "stable" | "sensitive" | "indeterminate";
+    reversing_criterion_ids: string[];
+    samples: Array<{
+      criterion_id: string;
+      varied_weight: string;
+      winner_option_id: string;
+      winner_changed: boolean;
+    }>;
+  } | null;
+  evidence_coverage: {
+    input_complete: boolean;
+    evidence_backed_weight: string;
+    user_provided_score_count: number;
+    evidence_backed_score_count: number;
+    derived_score_count: number;
+  };
+  verification: { valid: boolean; errors: string[]; warnings: string[] };
+  narrative: {
+    recommendation_option_id: string;
+    summary: string;
+    dominant_criterion_ids: string[];
+    tradeoffs: string[];
+    assumptions: string[];
+  } | null;
+  narrative_status: "not_requested" | "generated" | "unavailable";
+};

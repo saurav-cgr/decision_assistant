@@ -1,6 +1,8 @@
 import type {
   ApiErrorPayload,
   DecisionCorrectionRequest,
+  DecisionAnalysisRequest,
+  DecisionAnalysisResponse,
   DecisionDetail,
   DecisionListResponse,
   DecisionRelation,
@@ -86,6 +88,16 @@ export async function apiRequest<T>(
 
 export function listWorkspaces(): Promise<WorkspaceListResponse> {
   return apiRequest<WorkspaceListResponse>("/workspaces");
+}
+
+export function analyzeDecision(
+  request: DecisionAnalysisRequest,
+): Promise<DecisionAnalysisResponse> {
+  return apiRequest<DecisionAnalysisResponse>("/decision-analyses", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request),
+  });
 }
 
 export function createWorkspace(name: string): Promise<WorkspaceDetail> {

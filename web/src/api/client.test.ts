@@ -89,4 +89,58 @@ describe("Decision Assistant API client", () => {
       "/questions/history?page=2&page_size=5&query=authentication+owner",
     );
   });
+
+  it("posts stateless decision analyses with decimal strings", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ranked_options: [] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const clientModule = "./client";
+    const { analyzeDecision } = await import(/* @vite-ignore */ clientModule);
+
+    await analyzeDecision({
+      title: "Choose hosting",
+      options: [
+        { id: "managed", label: "Managed" },
+        { id: "self_hosted", label: "Self-hosted" },
+      ],
+      criteria: [
+        {
+          id: "cost",
+          label: "Cost",
+          direction: "cost",
+          weight: "1.0",
+          scale: "numeric",
+        },
+      ],
+      scores: [
+        {
+          option_id: "managed",
+          criterion_id: "cost",
+          value: "100",
+          provenance: "user_provided",
+        },
+        {
+          option_id: "self_hosted",
+          criterion_id: "cost",
+          value: "40",
+          provenance: "derived",
+          rationale: "Capacity estimate",
+        },
+      ],
+      narrative_requested: false,
+    });
+
+    const [requestedUrl, init] = fetchMock.mock.calls[0];
+    expect(String(requestedUrl)).toMatch(/\/api\/v1\/decision-analyses$/);
+    expect(init).toMatchObject({ method: "POST" });
+    const body = JSON.parse(String(init.body));
+    expect(body.criteria[0].weight).toBe("1.0");
+    expect(body.scores[0].value).toBe("100");
+    expect(body.scores[1]).toMatchObject({
+      value: "40",
+      provenance: "derived",
+      rationale: "Capacity estimate",
+    });
+  });
 });
