@@ -31,7 +31,17 @@ afterEach(() => vi.clearAllMocks());
 
 describe("DecisionAnalysis", () => {
   it("requires complete inputs, then posts a server-authoritative analysis", async () => {
-    api.analyzeDecision.mockResolvedValue({});
+    api.analyzeDecision.mockResolvedValue({
+      algorithm_version: "weighted-sum-v1",
+      ranked_options: [{ option_id: "managed", rank: 1, total_score: "0.6", contributions: [] }],
+      tie_groups: [],
+      criterion_breakdowns: [],
+      sensitivity: { baseline_winner_option_id: "managed", stability: "sensitive", reversing_criterion_ids: ["quality"], samples: [] },
+      evidence_coverage: { input_complete: true, evidence_backed_weight: "0", user_provided_score_count: 4, evidence_backed_score_count: 0, derived_score_count: 0 },
+      verification: { valid: true, errors: [], warnings: ["user-provided scores affect the ranking"] },
+      narrative: null,
+      narrative_status: "not_requested",
+    });
     await renderPage();
 
     expect(screen.getByRole("button", { name: /analyze decision/i })).toBeDisabled();
@@ -54,6 +64,8 @@ describe("DecisionAnalysis", () => {
       }),
     );
     expect(await screen.findByText(/analysis calculated/i)).toBeVisible();
+    expect(screen.getByText(/result changes when weights vary: quality/i)).toBeVisible();
+    expect(screen.getByText(/4 assumptions/i)).toBeVisible();
   });
 
 });

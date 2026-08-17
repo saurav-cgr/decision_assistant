@@ -7,6 +7,7 @@ import type {
   DecisionAnalysisRequest,
   DecisionScoreProvenance,
 } from "../api/types";
+import { DecisionAnalysisResult } from "../components/DecisionAnalysisResult";
 import "./DecisionAnalysis.css";
 
 type ScoreDraft = {
@@ -102,7 +103,7 @@ export function DecisionAnalysis() {
   const [narrativeRequested, setNarrativeRequested] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [complete, setComplete] = useState(false);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof analyzeDecision>> | null>(null);
 
   const validation = useMemo(
     () => validationMessage(title, options, criteria, scores),
@@ -156,11 +157,10 @@ export function DecisionAnalysis() {
       narrative_requested: narrativeRequested,
     };
     setError(null);
-    setComplete(false);
+    setResult(null);
     setLoading(true);
     try {
-      await analyzeDecision(request);
-      setComplete(true);
+      setResult(await analyzeDecision(request));
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -252,9 +252,10 @@ export function DecisionAnalysis() {
         <label className="decision-analysis-form__checkbox"><input type="checkbox" checked={narrativeRequested} onChange={(event) => setNarrativeRequested(event.target.checked)} /> Request optional explanation</label>
         {validation && <p className="decision-analysis-form__hint">{validation}</p>}
         {error && <p className="decision-analysis-form__error" role="alert">{error}</p>}
-        {complete && <p role="status">Analysis calculated. Result view arrives next.</p>}
+        {result && <p role="status">Analysis calculated.</p>}
         <button className="decision-analysis-form__submit" type="submit" disabled={Boolean(validation) || loading}>{loading ? "Analyzing…" : "Analyze decision"}</button>
       </form>
+      {result && <DecisionAnalysisResult result={result} />}
     </section>
   );
 }

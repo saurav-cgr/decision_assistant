@@ -22,4 +22,21 @@
 .decision-analysis-form__error { margin: 0; color: #762e21; font-weight: 700; }
 .decision-analysis-form__submit { justify-self: start; padding: 10px 15px; color: #fff; background: var(--accent); border: 0; border-radius: 8px; font-weight: 750; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.decision-analysis-result { display: grid; gap: 20px; padding: 24px; background: #fffefa; border: 1px solid var(--line); border-radius: 16px; }
+.decision-analysis-result__header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.decision-analysis-result__header h2, .decision-analysis-result h3 { margin: 0; }
+.decision-analysis-result__winner { display: grid; gap: 3px; padding: 12px; color: #075d4c; background: var(--accent-soft); border-radius: 10px; }
+.decision-analysis-result__winner span, .decision-analysis-result__winner small { font-size: .75rem; }
+.decision-analysis-result__scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 9px; }
+.decision-analysis-result table { width: 100%; min-width: 650px; border-collapse: collapse; }
+.decision-analysis-result th, .decision-analysis-result td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; }
+.decision-analysis-result__warning, .decision-analysis-result__sensitivity, .decision-analysis-result__provenance, .decision-analysis-result__narrative { padding: 14px; border-radius: 10px; }
+.decision-analysis-result__warning { color: #762e21; background: #f8e7e1; }
+.decision-analysis-result__warning ul, .decision-analysis-result__provenance ul { margin: 8px 0 0; padding-left: 18px; }
+.decision-analysis-result__sensitivity--sensitive { background: #fff0d9; color: #7b4b12; }
+.decision-analysis-result__sensitivity--stable { background: #e7f1e9; color: #315b49; }
+.decision-analysis-result__provenance { background: #f5f2e9; }
+.decision-analysis-result__narrative { background: #eef4f0; }
+.decision-analysis-result__error { color: #762e21; font-weight: 700; }
+@media (max-width: 760px) { .decision-analysis-result__header { align-items: stretch; flex-direction: column; } }
 @media (max-width: 760px) { .decision-analysis-form__row, .decision-analysis-form__criteria-row { grid-template-columns: 1fr; } }
