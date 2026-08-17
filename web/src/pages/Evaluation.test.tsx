@@ -40,6 +40,7 @@ const results = [
       ranks: { unrelated: 1, "passage-auth": 2 },
     },
     generated_output: { state: "answered", answer: "Billing was prioritized." },
+    answer_diagnostics: null,
     citation_checks: {
       checks: [
         {
@@ -87,6 +88,26 @@ const results = [
     external_id: "unsupported-vendor",
     retrieved_ranks: { ids: [], document_ids: [], ranks: {} },
     generated_output: { state: "answered", answer: "PostgreSQL was selected." },
+    answer_diagnostics: {
+      outcome_reason: "citation_materialization_failed",
+      generation_attempt_count: 2,
+      repair_attempted: true,
+      repair_failure: null,
+      verifier_errors: [
+        {
+          code: "claim_citation_invalid",
+          message: "Claim citation did not verify.",
+          passage_id: "unrelated",
+        },
+      ],
+      dropped_citations: [
+        { reason: "quote_not_exact", passage_id: "unrelated" },
+      ],
+      repair_verifier_errors: [],
+      repair_dropped_citations: [],
+      raw_candidate: { answer: "PostgreSQL was selected." },
+      repair_candidate: { answer: "Insufficient evidence." },
+    },
     citation_checks: {
       checks: [{
         claim_index: 0,
@@ -321,6 +342,13 @@ describe("Evaluation dashboard", () => {
     expect(
       within(diagnostic).getByRole("list", { name: /actual facets/i }),
     ).toHaveTextContent("vendoranswer");
+    expect(within(diagnostic).getByText("citation materialization failed")).toBeVisible();
+    expect(within(diagnostic).getByText("claim citation invalid")).toBeVisible();
+    expect(within(diagnostic).getByText("quote not exact")).toBeVisible();
+    expect(within(diagnostic).getByText("Generation attempts")).toBeVisible();
+    expect(
+      within(diagnostic).getByText("Initial structured candidate"),
+    ).toBeVisible();
   });
 
   it("blocks side-by-side comparison when run snapshots differ", async () => {

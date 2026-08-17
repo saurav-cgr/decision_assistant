@@ -1,6 +1,13 @@
 """Unit tests for evaluation gold-reference passage resolution."""
+from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
+from uuid import uuid4
 
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from decision_assistant.evaluation.schemas import EvaluationDatasetQuestion
 from decision_assistant.evaluation.service import EvaluationService
 
 
@@ -47,3 +54,46 @@ def test_narrow_passage_matches_pdf_pages_equally_specific() -> None:
 def test_locator_span_ignores_pdf_page() -> None:
     assert EvaluationService._locator_span({"kind": "pdf_page", "page": 4}) == 0
     assert EvaluationService._locator_span({"kind": "lines", "start": 31, "end": 33}) == 2
+
+
+@pytest.mark.asyncio
+async def test_successful_result_copies_answer_diagnostics() -> None:
+    service = EvaluationService(
+        session=cast(AsyncSession, None),
+        dataset_path=Path("unused.json"),
+        executor=SimpleNamespace(),
+        judge=SimpleNamespace(),
+    )
+    run = SimpleNamespace(id=uuid4(), judge_profile={})
+    question = SimpleNamespace(
+        id=uuid4(),
+        question="Why was authentication postponed?",
+        expected_answer_summary="Audit events were incomplete.",
+        expected_documents=[],
+        expected_passages=[],
+    )
+    snapshot = EvaluationDatasetQuestion(
+        id="diagnostic-1",
+        question=question.question,
+        expectation="answer",
+        facets={"reason": "answer"},
+    )
+    diagnostics = {
+        "outcome_reason": "answered",
+        "generation_attempt_count": 2,
+    }
+
+    result = await service._successful_result(
+        run,
+        question,
+        snapshot,
+        {
+            "generated_output": {"claims": []},
+            "actual_values": {"expectation": "answer"},
+            "answer_diagnostics": diagnostics,
+            "retrieved_ids": [],
+            "citation_checks": [],
+        },
+    )
+
+    assert result.answer_diagnostics == diagnostics

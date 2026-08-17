@@ -1,4 +1,5 @@
 import type { EvaluationResult, EvaluationRun } from "../api/types";
+import { AnswerPipelineDiagnostics } from "./AnswerPipelineDiagnostics";
 import { MetricSummary } from "./MetricSummary";
 
 type EvaluationResultsProps = {
@@ -235,6 +236,7 @@ export function EvaluationResults({ run }: EvaluationResultsProps) {
               </dd>
             </div>
           </dl>
+          <AnswerPipelineDiagnostics value={result.answer_diagnostics} />
           {(result.citation_checks.checks || []).length > 0 && (
             <div className="evaluation-citation-diagnostics">
               <h4>Citation diagnostics</h4>

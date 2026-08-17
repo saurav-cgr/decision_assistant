@@ -312,6 +312,7 @@ export type EvaluationResult = {
     ranks?: Record<string, number>;
   };
   generated_output: Record<string, unknown> | null;
+  answer_diagnostics: Record<string, unknown> | null;
   citation_checks: { checks?: EvaluationCitationCheck[] };
   expected_values: Record<string, unknown>;
   actual_values: Record<string, unknown>;

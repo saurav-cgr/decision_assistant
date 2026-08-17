@@ -254,6 +254,7 @@ class EvaluationService:
                     evaluation_question_id=question.id,
                     retrieved_ranks={"ids": [], "ranks": {}},
                     generated_output=None,
+                    answer_diagnostics=None,
                     citation_checks={"checks": []},
                     expected_values=self._snapshot(snapshot),
                     actual_values={"expectation": "failure"},
@@ -310,6 +311,7 @@ class EvaluationService:
                     external_id=question.external_id,
                     retrieved_ranks=result.retrieved_ranks,
                     generated_output=result.generated_output,
+                    answer_diagnostics=result.answer_diagnostics,
                     citation_checks=result.citation_checks,
                     expected_values=result.expected_values,
                     actual_values=result.actual_values,
@@ -427,6 +429,7 @@ class EvaluationService:
                 },
             },
             generated_output=generated_output,
+            answer_diagnostics=execution.get("answer_diagnostics"),
             citation_checks={"checks": citation_checks},
             expected_values=expected_values,
             actual_values=actual_values,
@@ -1016,11 +1019,12 @@ class RuntimeEvaluationExecutor:
             retrieval_service=retrieval_service,
             generation_provider=self._generation_provider,
         )
-        answer = await answer_service.answer(
+        answer_execution = await answer_service.answer_with_diagnostics(
             QuestionRequest(question=question.question),
             request_id=f"evaluation:{run_id}:{question.external_id}",
             workspace_id=workspace_id,
         )
+        answer = answer_execution.response
         trace = await self._session.get(RetrievalTrace, answer.trace_id)
         retrieved_ids = trace.selected_passage_ids if trace is not None else []
         retrieved_document_ids = await self._document_ids(retrieved_ids)
@@ -1060,6 +1064,9 @@ class RuntimeEvaluationExecutor:
                 dict.fromkeys(retrieved_document_ids.values())
             ),
             "generated_output": answer.model_dump(mode="json"),
+            "answer_diagnostics": answer_execution.diagnostics.model_dump(
+                mode="json"
+            ),
             "citation_checks": checks,
             "actual_values": {"expectation": actual_expectation},
             "latency_ms": round((perf_counter() - started) * 1_000, 3),

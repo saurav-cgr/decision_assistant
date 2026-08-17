@@ -274,6 +274,8 @@ The versioned benchmark (`evaluation/questions.json`, dataset `atlas-v3`) contai
 
 **Measured results are populated after a live Gemini run** (requires `GEMINI_API_KEY`). They are deliberately not fabricated here. The target for the definition of done is a hybrid top-five hit rate of at least 80% on answerable questions.
 
+Each evaluation result stores bounded answer-pipeline diagnostics: generation attempts, verification failures, dropped citations, repair outcome, and structured candidates. Open **View diagnostics** in the Evaluation dashboard to inspect why an answer was accepted, repaired, or withheld; prompts, full evidence packs, and secrets are not stored there.
+
 #### Judge disagreement audit
 
 Completed by manual review after each live run. For every judge/human disagreement, record question ID, claim, judge result, human result, and resolution. (Pending live run.)

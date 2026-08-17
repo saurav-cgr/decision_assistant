@@ -83,6 +83,7 @@ class EvaluationResultResponse(EvaluationModel):
     external_id: str
     retrieved_ranks: dict[str, Any]
     generated_output: dict[str, Any] | None
+    answer_diagnostics: dict[str, Any] | None = None
     citation_checks: dict[str, Any]
     expected_values: dict[str, Any]
     actual_values: dict[str, Any]
