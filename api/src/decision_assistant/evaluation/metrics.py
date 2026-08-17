@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from math import ceil
 from statistics import median
+from decimal import Decimal
 from typing import Literal, Sequence
 
 Expectation = Literal["answer", "abstain", "partial"]
@@ -110,6 +111,37 @@ def latency_summary(latencies_ms: Sequence[float]) -> LatencySummary:
 
 def claim_support_rate(supported: Sequence[bool]) -> float:
     return sum(bool(value) for value in supported) / len(supported) if supported else 0.0
+
+
+def decision_rank_accuracy(
+    expected_winners: Sequence[str], actual_winners: Sequence[str]
+) -> float:
+    _require_same_length(expected_winners, actual_winners)
+    if not expected_winners:
+        return 0.0
+    return sum(
+        expected == actual
+        for expected, actual in zip(expected_winners, actual_winners)
+    ) / len(expected_winners)
+
+
+def mean_evidence_backed_weight(
+    weights: Sequence[Decimal | float],
+) -> float:
+    return float(sum((Decimal(str(weight)) for weight in weights), Decimal())) / len(
+        weights
+    ) if weights else 0.0
+
+
+def sensitivity_stability_accuracy(
+    expected: Sequence[bool], actual: Sequence[bool]
+) -> float:
+    _require_same_length(expected, actual)
+    if not expected:
+        return 0.0
+    return sum(
+        wanted == observed for wanted, observed in zip(expected, actual)
+    ) / len(expected)
 
 
 def _require_same_length(left: Sequence[object], right: Sequence[object]) -> None:

@@ -1,4 +1,5 @@
 from importlib import import_module
+from decimal import Decimal
 
 import pytest
 
@@ -94,3 +95,16 @@ def test_claim_support_rate_aggregates_atomic_claims() -> None:
 
     assert metrics.claim_support_rate([True, False, True]) == pytest.approx(2 / 3)
     assert metrics.claim_support_rate([]) == 0.0
+
+
+def test_decision_metrics_track_winner_provenance_and_stability() -> None:
+    metrics = import_module("decision_assistant.evaluation.metrics")
+
+    assert metrics.decision_rank_accuracy(["a", "b"], ["a", "x"]) == 0.5
+    assert metrics.decision_rank_accuracy([], []) == 0.0
+    assert metrics.mean_evidence_backed_weight(
+        [Decimal("0.4"), Decimal("1")]
+    ) == pytest.approx(0.7)
+    assert metrics.mean_evidence_backed_weight([]) == 0.0
+    assert metrics.sensitivity_stability_accuracy([True, False], [True, True]) == 0.5
+    assert metrics.sensitivity_stability_accuracy([], []) == 0.0

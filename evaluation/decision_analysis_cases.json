@@ -1,0 +1,53 @@
+{
+  "version": "decision-analysis-v1",
+  "cases": [
+    {
+      "id": "weighted-cost-quality-sensitive",
+      "request": {
+        "title": "Choose deployment",
+        "options": [
+          {"id": "managed", "label": "Managed"},
+          {"id": "self_hosted", "label": "Self-hosted"}
+        ],
+        "criteria": [
+          {"id": "cost", "label": "Cost", "direction": "cost", "weight": "0.4", "scale": "numeric"},
+          {"id": "quality", "label": "Quality", "direction": "benefit", "weight": "0.6", "scale": "ordinal"}
+        ],
+        "scores": [
+          {"option_id": "managed", "criterion_id": "cost", "value": "100", "provenance": "user_provided"},
+          {"option_id": "managed", "criterion_id": "quality", "value": "8", "provenance": "user_provided"},
+          {"option_id": "self_hosted", "criterion_id": "cost", "value": "40", "provenance": "user_provided"},
+          {"option_id": "self_hosted", "criterion_id": "quality", "value": "6", "provenance": "user_provided"}
+        ],
+        "sensitivity": {"range_percent": "0.5", "sample_count": 3}
+      },
+      "expected_winner_option_id": "managed",
+      "expected_stable": false,
+      "expected_evidence_backed_weight": "0"
+    },
+    {
+      "id": "weighted-cost-quality-stable-evidence",
+      "request": {
+        "title": "Choose deployment",
+        "options": [
+          {"id": "managed", "label": "Managed"},
+          {"id": "self_hosted", "label": "Self-hosted"}
+        ],
+        "criteria": [
+          {"id": "cost", "label": "Cost", "direction": "cost", "weight": "0.2", "scale": "numeric"},
+          {"id": "quality", "label": "Quality", "direction": "benefit", "weight": "0.8", "scale": "ordinal"}
+        ],
+        "scores": [
+          {"option_id": "managed", "criterion_id": "cost", "value": "100", "provenance": "evidence_backed", "citations": [{"passage_id": "00000000-0000-0000-0000-000000000001", "quote": "Managed costs 100."}]},
+          {"option_id": "managed", "criterion_id": "quality", "value": "8", "provenance": "evidence_backed", "citations": [{"passage_id": "00000000-0000-0000-0000-000000000002", "quote": "Managed quality is 8."}]},
+          {"option_id": "self_hosted", "criterion_id": "cost", "value": "40", "provenance": "evidence_backed", "citations": [{"passage_id": "00000000-0000-0000-0000-000000000003", "quote": "Self-hosted costs 40."}]},
+          {"option_id": "self_hosted", "criterion_id": "quality", "value": "6", "provenance": "evidence_backed", "citations": [{"passage_id": "00000000-0000-0000-0000-000000000004", "quote": "Self-hosted quality is 6."}]}
+        ],
+        "sensitivity": {"range_percent": "0.2", "sample_count": 3}
+      },
+      "expected_winner_option_id": "managed",
+      "expected_stable": true,
+      "expected_evidence_backed_weight": "1"
+    }
+  ]
+}
