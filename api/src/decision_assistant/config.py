@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_embedding_dimension: int = 768
     gemini_embedding_config_version: str = "retrieval-prefix-v1"
-    gemini_generation_prompt_version: str = "gemini-json-v2"
+    gemini_generation_prompt_version: str = "gemini-json-v3"
     gemini_embedding_batch_size: int = 32
     gemini_max_prompt_characters: int = 100_000
     ollama_base_url: str = "http://ollama:11434"

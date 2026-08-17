@@ -69,6 +69,7 @@ async def test_generation_adapter_requests_schema_and_zero_temperature() -> None
     result = await provider.generate(request(), AnswerStub)
 
     assert result == AnswerStub(answer="supported")
+    assert provider.profile.prompt_contract_version == "ollama-json-v3"
     assert requests[0]["format"] == AnswerStub.model_json_schema()
     assert requests[0]["options"] == {"temperature": 0}
     assert requests[0]["stream"] is False

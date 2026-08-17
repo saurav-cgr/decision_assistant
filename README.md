@@ -125,7 +125,7 @@ Key settings:
 | `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-2` | 768-dimension embedding model. |
 | `GEMINI_EMBEDDING_DIMENSION` | `768` | Must match the fixed `vector(768)` schema column; any other value is rejected as `provider_configuration_invalid`. |
 | `GEMINI_EMBEDDING_CONFIG_VERSION` | `retrieval-prefix-v1` | Versioned purpose-formatting contract. |
-| `GEMINI_GENERATION_PROMPT_VERSION` | `gemini-json-v2` | Versioned generation prompt contract. |
+| `GEMINI_GENERATION_PROMPT_VERSION` | `gemini-json-v3` | Versioned generation prompt contract. |
 | `GEMINI_EMBEDDING_BATCH_SIZE` | `32` | Max embedding inputs per provider request. |
 | `GEMINI_MAX_PROMPT_CHARACTERS` | `100000` | Generation prompt budget; never silently truncated. |
 | `RERANK_ENABLED` | `false` | Enable schema-constrained reranking after RRF (disabled by default). |
@@ -195,7 +195,7 @@ Parsers normalize every source into a **source-neutral block contract** (`Parsed
 - **System instruction** — stable application policy: task/role, evidence-only behavior, the untrusted-content / prompt-injection rule, citation and abstention requirements, and output semantics not already in the JSON Schema.
 - **User content** — request-specific data only: questions, delimited passages/evidence, candidates, and judge payloads. Document text and user questions are always untrusted user-role content.
 
-Repair attempts append a short schema-repair directive to the system instruction and leave user content byte-for-byte unchanged. Generation prompt contract versions are `gemini-json-v2` / `ollama-json-v2`.
+Repair attempts append a short schema-repair directive to the system instruction and leave user content byte-for-byte unchanged. Generation prompt contract versions are `gemini-json-v3` / `ollama-json-v3`.
 
 ### Schema-constrained reranking
 

@@ -42,8 +42,21 @@ class Citation(AnswerModel):
 
 
 class CitationCandidate(AnswerModel):
-    passage_id: UUID
-    quote: Annotated[str, Field(min_length=1)]
+    passage_id: Annotated[
+        UUID,
+        Field(
+            description="Supplied evidence passage containing the exact quote."
+        ),
+    ]
+    quote: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description=(
+                "Exact contiguous substring copied byte-for-byte from the passage."
+            ),
+        ),
+    ]
 
 
 class SourceCitation(Citation):
@@ -53,9 +66,27 @@ class SourceCitation(Citation):
 
 
 class AnswerClaim(AnswerModel):
-    text: Annotated[str, Field(min_length=1)]
-    central: bool = False
-    passage_ids: list[UUID] = Field(default_factory=list)
+    text: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description="Atomic factual claim supported by cited evidence.",
+        ),
+    ]
+    central: bool = Field(
+        default=False,
+        description=(
+            "True when this claim directly answers a requested question facet. "
+            "Every supported facet requires a central claim."
+        ),
+    )
+    passage_ids: list[UUID] = Field(
+        default_factory=list,
+        description=(
+            "Evidence passage IDs supporting this claim. Central claims require "
+            "at least one ID, and each ID must also appear in citations."
+        ),
+    )
     explicit_entities: list[str] = Field(default_factory=list)
     explicit_dates: list[str] = Field(default_factory=list)
 
@@ -112,12 +143,51 @@ class GeneratedAnswer(AnswerModel):
 
 
 class GeneratedAnswerCandidate(AnswerModel):
-    answer: Annotated[str, Field(min_length=1)]
-    claims: list[AnswerClaim] = Field(default_factory=list)
-    citations: list[CitationCandidate] = Field(default_factory=list)
-    conflicts: list[EvidenceConflict] = Field(default_factory=list)
-    unsupported_facets: list[str] = Field(default_factory=list)
-    confidence: ConfidenceCategory
+    answer: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description=(
+                "Concise answer containing every supported requested facet and no "
+                "facts absent from supplied evidence."
+            ),
+        ),
+    ]
+    claims: list[AnswerClaim] = Field(
+        default_factory=list,
+        description=(
+            "Atomic claims. Each supported requested facet must have a central "
+            "claim with cited passage IDs."
+        ),
+    )
+    citations: list[CitationCandidate] = Field(
+        default_factory=list,
+        description=(
+            "Minimum exact evidence quotes covering every passage ID referenced "
+            "by central claims."
+        ),
+    )
+    conflicts: list[EvidenceConflict] = Field(
+        default_factory=list,
+        description="Direct contradictions within the same decision facet only.",
+    )
+    unsupported_facets: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Only specifically requested facets lacking direct evidence. Empty "
+            "when all requested facets are supported; never use the whole question "
+            "as a facet when evidence supports its parts."
+        ),
+    )
+    confidence: Annotated[
+        ConfidenceCategory,
+        Field(
+            description=(
+                "Evidence confidence. Use none only when no requested facet is "
+                "supported."
+            )
+        ),
+    ]
 
 
 class VerificationError(AnswerModel):
