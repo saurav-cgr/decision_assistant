@@ -4,6 +4,7 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,6 +18,9 @@ from decision_assistant.answering.router import router as answering_router
 from decision_assistant.config import Settings, get_settings
 from decision_assistant.db import get_session
 from decision_assistant.decisions.router import router as decisions_router
+from decision_assistant.decision_analysis.router import (
+    router as decision_analysis_router,
+)
 from decision_assistant.documents.router import router as documents_router
 from decision_assistant.errors import ApplicationError, ErrorResponse
 from decision_assistant.evaluation.router import router as evaluation_router
@@ -91,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(answering_router)
     app.include_router(decisions_router)
+    app.include_router(decision_analysis_router)
     app.include_router(documents_router)
     app.include_router(evaluation_router)
     app.include_router(retrieval_router)
@@ -139,7 +144,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code=422,
             code="validation_error",
             message="Request validation failed",
-            details=exc.errors(),
+            details=jsonable_encoder(
+                exc.errors(), custom_encoder={ValueError: str}
+            ),
         )
 
     @app.exception_handler(StarletteHTTPException)
