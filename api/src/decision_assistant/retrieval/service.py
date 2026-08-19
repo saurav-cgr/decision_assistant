@@ -331,6 +331,7 @@ class HybridRetrievalService:
                 "chunking_profile": versions[
                     passage_by_id[passage_id].document_version_id
                 ].chunking_profile,
+                "structural_metadata": passage_by_id[passage_id].structural_metadata,
                 "source_kind": _source_kind(passage_by_id[passage_id].locator),
             }
             for passage_id in selected_ids

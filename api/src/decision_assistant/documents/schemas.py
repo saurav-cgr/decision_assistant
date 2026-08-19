@@ -71,6 +71,7 @@ class PassageDetail(ApiModel):
     sequence_number: int
     content: str
     locator: dict[str, Any]
+    structural_metadata: dict[str, Any]
 
 
 class DocumentDetail(ApiModel):

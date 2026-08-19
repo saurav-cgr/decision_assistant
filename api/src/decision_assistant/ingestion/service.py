@@ -251,6 +251,7 @@ class IngestionService:
                 end_offset=draft.end_offset,
                 content_hash=draft.content_hash,
                 locator=draft.locator,
+                structural_metadata=draft.structural_metadata,
                 embedding=embedding,
                 embedding_profile=self._embedding_provider.profile.as_dict(),
             )

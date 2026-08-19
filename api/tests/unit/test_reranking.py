@@ -184,6 +184,7 @@ async def test_reranker_reorders_and_records_trace(db_session: AsyncSession) -> 
     assert trace.timings["rerank_ms"] >= 0
     assert trace.selected_passage_metadata
     assert trace.selected_passage_metadata[0]["chunking_profile"]["algorithm"] == "structural-token-v2"
+    assert "structural_metadata" in trace.selected_passage_metadata[0]
 
 
 @pytest.mark.asyncio

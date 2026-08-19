@@ -219,6 +219,15 @@ class Passage(TimestampMixin, Base):
         nullable=False,
         default=dict,
     )
+    # Structural context of the passage's units (shared group_path and sorted
+    # unique block_types). Historic rows carry the '{}' default until the
+    # approved corpus reset and reingestion replace them.
+    structural_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
 
 
 class Decision(TimestampMixin, Base):

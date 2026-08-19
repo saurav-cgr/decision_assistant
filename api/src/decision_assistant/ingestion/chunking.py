@@ -14,6 +14,7 @@ class PassageDraft:
     start_offset: int
     end_offset: int
     locator: SourceLocator
+    structural_metadata: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,9 +257,22 @@ def _build_drafts(
                 start_offset=units[0].doc_start,
                 end_offset=units[-1].doc_end,
                 locator=_locator_for_units(units),
+                structural_metadata=_structural_metadata(units),
             )
         )
     return drafts
+
+
+def _structural_metadata(units: list[_Unit]) -> dict[str, object]:
+    """Deterministic structural metadata for a passage's units.
+
+    All units in a passage share one group path (chunks never cross group
+    boundaries); block_types is sorted and unique for stable storage.
+    """
+    return {
+        "group_path": list(units[0].group_path),
+        "block_types": sorted({unit.block.block_type for unit in units}),
+    }
 
 
 def _render(units: list[_Unit]) -> str:
