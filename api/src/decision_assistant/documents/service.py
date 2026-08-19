@@ -366,6 +366,7 @@ class DocumentService:
                     sequence_number=passage.sequence_number,
                     content=passage.content,
                     locator=passage.locator,
+                    structural_metadata=passage.structural_metadata,
                 )
                 for passage in passages
             ],

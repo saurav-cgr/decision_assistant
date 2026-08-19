@@ -61,12 +61,16 @@ class IngestionService:
         decision_extractor: DecisionExtractor,
         metadata_extractor: MetadataExtractor,
         upload_directory: Path,
+        chunking_profile: dict[str, object] | None = None,
     ) -> None:
         self._session = session
         self._embedding_provider = embedding_provider
         self._decision_extractor = decision_extractor
         self._metadata_extractor = metadata_extractor
         self._upload_directory = upload_directory
+        self._chunking_profile = (
+            chunking_profile if chunking_profile is not None else CURRENT_CHUNKING_PROFILE
+        )
 
     async def ingest(
         self,
@@ -115,7 +119,7 @@ class IngestionService:
                 raise IngestionError("Document version not found", code="version_not_found")
             version.state = "staging"
             version.error = None
-            version.chunking_profile = CURRENT_CHUNKING_PROFILE
+            version.chunking_profile = self._chunking_profile
             job.stage = "staging"
             job.status = "running"
             job.progress = 5
@@ -143,7 +147,7 @@ class IngestionService:
                 version_number=version_number,
                 checksum=checksum,
                 storage_path=str(stored_path),
-                chunking_profile=CURRENT_CHUNKING_PROFILE,
+                chunking_profile=self._chunking_profile,
                 state="staging",
             )
             job = IngestionJob(
@@ -222,7 +226,12 @@ class IngestionService:
 
         job.stage = "embedding"
         job.progress = 40
-        drafts = chunk_document(parsed)
+        drafts = chunk_document(
+            parsed,
+            target_tokens=int(self._chunking_profile["target_tokens"]),
+            max_tokens=int(self._chunking_profile["max_tokens"]),
+            overlap_tokens=int(self._chunking_profile["overlap_tokens"]),
+        )
         embeddings = await self._embedding_provider.embed(
             [draft.content for draft in drafts],
             purpose=EmbeddingPurpose.DOCUMENT,
@@ -242,6 +251,7 @@ class IngestionService:
                 end_offset=draft.end_offset,
                 content_hash=draft.content_hash,
                 locator=draft.locator,
+                structural_metadata=draft.structural_metadata,
                 embedding=embedding,
                 embedding_profile=self._embedding_provider.profile.as_dict(),
             )
@@ -322,7 +332,7 @@ class IngestionService:
             self._session,
             document.workspace_id,
             self._embedding_provider.profile,
-            CURRENT_CHUNKING_PROFILE,
+            self._chunking_profile,
         )
         if corpus_state.active_passage_count == 0:
             workspace = await self._session.get(Workspace, document.workspace_id)

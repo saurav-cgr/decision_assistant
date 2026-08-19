@@ -1,5 +1,8 @@
-import { documentDetailUrl } from "../api/client";
-import type { SourceCitation } from "../api/types";
+import { useState } from "react";
+
+import { getDocument } from "../api/client";
+import type { DocumentDetail, SourceCitation } from "../api/types";
+import { SourceViewer } from "./SourceViewer";
 
 type CitationListProps = {
   citations: SourceCitation[];
@@ -20,7 +23,23 @@ function locatorLabel(locator: SourceCitation["locator"]): string {
 }
 
 export function CitationList({ citations }: CitationListProps) {
+  const [sourceDocument, setSourceDocument] = useState<DocumentDetail | null>(
+    null,
+  );
+  const [sourceError, setSourceError] = useState<string | null>(null);
+
   if (citations.length === 0) return null;
+
+  const handleViewSource = async (documentId: string) => {
+    setSourceError(null);
+    try {
+      setSourceDocument(await getDocument(documentId));
+    } catch (error) {
+      setSourceError(
+        error instanceof Error ? error.message : "Source could not be loaded.",
+      );
+    }
+  };
 
   return (
     <section className="citation-section" aria-labelledby="citations-title">
@@ -37,18 +56,29 @@ export function CitationList({ citations }: CitationListProps) {
                 {index + 1}
               </span>
               <blockquote>{citation.quote}</blockquote>
-              <a
-                href={documentDetailUrl(citation.document_id)}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
+                className="citation-source"
+                onClick={() => handleViewSource(citation.document_id)}
                 aria-label={`${citation.document_name}, ${location}`}
               >
                 {citation.document_name} · {location}
-              </a>
+              </button>
             </li>
           );
         })}
       </ol>
+      {sourceError && (
+        <p className="citation-error" role="alert">
+          {sourceError}
+        </p>
+      )}
+      {sourceDocument && (
+        <SourceViewer
+          document={sourceDocument}
+          onClose={() => setSourceDocument(null)}
+        />
+      )}
     </section>
   );
 }

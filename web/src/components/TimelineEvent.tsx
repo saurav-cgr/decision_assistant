@@ -1,5 +1,8 @@
-import { documentDetailUrl } from "../api/client";
-import type { TimelineEntry } from "../api/types";
+import { useState } from "react";
+
+import { getDocument } from "../api/client";
+import type { DocumentDetail, TimelineEntry } from "../api/types";
+import { SourceViewer } from "./SourceViewer";
 
 type TimelineEventProps = {
   entry: TimelineEntry;
@@ -13,6 +16,22 @@ function label(value: string): string {
 }
 
 export function TimelineEvent({ entry }: TimelineEventProps) {
+  const [sourceDocument, setSourceDocument] = useState<DocumentDetail | null>(
+    null,
+  );
+  const [sourceError, setSourceError] = useState<string | null>(null);
+
+  const handleViewSource = async (documentId: string) => {
+    setSourceError(null);
+    try {
+      setSourceDocument(await getDocument(documentId));
+    } catch (error) {
+      setSourceError(
+        error instanceof Error ? error.message : "Source could not be loaded.",
+      );
+    }
+  };
+
   return (
     <li className="timeline-event">
       <article aria-labelledby={`timeline-${entry.decision_id}`}>
@@ -55,19 +74,30 @@ export function TimelineEvent({ entry }: TimelineEventProps) {
 
           <div className="timeline-evidence">
             {entry.evidence.map((evidence) => (
-              <a
+              <button
                 key={evidence.passage_id}
-                href={documentDetailUrl(evidence.document_id)}
-                target="_blank"
-                rel="noreferrer"
+                type="button"
+                className="timeline-evidence__source"
+                onClick={() => handleViewSource(evidence.document_id)}
                 aria-label="View source evidence"
               >
                 View source evidence
-              </a>
+              </button>
             ))}
           </div>
         </div>
       </article>
+      {sourceError && (
+        <p className="timeline-evidence__error" role="alert">
+          {sourceError}
+        </p>
+      )}
+      {sourceDocument && (
+        <SourceViewer
+          document={sourceDocument}
+          onClose={() => setSourceDocument(null)}
+        />
+      )}
     </li>
   );
 }

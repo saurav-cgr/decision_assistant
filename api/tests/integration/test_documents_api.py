@@ -348,6 +348,7 @@ async def test_document_detail_and_listing_return_active_extraction(
             "sequence_number": 0,
             "content": "Authentication was postponed.",
             "locator": {"kind": "lines", "start": 1, "end": 1},
+            "structural_metadata": {},
         }
     ]
 

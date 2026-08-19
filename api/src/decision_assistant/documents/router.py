@@ -18,6 +18,7 @@ from decision_assistant.documents.schemas import (
 from decision_assistant.documents.service import DocumentService, IngestionDispatcher
 from decision_assistant.errors import ApplicationError
 from decision_assistant.ingestion.metadata import MetadataExtractor
+from decision_assistant.ingestion.profiles import resolve_chunking_profile
 from decision_assistant.ingestion.service import IngestionService
 from decision_assistant.models import DocumentVersion, IngestionJob
 from decision_assistant.providers.factory import (
@@ -67,6 +68,9 @@ class LocalIngestionDispatcher:
                     ),
                     metadata_extractor=MetadataExtractor(providers.generation),
                     upload_directory=self._settings.upload_directory,
+                    chunking_profile=resolve_chunking_profile(
+                        self._settings.chunking_profile_preset
+                    ),
                 )
                 await service.ingest(
                     document_id,

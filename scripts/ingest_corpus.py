@@ -32,6 +32,17 @@ API_V1 = f"{API_ORIGIN}/api/v1"
 POLL_INTERVAL_SECONDS = float(os.getenv("INGEST_POLL_INTERVAL_SECONDS", "2"))
 DEFAULT_TIMEOUT_SECONDS = float(os.getenv("INGEST_TIMEOUT_SECONDS", "600"))
 
+# Optional bearer authentication for the authenticated API. Credentials come
+# from INGEST_USERNAME/INGEST_PASSWORD (env or CLI), falling back to the API
+# bootstrap credentials already present in the api container.
+AUTH_USERNAME: str | None = os.getenv("INGEST_USERNAME") or os.getenv(
+    "AUTH_BOOTSTRAP_USERNAME"
+)
+AUTH_PASSWORD: str | None = os.getenv("INGEST_PASSWORD") or os.getenv(
+    "AUTH_BOOTSTRAP_PASSWORD"
+)
+AUTH_HEADERS: dict[str, str] = {}
+
 SUPPORTED_SUFFIXES = {
     ".md": "text/markdown",
     ".txt": "text/plain",
@@ -56,7 +67,7 @@ def _request_json(
     expected_statuses: set[int] | None = None,
     timeout: float = 60.0,
 ) -> dict[str, Any]:
-    request_headers = {"Accept": "application/json", **(headers or {})}
+    request_headers = {"Accept": "application/json", **AUTH_HEADERS, **(headers or {})}
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         request_headers["Content-Type"] = "application/json"
@@ -83,6 +94,21 @@ def _request_json(
         return json.loads(body)
     except ValueError as exc:
         raise IngestFailure(f"{method} {url} returned non-JSON response") from exc
+
+
+def _ensure_auth(timeout: float = 60.0) -> None:
+    """Authenticate once against the API using the configured credentials."""
+    global AUTH_HEADERS
+    if AUTH_HEADERS or not AUTH_USERNAME or not AUTH_PASSWORD:
+        return
+    response = _request_json(
+        f"{API_V1}/auth/login",
+        method="POST",
+        payload={"username": AUTH_USERNAME, "password": AUTH_PASSWORD},
+        expected_statuses={200},
+        timeout=timeout,
+    )
+    AUTH_HEADERS = {"Authorization": f"Bearer {response['access_token']}"}
 
 
 def _find_or_create_workspace(name: str) -> str:
@@ -180,6 +206,7 @@ def ingest(
     if not paths:
         raise IngestFailure(f"No supported source files under {source_directory}")
 
+    _ensure_auth(timeout)
     workspace_id = _find_or_create_workspace(workspace_name)
     summary: list[dict[str, Any]] = []
     for path in paths:
@@ -210,6 +237,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace-name", required=True)
     parser.add_argument("--api-origin", default=API_ORIGIN)
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--username", default=os.getenv("INGEST_USERNAME"))
+    parser.add_argument("--password", default=os.getenv("INGEST_PASSWORD"))
     parser.add_argument(
         "--extension",
         action="append",
@@ -225,6 +254,10 @@ def main() -> None:
     global API_ORIGIN, API_V1
     API_ORIGIN = args.api_origin.rstrip("/")
     API_V1 = f"{API_ORIGIN}/api/v1"
+    if args.username is not None:
+        global AUTH_USERNAME, AUTH_PASSWORD
+        AUTH_USERNAME = args.username
+        AUTH_PASSWORD = args.password
     extensions = set(args.extension) or set(SUPPORTED_SUFFIXES)
     summary = ingest(
         source_directory=args.source_directory,

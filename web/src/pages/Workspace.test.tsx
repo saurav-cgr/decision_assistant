@@ -3,14 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
+  getDocument: vi.fn(),
   listDocuments: vi.fn(),
   retryDocument: vi.fn(),
   uploadDocuments: vi.fn(),
 }));
 
 vi.mock("../api/client", () => ({
-  documentDetailUrl: (documentId: string) =>
-    `http://localhost:8000/api/v1/documents/${documentId}`,
+  getDocument: api.getDocument,
   listDocuments: api.listDocuments,
   retryDocument: api.retryDocument,
   uploadDocuments: api.uploadDocuments,
@@ -166,11 +166,10 @@ describe("Workspace", () => {
     expect(screen.getByText("Unchanged")).toBeVisible();
     expect(screen.getByText("3 decisions")).toBeVisible();
     expect(
-      screen.getByRole("link", { name: /view authentication-review\.md/i }),
-    ).toHaveAttribute(
-      "href",
-      "http://localhost:8000/api/v1/documents/document-1",
-    );
+      screen.getByRole("button", {
+        name: /view source: authentication-review\.md/i,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("renders parser-specific errors and retries retryable failures", async () => {
@@ -214,5 +213,71 @@ describe("Workspace", () => {
     await waitFor(() =>
       expect(api.retryDocument).toHaveBeenCalledWith("broken-docx"),
     );
+  });
+
+  it("views document source in-app through the authenticated client", async () => {
+    api.listDocuments.mockResolvedValue({ items: [completedDocument] });
+    api.getDocument.mockResolvedValue({
+      id: completedDocument.id,
+      display_name: completedDocument.display_name,
+      media_type: completedDocument.media_type,
+      active_version: null,
+      passages: [
+        {
+          sequence_number: 0,
+          content: "Authentication was postponed until the import flow is stable.",
+          locator: { kind: "lines", start: 1, end: 1 },
+          structural_metadata: {
+            group_path: [],
+            block_types: ["paragraph"],
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    await renderWorkspace();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /view source: authentication-review\.md/i,
+      }),
+    );
+
+    expect(api.getDocument).toHaveBeenCalledWith(completedDocument.id);
+    expect(
+      await screen.findByText(/Authentication was postponed until the import flow/i),
+    ).toBeVisible();
+  });
+
+  it("closes the source viewer from its close button", async () => {
+    api.listDocuments.mockResolvedValue({ items: [completedDocument] });
+    api.getDocument.mockResolvedValue({
+      id: completedDocument.id,
+      display_name: completedDocument.display_name,
+      media_type: completedDocument.media_type,
+      active_version: null,
+      passages: [
+        {
+          sequence_number: 0,
+          content: "Authentication was postponed.",
+          locator: { kind: "lines", start: 1, end: 1 },
+          structural_metadata: {},
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    await renderWorkspace();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /view source: authentication-review\.md/i,
+      }),
+    );
+    await screen.findByRole("dialog");
+
+    await user.click(
+      screen.getByRole("button", { name: /close source viewer/i }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

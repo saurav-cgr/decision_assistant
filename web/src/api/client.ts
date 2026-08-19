@@ -7,6 +7,7 @@ import type {
   DecisionListResponse,
   DecisionRelation,
   DecisionRelationRequest,
+  DocumentDetail,
   DocumentListResponse,
   EvaluationRun,
   EvaluationRunRequest,
@@ -227,7 +228,11 @@ export function deleteArchivedWorkspace(workspaceId: string): Promise<void> {
 export function listDocuments(): Promise<DocumentListResponse> {
   return apiRequest<DocumentListResponse>(projectPath("/documents"));
 }
-
+export function getDocument(documentId: string): Promise<DocumentDetail> {
+  return apiRequest<DocumentDetail>(
+    projectPath(`/documents/${encodeURIComponent(documentId)}`),
+  );
+}
 export function answerQuestion(
   question: string,
   forceRefresh = false,
@@ -334,10 +339,6 @@ export function listEvaluationRuns(
   return apiRequest<EvaluationRunSummary[]>(
     projectPath(`/evaluations/runs?limit=${encodeURIComponent(String(limit))}`),
   );
-}
-
-export function documentDetailUrl(documentId: string): string {
-  return `${API_V1}/workspaces/${requireWorkspace()}/documents/${encodeURIComponent(documentId)}`;
 }
 
 export function retryDocument(documentId: string): Promise<RetryResponse> {

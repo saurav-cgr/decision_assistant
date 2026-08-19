@@ -1,4 +1,3 @@
-import { documentDetailUrl } from "../api/client";
 import type { DocumentListItem } from "../api/types";
 import { IngestionStatus } from "./IngestionStatus";
 
@@ -6,6 +5,7 @@ type DocumentTableProps = {
   documents: DocumentListItem[];
   retryingId: string | null;
   onRetry: (documentId: string) => void;
+  onViewSource: (document: DocumentListItem) => void;
 };
 
 const retryableErrorCodes = new Set([
@@ -35,6 +35,7 @@ export function DocumentTable({
   documents,
   retryingId,
   onRetry,
+  onViewSource,
 }: DocumentTableProps) {
   if (documents.length === 0) {
     return (
@@ -96,14 +97,14 @@ export function DocumentTable({
               {document.decision_count}{" "}
               {document.decision_count === 1 ? "decision" : "decisions"}
             </span>
-            <a
-              href={documentDetailUrl(document.id)}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`View ${document.display_name}`}
+            <button
+              type="button"
+              className="document-card__source"
+              onClick={() => onViewSource(document)}
+              aria-label={`View source: ${document.display_name}`}
             >
               View source
-            </a>
+            </button>
             {document.status === "failed" && canRetry(document) && (
               <button
                 type="button"

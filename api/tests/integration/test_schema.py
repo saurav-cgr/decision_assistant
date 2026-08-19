@@ -154,6 +154,31 @@ async def test_document_version_chunking_profile_is_required_and_explicit(
 
 
 @pytest.mark.asyncio
+async def test_passage_structural_metadata_is_required_with_empty_default(
+    db_session: AsyncSession,
+) -> None:
+    column_default = await db_session.execute(
+        text(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_schema = 'public' "
+            "AND table_name = 'passages' "
+            "AND column_name = 'structural_metadata'"
+        )
+    )
+    assert column_default.scalar_one() == "'{}'::jsonb"
+
+    nullability = await db_session.execute(
+        text(
+            "SELECT is_nullable FROM information_schema.columns "
+            "WHERE table_schema = 'public' "
+            "AND table_name = 'passages' "
+            "AND column_name = 'structural_metadata'"
+        )
+    )
+    assert nullability.scalar_one() == "NO"
+
+
+@pytest.mark.asyncio
 async def test_passage_embedding_profile_is_required_no_legacy_state(
     db_session: AsyncSession,
 ) -> None:

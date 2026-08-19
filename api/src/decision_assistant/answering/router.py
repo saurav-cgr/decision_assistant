@@ -13,6 +13,7 @@ from decision_assistant.answering.schemas import (
 from decision_assistant.answering.service import AnswerService
 from decision_assistant.config import get_settings
 from decision_assistant.db import get_session
+from decision_assistant.ingestion.profiles import resolve_chunking_profile
 from decision_assistant.providers.factory import (
     ProviderBundleFactory,
     get_provider_bundle_factory,
@@ -56,6 +57,7 @@ def get_answer_service(
         embedding_provider=providers.embedding,
         config=config,
         reranker=reranker,
+        chunking_profile=resolve_chunking_profile(settings.chunking_profile_preset),
     )
     return AnswerService(
         session=session,

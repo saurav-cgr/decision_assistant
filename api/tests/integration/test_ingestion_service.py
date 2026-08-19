@@ -136,6 +136,48 @@ async def test_new_passages_store_the_validated_embedding_profile(
 
 
 @pytest.mark.asyncio
+async def test_new_passages_store_structural_metadata(
+    db_session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    service, document, _ = await create_harness(db_session, tmp_path)
+
+    result = await service.ingest(
+        document.id,
+        write_source(tmp_path, GOOD_CONTENT),
+        request_id="structural-request",
+    )
+    passages = list(
+        await db_session.scalars(
+            select(Passage).where(Passage.document_version_id == result.version_id)
+        )
+    )
+
+    assert passages
+    for passage in passages:
+        metadata = passage.structural_metadata
+        assert isinstance(metadata, dict)
+        assert "group_path" in metadata
+        assert isinstance(metadata["group_path"], list)
+        assert "block_types" in metadata
+        # Deterministic: block_types is sorted and unique.
+        assert metadata["block_types"] == sorted(set(metadata["block_types"]))
+
+    # The heading chunk carries heading + paragraph block types with a group path.
+    heading_chunks = [
+        passage
+        for passage in passages
+        if "heading" in passage.structural_metadata["block_types"]
+    ]
+    assert heading_chunks
+    assert all(passage.structural_metadata["group_path"] for passage in heading_chunks)
+    assert any(
+        "paragraph" in passage.structural_metadata["block_types"]
+        for passage in passages
+    )
+
+
+@pytest.mark.asyncio
 async def test_provider_change_does_not_defeat_checksum_idempotency(
     db_session: AsyncSession,
     tmp_path: Path,

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
+  getDocument,
   listDocuments,
   retryDocument,
   uploadDocuments,
 } from "../api/client";
-import type { DocumentListItem } from "../api/types";
+import type { DocumentDetail, DocumentListItem } from "../api/types";
 import { DocumentTable } from "../components/DocumentTable";
+import { SourceViewer } from "../components/SourceViewer";
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -23,6 +25,8 @@ export function Workspace() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [sourceDocument, setSourceDocument] = useState<DocumentDetail | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -96,6 +100,18 @@ export function Workspace() {
     }
   };
 
+  const handleViewSource = async (document: DocumentListItem) => {
+    setSourceError(null);
+    try {
+      const detail = await getDocument(document.id);
+      setSourceDocument(detail);
+    } catch (error) {
+      setSourceError(
+        error instanceof Error ? error.message : "Source could not be loaded.",
+      );
+    }
+  };
+
   return (
     <section className="workspace-page" aria-labelledby="workspace-title">
       <div className="workspace-header">
@@ -144,12 +160,24 @@ export function Workspace() {
           {loadError}
         </p>
       )}
+      {sourceError && (
+        <p className="workspace-notice workspace-notice--error" role="alert">
+          {sourceError}
+        </p>
+      )}
 
       <DocumentTable
         documents={documents}
         retryingId={retryingId}
         onRetry={handleRetry}
+        onViewSource={handleViewSource}
       />
+      {sourceDocument && (
+        <SourceViewer
+          document={sourceDocument}
+          onClose={() => setSourceDocument(null)}
+        />
+      )}
     </section>
   );
 }

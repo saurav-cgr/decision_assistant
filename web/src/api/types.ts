@@ -32,6 +32,32 @@ export type DocumentListResponse = {
   items: DocumentListItem[];
 };
 
+export type ActiveVersionDetail = {
+  id: string;
+  version_number: number;
+  title: string | null;
+  document_date: string | null;
+  participants: string[];
+  source_type: string | null;
+  project: string | null;
+  state: string;
+};
+
+export type PassageDetail = {
+  sequence_number: number;
+  content: string;
+  locator: Record<string, unknown>;
+  structural_metadata: Record<string, unknown>;
+};
+
+export type DocumentDetail = {
+  id: string;
+  display_name: string;
+  media_type: string;
+  active_version: ActiveVersionDetail | null;
+  passages: PassageDetail[];
+};
+
 export type UploadBatchResponse = {
   request_id: string;
   results: Array<{

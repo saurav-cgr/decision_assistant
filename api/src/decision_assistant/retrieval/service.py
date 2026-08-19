@@ -106,12 +106,16 @@ class HybridRetrievalService:
         embedding_provider: EmbeddingProvider,
         config: RetrievalConfig | None = None,
         reranker: RerankingProvider | None = None,
+        chunking_profile: dict[str, object] | None = None,
     ) -> None:
         self._session = session
         self._embedding_provider = embedding_provider
         self._config = config or RetrievalConfig()
         self._reranker = reranker
         self._repository = RetrievalRepository(session)
+        self._chunking_profile = (
+            chunking_profile if chunking_profile is not None else CURRENT_CHUNKING_PROFILE
+        )
 
     async def search(
         self,
@@ -129,7 +133,7 @@ class HybridRetrievalService:
         await require_current_corpus_profiles(
             self._session,
             self._embedding_provider.profile,
-            CURRENT_CHUNKING_PROFILE,
+            self._chunking_profile,
             workspace_id=workspace_id,
         )
         embedding = (
@@ -327,6 +331,7 @@ class HybridRetrievalService:
                 "chunking_profile": versions[
                     passage_by_id[passage_id].document_version_id
                 ].chunking_profile,
+                "structural_metadata": passage_by_id[passage_id].structural_metadata,
                 "source_kind": _source_kind(passage_by_id[passage_id].locator),
             }
             for passage_id in selected_ids
