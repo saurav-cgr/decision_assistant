@@ -31,6 +31,7 @@ from decision_assistant.providers.fakes import (
     FakeEmbeddingProvider,
     FakeGenerationProvider,
 )
+from decision_assistant.workspace.context import WorkspaceContext, get_workspace_context
 
 FAKE_EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
 
@@ -227,6 +228,9 @@ async def decisions_api(
         yield db_session
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_workspace_context] = (
+        lambda: WorkspaceContext(workspace_id=WORKSPACE_ID)
+    )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",

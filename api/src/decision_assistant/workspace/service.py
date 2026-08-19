@@ -41,53 +41,86 @@ class WorkspaceService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(self, *, name: str) -> Workspace:
-        existing = await self._session.scalar(
-            select(Workspace).where(Workspace.name == name)
-        )
+    async def create(
+        self,
+        *,
+        owner_user_id: UUID | None = None,
+        name: str,
+    ) -> Workspace:
+        statement = select(Workspace).where(Workspace.name == name)
+        if owner_user_id is not None:
+            statement = statement.where(Workspace.owner_user_id == owner_user_id)
+        existing = await self._session.scalar(statement)
         if existing is not None:
             raise WorkspaceConflict()
-        workspace = Workspace(name=name, embedding_profile=None)
+        workspace = Workspace(
+            owner_user_id=owner_user_id,
+            name=name,
+            embedding_profile=None,
+        )
         # The first workspace becomes the active workspace.
-        any_workspace = await self._session.scalar(select(Workspace.id).limit(1))
+        any_workspace = await self._session.scalar(
+            select(Workspace.id)
+            .where(Workspace.owner_user_id == owner_user_id)
+            .limit(1)
+        )
         workspace.is_active = any_workspace is None
         self._session.add(workspace)
         await self._session.flush()
         return workspace
 
-    async def list(self) -> list[Workspace]:
+    async def list(self, *, owner_user_id: UUID | None = None) -> list[Workspace]:
+        statement = select(Workspace)
+        if owner_user_id is not None:
+            statement = statement.where(Workspace.owner_user_id == owner_user_id)
         return list(
             await self._session.scalars(
-                select(Workspace).order_by(Workspace.created_at)
+                statement.order_by(Workspace.created_at)
             )
         )
 
-    async def get(self, workspace_id: UUID) -> Workspace:
-        workspace = await self._session.get(Workspace, workspace_id)
+    async def get(
+        self,
+        workspace_id: UUID,
+        *,
+        owner_user_id: UUID | None = None,
+    ) -> Workspace:
+        statement = select(Workspace).where(Workspace.id == workspace_id)
+        if owner_user_id is not None:
+            statement = statement.where(Workspace.owner_user_id == owner_user_id)
+        workspace = await self._session.scalar(statement)
         if workspace is None:
             raise WorkspaceNotFound()
         return workspace
 
-    async def get_active(self) -> Workspace | None:
-        workspace = await self._session.scalar(
-            select(Workspace).where(Workspace.is_active.is_(True))
-        )
+    async def get_active(self, *, owner_user_id: UUID | None = None) -> Workspace | None:
+        statement = select(Workspace).where(Workspace.is_active.is_(True))
+        if owner_user_id is not None:
+            statement = statement.where(Workspace.owner_user_id == owner_user_id)
+        workspace = await self._session.scalar(statement)
         if workspace is not None:
             return workspace
-        return await self._session.scalar(
-            select(Workspace).order_by(Workspace.created_at).limit(1)
-        )
+        fallback = select(Workspace).order_by(Workspace.created_at).limit(1)
+        if owner_user_id is not None:
+            fallback = fallback.where(Workspace.owner_user_id == owner_user_id)
+        return await self._session.scalar(fallback)
 
-    async def get_or_create_active(self, *, name: str = "Decision Assistant") -> Workspace:
-        workspace = await self.get_active()
+    async def get_or_create_active(
+        self,
+        *,
+        owner_user_id: UUID | None = None,
+        name: str = "Decision Assistant",
+    ) -> Workspace:
+        workspace = await self.get_active(owner_user_id=owner_user_id)
         if workspace is not None:
             return workspace
-        return await self.create(name=name)
+        return await self.create(owner_user_id=owner_user_id, name=name)
 
-    async def rename(self, workspace_id: UUID, name: str) -> Workspace:
-        workspace = await self.get(workspace_id)
+    async def rename(self, workspace_id: UUID, *, owner_user_id: UUID, name: str) -> Workspace:
+        workspace = await self.get(workspace_id, owner_user_id=owner_user_id)
         duplicate = await self._session.scalar(
             select(Workspace).where(
+                Workspace.owner_user_id == owner_user_id,
                 Workspace.name == name,
                 Workspace.id != workspace_id,
             )
@@ -98,17 +131,21 @@ class WorkspaceService:
         await self._session.flush()
         return workspace
 
-    async def activate(self, workspace_id: UUID) -> Workspace:
-        workspace = await self.get(workspace_id)
+    async def activate(self, workspace_id: UUID, *, owner_user_id: UUID) -> Workspace:
+        workspace = await self.get(workspace_id, owner_user_id=owner_user_id)
         if workspace.status == "archived":
             raise WorkspaceStateError("An archived workspace cannot be activated")
-        await self._session.execute(update(Workspace).values(is_active=False))
+        await self._session.execute(
+            update(Workspace)
+            .where(Workspace.owner_user_id == owner_user_id)
+            .values(is_active=False)
+        )
         workspace.is_active = True
         await self._session.flush()
         return workspace
 
-    async def archive(self, workspace_id: UUID) -> Workspace:
-        workspace = await self.get(workspace_id)
+    async def archive(self, workspace_id: UUID, *, owner_user_id: UUID) -> Workspace:
+        workspace = await self.get(workspace_id, owner_user_id=owner_user_id)
         if workspace.is_active:
             raise WorkspaceStateError(
                 "The active workspace cannot be archived; activate another first"
@@ -119,8 +156,8 @@ class WorkspaceService:
         await self._session.flush()
         return workspace
 
-    async def delete_archived(self, workspace_id: UUID) -> None:
-        workspace = await self.get(workspace_id)
+    async def delete_archived(self, workspace_id: UUID, *, owner_user_id: UUID) -> None:
+        workspace = await self.get(workspace_id, owner_user_id=owner_user_id)
         if workspace.status != "archived":
             raise WorkspaceStateError("Only archived workspaces can be deleted")
         if workspace.is_active:

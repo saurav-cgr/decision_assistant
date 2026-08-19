@@ -1,12 +1,15 @@
 from collections.abc import AsyncIterator
+from uuid import uuid4
 
 import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from decision_assistant.auth.dependencies import get_current_user
 from decision_assistant.db import get_session
 from decision_assistant.main import create_app
+from decision_assistant.models import User, Workspace
 
 MISSING_UUID = "00000000-0000-0000-0000-000000000000"
 
@@ -19,6 +22,13 @@ async def workspace_api(db_session: AsyncSession) -> AsyncIterator[httpx.AsyncCl
 
     await db_session.execute(text("DELETE FROM workspaces"))
     await db_session.flush()
+    owner = User(
+        username=f"workspace-owner-{uuid4()}",
+        password_hash="unused",
+        recovery_code_hash="unused",
+    )
+    db_session.add(owner)
+    await db_session.flush()
 
     app = create_app()
 
@@ -26,6 +36,7 @@ async def workspace_api(db_session: AsyncSession) -> AsyncIterator[httpx.AsyncCl
         yield db_session
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_user] = lambda: owner
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
@@ -148,5 +159,59 @@ async def test_get_missing_workspace_returns_not_found(
     workspace_api: httpx.AsyncClient,
 ) -> None:
     response = await workspace_api.get(f"/api/v1/workspaces/{MISSING_UUID}")
+    assert response.status_code == 404
+    assert response.json()["code"] == "workspace_not_found"
+
+
+async def test_workspace_routes_reject_anonymous_requests(
+    db_session: AsyncSession,
+) -> None:
+    app = create_app()
+
+    async def override_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = override_session
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/v1/workspaces")
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_credentials"
+
+
+async def test_workspace_routes_hide_other_users_workspaces(
+    db_session: AsyncSession,
+) -> None:
+    owner = User(
+        username=f"owner-{uuid4()}",
+        password_hash="unused",
+        recovery_code_hash="unused",
+    )
+    other_user = User(
+        username=f"other-user-{uuid4()}",
+        password_hash="unused",
+        recovery_code_hash="unused",
+    )
+    db_session.add_all([owner, other_user])
+    await db_session.flush()
+    workspace = Workspace(owner_user_id=owner.id, name="Private workspace")
+    db_session.add(workspace)
+    await db_session.flush()
+    app = create_app()
+
+    async def override_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_user] = lambda: other_user
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(f"/api/v1/workspaces/{workspace.id}")
+
     assert response.status_code == 404
     assert response.json()["code"] == "workspace_not_found"

@@ -20,6 +20,7 @@ from decision_assistant.models import (
     Passage,
     Workspace,
 )
+from decision_assistant.workspace.context import WorkspaceContext, get_workspace_context
 
 WORKSPACE_ID = UUID("55555555-5555-5555-5555-555555555555")
 
@@ -263,6 +264,9 @@ async def timelines_api(
         yield db_session
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_workspace_context] = (
+        lambda: WorkspaceContext(workspace_id=WORKSPACE_ID)
+    )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",

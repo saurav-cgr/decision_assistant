@@ -4,7 +4,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from decision_assistant.auth.dependencies import get_current_user
 from decision_assistant.db import get_session
+from decision_assistant.models import User
 from decision_assistant.workspace.schemas import (
     WorkspaceCreate,
     WorkspaceDetail,
@@ -39,9 +41,10 @@ async def _summarize(
 
 @router.get("", response_model=WorkspaceListResponse)
 async def list_workspaces(
+    user: Annotated[User, Depends(get_current_user)],
     service: Annotated[WorkspaceService, Depends(get_workspace_service)],
 ) -> WorkspaceListResponse:
-    workspaces = await service.list()
+    workspaces = await service.list(owner_user_id=user.id)
     items = [await _summarize(service, w) for w in workspaces]
     return WorkspaceListResponse(items=items)
 
@@ -49,9 +52,10 @@ async def list_workspaces(
 @router.post("", response_model=WorkspaceDetail, status_code=201)
 async def create_workspace(
     payload: WorkspaceCreate,
+    user: Annotated[User, Depends(get_current_user)],
     service: Annotated[WorkspaceService, Depends(get_workspace_service)],
 ) -> WorkspaceDetail:
-    workspace = await service.create(name=payload.name)
+    workspace = await service.create(owner_user_id=user.id, name=payload.name)
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
@@ -61,9 +65,10 @@ async def create_workspace(
 @router.get("/{workspace_id}", response_model=WorkspaceDetail)
 async def get_workspace(
     workspace_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
     service: Annotated[WorkspaceService, Depends(get_workspace_service)],
 ) -> WorkspaceDetail:
-    workspace = await service.get(workspace_id)
+    workspace = await service.get(workspace_id, owner_user_id=user.id)
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
@@ -74,9 +79,14 @@ async def get_workspace(
 async def rename_workspace(
     workspace_id: UUID,
     payload: WorkspaceRename,
+    user: Annotated[User, Depends(get_current_user)],
     service: Annotated[WorkspaceService, Depends(get_workspace_service)],
 ) -> WorkspaceDetail:
-    workspace = await service.rename(workspace_id, payload.name)
+    workspace = await service.rename(
+        workspace_id,
+        owner_user_id=user.id,
+        name=payload.name,
+    )
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
@@ -86,9 +96,10 @@ async def rename_workspace(
 @router.post("/{workspace_id}/activate", response_model=WorkspaceDetail)
 async def activate_workspace(
     workspace_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
     service: Annotated[WorkspaceService, Depends(get_workspace_service)],
 ) -> WorkspaceDetail:
-    workspace = await service.activate(workspace_id)
+    workspace = await service.activate(workspace_id, owner_user_id=user.id)
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
@@ -98,9 +109,10 @@ async def activate_workspace(
 @router.post("/{workspace_id}/archive", response_model=WorkspaceDetail)
 async def archive_workspace(
     workspace_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
     service: Annotated[WorkspaceService, Depends(get_workspace_service)],
 ) -> WorkspaceDetail:
-    workspace = await service.archive(workspace_id)
+    workspace = await service.archive(workspace_id, owner_user_id=user.id)
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
@@ -110,9 +122,10 @@ async def archive_workspace(
 @router.delete("/{workspace_id}", status_code=204)
 async def delete_workspace(
     workspace_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
     service: Annotated[WorkspaceService, Depends(get_workspace_service)],
 ) -> None:
-    await service.delete_archived(workspace_id)
+    await service.delete_archived(workspace_id, owner_user_id=user.id)
 
 
 def _summary_fields(summary: WorkspaceSummary) -> dict:
