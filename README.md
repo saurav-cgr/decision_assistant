@@ -50,7 +50,8 @@ After a normal code change, a destructive clean rebuild is usually unnecessary. 
 - **Unversioned `GET /ready`** — `200` only when the database schema is current, the selected providers have their required configuration, and no corpus reset is required; otherwise a sanitized `503`. It checks configuration *presence*, not remote credential validity.
 - **`/docs`** — interactive FastAPI OpenAPI documentation.
 
-The API binds locally by default, has no authentication, and must not be exposed publicly.
+The API binds locally by default. Business endpoints require a local account and
+must still be deployed only behind appropriate network controls.
 
 ---
 
@@ -97,7 +98,7 @@ All public business endpoints use the `/api/v1` prefix. `/health`, `/ready`, `/d
 
 | Module | Responsibility |
 |---|---|
-| `workspace` | Single workspace, configuration, corpus-active embedding/chunking profiles, and corpus-reset guard. |
+| `workspace` | Owner-private workspaces, configuration, corpus-active embedding/chunking profiles, and corpus-reset guard. |
 | `documents` | Upload validation, persistence, metadata, source rendering, ingestion status. |
 | `ingestion` | Parsing, normalization, chunking, change detection, background execution, retries. |
 | `decisions` | Extraction, validation, manual correction, evidence associations, relationships. |
@@ -114,6 +115,31 @@ Domain modules depend only on shared database and provider interfaces; routes ar
 ## Configuration
 
 Copy `.env.example` to `.env` and set values. The API container reads it; it is never committed and `GEMINI_API_KEY` is never logged or returned to the browser.
+
+### Local authentication
+
+Authentication is fully local: usernames, Argon2 password hashes, recovery-code
+hashes, and token versions are stored in PostgreSQL. Set the following values in
+the untracked `.env` file before starting the API:
+
+```dotenv
+AUTH_JWT_SECRET=<a-long-random-secret>
+AUTH_ACCESS_TOKEN_TTL_MINUTES=1440
+AUTH_BOOTSTRAP_USERNAME=<initial-owner-username>
+AUTH_BOOTSTRAP_PASSWORD=<initial-owner-password>
+```
+
+On its first startup, the API creates the bootstrap account and assigns any
+pre-authentication workspaces to it. The bootstrap password and JWT secret must
+never be committed or logged. Users can then sign up with their own unique
+username; every user may create multiple private workspaces, and workspaces are
+not shareable.
+
+The browser keeps a 24-hour bearer token only in memory, so a page reload
+requires signing in again. Signup, password reset, and recovery-code rotation
+show a recovery code once. Store it safely: without it, and without an active
+session, there is no self-service recovery path. Changing a username or password
+invalidates active access tokens and requires a new sign-in.
 
 Key settings:
 
