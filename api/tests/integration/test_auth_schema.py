@@ -10,13 +10,16 @@ async def _insert_user(db_session: AsyncSession, username: str) -> UUID:
     user_id = uuid4()
     await db_session.execute(
         text(
-            "INSERT INTO users (id, username, password_hash, recovery_code_hash) "
-            "VALUES (:id, :username, :password_hash, :recovery_code_hash)"
+            "INSERT INTO users "
+            "(id, username, password_hash, recovery_code_id, recovery_code_hash) "
+            "VALUES (:id, :username, :password_hash, :recovery_code_id, "
+            ":recovery_code_hash)"
         ),
         {
             "id": user_id,
             "username": username,
             "password_hash": "not-a-real-password-hash",
+            "recovery_code_id": uuid4(),
             "recovery_code_hash": "not-a-real-recovery-code-hash",
         },
     )

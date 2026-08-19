@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from uuid import uuid4
 
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,7 @@ class BootstrapService:
             user = User(
                 username=credentials.username,
                 password_hash=self._password_manager.hash(credentials.password),
+                recovery_code_id=uuid4(),
                 recovery_code_hash=self._password_manager.hash(recovery_code),
             )
             self._session.add(user)

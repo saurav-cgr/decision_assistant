@@ -20,6 +20,7 @@ def test_access_token_is_bound_to_user_and_token_version() -> None:
         id=uuid4(),
         username="token-user",
         password_hash="unused",
+        recovery_code_id=uuid4(),
         recovery_code_hash="unused",
         token_version=3,
     )

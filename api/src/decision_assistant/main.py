@@ -13,9 +13,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from decision_assistant.auth.bootstrap import BootstrapCredentials, BootstrapService
+from decision_assistant.auth.passwords import PasswordManager
+from decision_assistant.auth.router import router as authentication_router
 from decision_assistant.answering.router import router as answering_router
 from decision_assistant.config import Settings, get_settings
-from decision_assistant.db import get_session
+from decision_assistant.db import create_engine, create_session_factory, get_session
 from decision_assistant.decisions.router import router as decisions_router
 from decision_assistant.documents.router import router as documents_router
 from decision_assistant.errors import ApplicationError, ErrorResponse
@@ -46,6 +49,21 @@ class ServiceNotReady(ApplicationError):
             status_code=503,
             retryable=True,
         )
+
+
+def _bootstrap_credentials(settings: Settings) -> BootstrapCredentials:
+    username = settings.auth_bootstrap_username
+    password = settings.auth_bootstrap_password
+    jwt_secret = settings.auth_jwt_secret
+    if (
+        not username
+        or password is None
+        or not password.get_secret_value()
+        or jwt_secret is None
+        or not jwt_secret.get_secret_value()
+    ):
+        raise RuntimeError("Authentication bootstrap configuration is required")
+    return BootstrapCredentials(username=username, password=password.get_secret_value())
 
 
 def _request_id(request: Request) -> str:
@@ -79,9 +97,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
+        bootstrap_engine = None
         try:
+            bootstrap_engine = create_engine(resolved_settings)
+            bootstrap_session_factory = create_session_factory(bootstrap_engine)
+            async with bootstrap_session_factory() as session:
+                await BootstrapService(session, PasswordManager()).ensure_user(
+                    _bootstrap_credentials(resolved_settings)
+                )
+                await session.commit()
             yield
         finally:
+            if bootstrap_engine is not None:
+                await bootstrap_engine.dispose()
             await application.state.provider_bundle_factory.aclose()
 
     app = FastAPI(title="Decision Assistant API", lifespan=lifespan)
@@ -89,6 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.provider_bundle_factory = CachedProviderBundleFactory(
         resolved_settings
     )
+    app.include_router(authentication_router)
     app.include_router(answering_router)
     app.include_router(decisions_router)
     app.include_router(documents_router)

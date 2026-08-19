@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     ollama_embedding_dimension: int = 768
     frontend_origin: str = "http://localhost:5173"
     auth_jwt_secret: SecretStr | None = None
-    auth_access_token_ttl_minutes: int = 24 * 60
+    auth_access_token_ttl_minutes: int = Field(default=24 * 60, gt=0)
     auth_bootstrap_username: str | None = None
     auth_bootstrap_password: SecretStr | None = None
     max_upload_bytes: int = 25 * 1024 * 1024

@@ -160,7 +160,13 @@ def test_public_business_routes_use_v1_namespace() -> None:
 
 @pytest.mark.asyncio
 async def test_lifespan_closes_provider_factory_when_application_errors() -> None:
-    app = create_app(Settings())
+    app = create_app(
+        Settings(
+            auth_jwt_secret="test-signing-secret-for-lifespan-tests",
+            auth_bootstrap_username="bootstrap-user",
+            auth_bootstrap_password="bootstrap-password",
+        )
+    )
     close_calls = 0
 
     class Factory:
