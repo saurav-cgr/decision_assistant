@@ -49,6 +49,20 @@ class TimestampMixin:
     )
 
 
+class User(TimestampMixin, Base):
+    __tablename__ = "users"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    username: Mapped[str] = mapped_column(CITEXT, unique=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    recovery_code_hash: Mapped[str] = mapped_column(Text)
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        server_default=text("1"),
+    )
+
+
 class Workspace(TimestampMixin, Base):
     __tablename__ = "workspaces"
     __table_args__ = (
@@ -57,11 +71,13 @@ class Workspace(TimestampMixin, Base):
             name="ck_workspaces_status",
         ),
         Index(
-            "uq_workspaces_one_active",
+            "uq_workspaces_one_active_per_owner",
+            "owner_user_id",
             "is_active",
             unique=True,
-            postgresql_where=text("is_active = true"),
+            postgresql_where=text("is_active = true AND owner_user_id IS NOT NULL"),
         ),
+        UniqueConstraint("owner_user_id", "name", name="uq_workspaces_owner_name"),
         CheckConstraint(
             "knowledge_revision >= 1",
             name="ck_workspaces_knowledge_revision_positive",
@@ -69,7 +85,12 @@ class Workspace(TimestampMixin, Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column(CITEXT, unique=True)
+    owner_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
+    name: Mapped[str] = mapped_column(CITEXT)
     status: Mapped[str] = mapped_column(
         String(20), default="active", server_default=text("'active'")
     )

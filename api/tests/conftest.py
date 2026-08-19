@@ -35,6 +35,7 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 config_module.get_settings.cache_clear()
 
 _APP_TABLES = (
+    "users",
     "workspaces",
     "documents",
     "document_versions",
