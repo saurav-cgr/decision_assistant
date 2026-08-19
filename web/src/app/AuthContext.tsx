@@ -17,6 +17,7 @@ type AuthContextValue = {
     password: string,
   ) => Promise<{ recoveryCode: string; user: AuthenticatedUser }>;
   completeSignUp: (user: AuthenticatedUser) => void;
+  clearSession: () => void;
   signOut: () => Promise<void>;
 };
 
@@ -48,6 +49,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       completeSignUp(user) {
         setUser(user);
+      },
+      clearSession() {
+        setAccessToken(null);
+        setUser(null);
       },
       async signOut() {
         try {

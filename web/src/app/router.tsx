@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 
 import { AppShell } from "../components/AppShell";
 import { Ask } from "../pages/Ask";
+import { Account } from "../pages/Account";
 import { DecisionDetail } from "../pages/DecisionDetail";
 import { Evaluation } from "../pages/Evaluation";
 import { Timeline } from "../pages/Timeline";
@@ -42,6 +43,7 @@ export function AppRoutes() {
         <Route path="timeline" element={<Timeline />} />
         <Route path="decisions/:id" element={<DecisionDetail />} />
         <Route path="evaluation" element={<Evaluation />} />
+        <Route path="account" element={<Account />} />
         <Route
           path="*"
           element={

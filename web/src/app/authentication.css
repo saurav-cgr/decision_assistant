@@ -72,3 +72,32 @@
   color: #9c2f1d;
   background: #f9dfd7;
 }
+
+.account-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.account-forms form {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.account-forms h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.account-forms input {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}

@@ -146,6 +146,38 @@ export function resetPassword(
   });
 }
 
+export function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return apiRequest<void>("/auth/me/password", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
+export function changeUsername(
+  currentPassword: string,
+  username: string,
+): Promise<void> {
+  return apiRequest<void>("/auth/me/username", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword, username }),
+  });
+}
+
+export function rotateRecoveryCode(
+  currentPassword: string,
+): Promise<{ recovery_code: string }> {
+  return apiRequest<{ recovery_code: string }>("/auth/me/recovery-code", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword }),
+  });
+}
+
 export function listWorkspaces(): Promise<WorkspaceListResponse> {
   return apiRequest<WorkspaceListResponse>("/workspaces");
 }

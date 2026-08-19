@@ -13,6 +13,7 @@ const navigation = [
   { label: "Ask", to: "/ask" },
   { label: "Timeline", to: "/timeline" },
   { label: "Evaluation", to: "/evaluation" },
+  { label: "Account", to: "/account" },
 ] as const;
 
 export function AppShell() {
