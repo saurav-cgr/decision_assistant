@@ -958,10 +958,14 @@ class RuntimeEvaluationExecutor:
         session: AsyncSession,
         embedding_provider: EmbeddingProvider,
         generation_provider: GenerationProvider,
+        chunking_profile: dict[str, object] | None = None,
     ) -> None:
         self._session = session
         self._embedding_provider = embedding_provider
         self._generation_provider = generation_provider
+        self._chunking_profile = (
+            chunking_profile if chunking_profile is not None else CURRENT_CHUNKING_PROFILE
+        )
 
     @property
     def embedding_profile(self) -> dict[str, Any]:
@@ -988,6 +992,7 @@ class RuntimeEvaluationExecutor:
                 session=self._session,
                 embedding_provider=self._embedding_provider,
                 top_k=top_k,
+                chunking_profile=self._chunking_profile,
             )
         else:
             rerank_enabled = bool(configuration.get("rerank_enabled", False))
@@ -1013,6 +1018,7 @@ class RuntimeEvaluationExecutor:
                     ),
                 ),
                 reranker=reranker,
+                chunking_profile=self._chunking_profile,
             )
         answer_service = AnswerService(
             session=self._session,
@@ -1096,11 +1102,15 @@ class SemanticRetrievalService:
         session: AsyncSession,
         embedding_provider: EmbeddingProvider,
         top_k: int,
+        chunking_profile: dict[str, object] | None = None,
     ) -> None:
         self._session = session
         self._embedding_provider = embedding_provider
         self._top_k = top_k
         self._repository = RetrievalRepository(session)
+        self._chunking_profile = (
+            chunking_profile if chunking_profile is not None else CURRENT_CHUNKING_PROFILE
+        )
 
     async def search(
         self,
@@ -1118,7 +1128,7 @@ class SemanticRetrievalService:
         await require_current_corpus_profiles(
             self._session,
             self._embedding_provider.profile,
-            CURRENT_CHUNKING_PROFILE,
+            self._chunking_profile,
             workspace_id=workspace_id,
         )
         embedding = (

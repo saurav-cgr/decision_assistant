@@ -1,8 +1,13 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from decision_assistant.ingestion.profiles import (
+    CHUNKING_PROFILE_PRESETS,
+    DEFAULT_CHUNKING_PROFILE_PRESET,
+)
 
 
 class Settings(BaseSettings):
@@ -43,7 +48,18 @@ class Settings(BaseSettings):
     rerank_candidate_limit: int = 12
     rerank_min_candidates: int = 6
     rerank_final_limit: int = 5
+    chunking_profile_preset: str = DEFAULT_CHUNKING_PROFILE_PRESET
     evaluation_dataset_path: Path = Path("/workspace/evaluation/questions.json")
+
+    @field_validator("chunking_profile_preset")
+    @classmethod
+    def _validate_chunking_profile_preset(cls, value: str) -> str:
+        if value not in CHUNKING_PROFILE_PRESETS:
+            raise ValueError(
+                f"Unknown chunking profile preset {value!r}; "
+                f"expected one of {sorted(CHUNKING_PROFILE_PRESETS)}"
+            )
+        return value
 
 
 @lru_cache
