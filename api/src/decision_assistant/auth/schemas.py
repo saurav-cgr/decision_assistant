@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class Credentials(BaseModel):
     username: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-    password: str = Field(min_length=12, max_length=256)
+    password: str = Field(min_length=8, max_length=256)
 
     @field_validator("username")
     @classmethod
@@ -29,7 +29,7 @@ class UsernameRecoveryRequest(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=256)
-    new_password: str = Field(min_length=12, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
 
 
 class UsernameChangeRequest(BaseModel):

@@ -63,7 +63,7 @@ export function Authentication() {
           {requiresCredentials && (
             <label>
               {mode === "reset-password" ? "New password" : "Password"}
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} required />
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required />
             </label>
           )}
           {(mode === "recover-username" || mode === "reset-password") && (

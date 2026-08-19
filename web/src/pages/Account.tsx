@@ -70,7 +70,7 @@ export function Account() {
         <form onSubmit={changePasswordSubmit}>
           <h2>Change password</h2>
           <input aria-label="Current password for password" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
-          <input aria-label="New password" type="password" minLength={12} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+          <input aria-label="New password" type="password" minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
           <button>Update password</button>
         </form>
         <form onSubmit={rotateCodeSubmit}>

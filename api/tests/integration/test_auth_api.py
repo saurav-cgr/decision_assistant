@@ -51,6 +51,17 @@ async def test_signup_issues_access_token_and_one_time_recovery_code(
     assert me.json()["username"] == "new-user"
 
 
+async def test_signup_accepts_an_eight_character_password(
+    auth_api: httpx.AsyncClient,
+) -> None:
+    response = await auth_api.post(
+        "/api/v1/auth/signup",
+        json={"username": "eight-character-password", "password": "password"},
+    )
+
+    assert response.status_code == 201
+
+
 async def test_recovery_code_recovers_username_and_rotates_after_reset(
     auth_api: httpx.AsyncClient,
 ) -> None:
