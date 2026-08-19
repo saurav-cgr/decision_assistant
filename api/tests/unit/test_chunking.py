@@ -22,6 +22,25 @@ def _write(tmp_path: Path, content: str, name: str = "doc.md") -> Path:
     return path
 
 
+def _paragraph_document(text: str) -> ParsedDocument:
+    """Build a single-paragraph document with exact normalized offsets."""
+    block = ParsedBlock(
+        text=text,
+        block_type="paragraph",
+        group_path=(),
+        boundary_before="soft",
+        attributes={},
+        locator={"kind": "lines", "start": 1, "end": 1},
+        start_offset=0,
+        end_offset=len(text),
+    )
+    return ParsedDocument(
+        source_path=Path("inline"),
+        content=text,
+        blocks=(block,),
+    )
+
+
 def test_token_counts_are_stable_for_diverse_text() -> None:
     samples = [
         "plain ascii text with spaces",
@@ -203,3 +222,85 @@ def test_conversation_chunks_never_mix_channels() -> None:
         assert urls
         channels = {url.split("/")[3] for url in urls}
         assert len(channels) == 1
+
+
+def test_accumulation_is_separator_aware() -> None:
+    # Single-token sentences: a naive sum of isolated unit counts undercounts
+    # the stored passage, which also contains "\n\n" separator tokens. The
+    # rendered candidate must be the source of truth for the token budget.
+    text = " ".join(f"w{index}." for index in range(60))
+    max_tokens = 12
+    chunks = chunk_document(
+        _paragraph_document(text),
+        token_counter=COUNTER,
+        target_tokens=6,
+        max_tokens=max_tokens,
+        overlap_tokens=0,
+    )
+
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert COUNTER.count(chunk.content) <= max_tokens
+
+
+def test_overlap_is_rejected_when_rendered_exceeds_max() -> None:
+    text = " ".join(f"s{index}." for index in range(40))
+    max_tokens = 15
+    chunks = chunk_document(
+        _paragraph_document(text),
+        token_counter=COUNTER,
+        target_tokens=8,
+        max_tokens=max_tokens,
+        overlap_tokens=6,
+    )
+
+    for chunk in chunks:
+        assert COUNTER.count(chunk.content) <= max_tokens
+
+
+def test_sentence_split_offsets_are_exact_and_lossless() -> None:
+    sentences = [
+        "Alpha sentence one here.",
+        "Beta sentence two there.",
+        "Gamma sentence three everywhere.",
+        "Delta sentence four nowhere.",
+        "Epsilon sentence five somewhere.",
+        "Zeta sentence six elsewhere.",
+    ]
+    text = " ".join(sentences)
+    chunks = chunk_document(
+        _paragraph_document(text),
+        token_counter=COUNTER,
+        target_tokens=6,
+        max_tokens=12,
+        overlap_tokens=0,
+    )
+
+    assert len(chunks) > 1
+    for chunk in chunks:
+        # Removing the inserted "\n\n" separators recovers the exact normalized
+        # document slice at [start_offset, end_offset): no loss, no rejoin.
+        assert chunk.content.replace("\n\n", "") == text[
+            chunk.start_offset : chunk.end_offset
+        ]
+    assert "".join(c.content.replace("\n\n", "") for c in chunks) == text
+
+
+def test_token_window_split_offsets_are_exact_and_lossless() -> None:
+    # No sentence terminators force exact token-window splitting.
+    text = " ".join("token" for _ in range(120))
+    chunks = chunk_document(
+        _paragraph_document(text),
+        token_counter=COUNTER,
+        target_tokens=15,
+        max_tokens=25,
+        overlap_tokens=0,
+    )
+
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert COUNTER.count(chunk.content) <= 25
+        assert chunk.content.replace("\n\n", "") == text[
+            chunk.start_offset : chunk.end_offset
+        ]
+    assert "".join(c.content.replace("\n\n", "") for c in chunks) == text

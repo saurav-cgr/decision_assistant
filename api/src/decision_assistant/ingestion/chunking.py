@@ -67,9 +67,14 @@ def _build_units(
 ) -> list[_Unit]:
     units: list[_Unit] = []
     for block in document.blocks:
-        text = block.text.strip("\n ")
+        raw_text = block.text
+        # Offsets address the normalized document content exactly, so track how
+        # much leading whitespace the stored unit text drops from the raw block.
+        leading = len(raw_text) - len(raw_text.lstrip("\n "))
+        text = raw_text.strip("\n ")
         if not text:
             continue
+        base_offset = block.start_offset + leading
         if counter.count(text) <= max_tokens:
             units.append(
                 _Unit(
@@ -77,24 +82,21 @@ def _build_units(
                     group_path=block.group_path,
                     boundary_before=block.boundary_before,
                     block=block,
-                    doc_start=block.start_offset,
-                    doc_end=block.end_offset,
+                    doc_start=base_offset,
+                    doc_end=base_offset + len(text),
                 )
             )
             continue
         pieces = _split_oversized(text, counter, max_tokens)
-        running = 0
-        for index, piece in enumerate(pieces):
-            start = block.start_offset + running
-            running += len(piece)
+        for index, (rel_start, rel_end) in enumerate(pieces):
             units.append(
                 _Unit(
-                    text=piece,
+                    text=text[rel_start:rel_end],
                     group_path=block.group_path,
                     boundary_before=block.boundary_before if index == 0 else "none",
                     block=block,
-                    doc_start=start,
-                    doc_end=start + len(piece),
+                    doc_start=base_offset + rel_start,
+                    doc_end=base_offset + rel_end,
                 )
             )
     return units
@@ -104,71 +106,85 @@ def _split_oversized(
     text: str,
     counter: TokenCounter,
     max_tokens: int,
-) -> list[str]:
-    sentences = _split_sentences(text)
-    pieces: list[str] = []
-    current = ""
-    for sentence in sentences:
-        if counter.count(sentence) > max_tokens:
-            if current:
-                pieces.append(current)
-                current = ""
-            pieces.extend(_split_by_tokens(sentence, counter, max_tokens))
+) -> list[tuple[int, int]]:
+    """Split ``text`` into exact contiguous ``[start, end)`` spans.
+
+    Sentence boundaries are preserved first; any single sentence that still
+    exceeds ``max_tokens`` is further split into exact token-window spans. The
+    returned spans partition ``text`` with no trimming or rejoining, so
+    concatenating ``text[start:end]`` over every span recovers ``text`` exactly.
+    """
+    spans: list[tuple[int, int]] = []
+    piece_start: int | None = None
+    for sent_start, sent_end in _sentence_spans(text):
+        if counter.count(text[sent_start:sent_end]) > max_tokens:
+            if piece_start is not None:
+                spans.append((piece_start, sent_start))
+                piece_start = None
+            spans.extend(
+                _token_window_spans(text, sent_start, sent_end, counter, max_tokens)
+            )
             continue
-        candidate = f"{current} {sentence}".strip() if current else sentence
-        if counter.count(candidate) > max_tokens:
-            pieces.append(current)
-            current = sentence
-        else:
-            current = candidate
-    if current:
-        pieces.append(current)
-    return pieces
+        if piece_start is None:
+            piece_start = sent_start
+        if counter.count(text[piece_start:sent_end]) > max_tokens:
+            spans.append((piece_start, sent_start))
+            piece_start = sent_start
+    if piece_start is not None:
+        spans.append((piece_start, len(text)))
+    return spans
 
 
-def _split_sentences(text: str) -> list[str]:
-    parts: list[str] = []
-    current = ""
+def _sentence_spans(text: str) -> list[tuple[int, int]]:
+    """Return exact sentence spans partitioning ``text``.
+
+    Each span ends after the sentence terminator and any following whitespace,
+    so the spans are contiguous and cover ``text`` exactly (lossless).
+    """
+    spans: list[tuple[int, int]] = []
+    start = 0
     index = 0
-    while index < len(text):
+    length = len(text)
+    while index < length:
         char = text[index]
-        current += char
-        if char in ".!?" and (
-            index + 1 >= len(text) or text[index + 1].isspace()
-        ):
-            parts.append(current.strip())
-            current = ""
         index += 1
-    if current.strip():
-        parts.append(current.strip())
-    return [part for part in parts if part]
+        if char in ".!?" and (index >= length or text[index].isspace()):
+            end = index
+            while end < length and text[end].isspace():
+                end += 1
+            spans.append((start, end))
+            start = end
+            index = end
+    if start < length:
+        spans.append((start, length))
+    return spans
 
 
-def _split_by_tokens(
+def _token_window_spans(
     text: str,
+    start: int,
+    end: int,
     counter: TokenCounter,
     max_tokens: int,
-) -> list[str]:
-    if counter.count(text) <= max_tokens:
-        return [text]
-    pieces: list[str] = []
-    start = 0
-    length = len(text)
-    while start < length:
-        low, high = start + 1, length
-        best = start + 1
+) -> list[tuple[int, int]]:
+    """Split ``text[start:end]`` into exact token-window spans."""
+    spans: list[tuple[int, int]] = []
+    position = start
+    while position < end:
+        low, high = position + 1, end
+        best = position + 1
         while low <= high:
             mid = (low + high) // 2
-            if counter.count(text[start:mid]) <= max_tokens:
+            if counter.count(text[position:mid]) <= max_tokens:
                 best = mid
                 low = mid + 1
             else:
                 high = mid - 1
-        if best <= start:
-            best = start + 1
-        pieces.append(text[start:best])
-        start = best
-    return pieces
+        if best <= position:
+            best = position + 1
+        spans.append((position, best))
+        position = best
+    return spans
 
 
 def _accumulate(
@@ -179,30 +195,29 @@ def _accumulate(
 ) -> list[list[_Unit]]:
     chunks: list[list[_Unit]] = []
     current: list[_Unit] = []
-    current_tokens = 0
 
     def finalize() -> None:
-        nonlocal current, current_tokens
+        nonlocal current
         if current:
             chunks.append(current)
         current = []
-        current_tokens = 0
 
     for unit in units:
-        unit_tokens = counter.count(unit.text)
         if unit.boundary_before == "hard" and current:
             finalize()
         if current:
             over_group = unit.group_path != current[-1].group_path
-            over_hard = current_tokens + unit_tokens > max_tokens
+            # Count the rendered candidate (units joined by the stored separator)
+            # rather than a sum of isolated counts: separator tokens consume the
+            # budget too, so no stored passage ever exceeds its maximum.
+            over_hard = _tokens(current + [unit], counter) > max_tokens
             over_target = (
-                current_tokens >= target_tokens
+                _tokens(current, counter) >= target_tokens
                 and unit.boundary_before in ("soft", "hard")
             )
             if over_group or over_hard or over_target:
                 finalize()
         current.append(unit)
-        current_tokens += unit_tokens
 
     finalize()
     return chunks
@@ -232,7 +247,7 @@ def _build_drafts(
                 candidate = overlap + units
                 if _tokens(candidate, counter) <= max_tokens:
                     units = candidate
-        content = "\n\n".join(unit.text for unit in units)
+        content = _render(units)
         drafts.append(
             PassageDraft(
                 sequence_number=index,
@@ -246,8 +261,13 @@ def _build_drafts(
     return drafts
 
 
+def _render(units: list[_Unit]) -> str:
+    """Serialize units exactly as stored passage content ("\n\n" separator)."""
+    return "\n\n".join(unit.text for unit in units)
+
+
 def _tokens(units: list[_Unit], counter: TokenCounter) -> int:
-    return sum(counter.count(unit.text) for unit in units)
+    return counter.count(_render(units))
 
 
 def _trailing_units(
