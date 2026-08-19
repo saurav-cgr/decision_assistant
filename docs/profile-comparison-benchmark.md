@@ -96,3 +96,24 @@ Run this entire cycle once for each of `baseline`, `compact`, and `expanded`.
 After a winner is chosen, repeat the approved reset/reingestion once with that
 preset as the application default so the final corpus matches the shipped
 configuration, then verify `/ready` and the recorded benchmark.
+
+## Results (2026-08-19)
+
+Benchmarked on a freshly reset, reingested Atlas corpus per preset with live
+Gemini (`atlas-v3`, 20 questions). `expanded` was **skipped**: both `baseline`
+and `compact` already reached the maximum top-5 hit rate of 1.0, so `expanded`
+could not change the outcome.
+
+| Preset | Top-5 | MRR | Gold cit. cov. | Abstention acc. | Faithfulness | Med / p95 ms | Failures | Passages |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `baseline` (450/600/60) | **1.0** | 0.786 | **0.75** | 0.85 | 1.0 | 3504 / 27766 | 0 | 23 |
+| `compact` (250/350/40) | 1.0 | 0.786 | 0.688 | 0.85 | 1.0 | 6195 / 39949 | 0 | 23 |
+
+**Selected default: `baseline`.** It ties `compact` on the selection metric
+(top-5 hit rate = 1.0), and per the tie rule `baseline` is retained; it is also
+slightly better on gold citation coverage and markedly faster on latency (the
+latency gap is consistent with free-tier Gemini rate limiting).
+
+The final database corpus was reset and reingested with the `baseline` preset
+(the application default) and verified: `/ready` returns `{"status":"ready"}`
+with no `corpus_reset_required`.

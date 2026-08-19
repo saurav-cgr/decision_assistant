@@ -18,7 +18,13 @@ def _load_script():
 
 @pytest.fixture(scope="module")
 def script():
-    return _load_script()
+    module = _load_script()
+    # These unit tests exercise upload/ingest logic against a mocked API, so
+    # disable the optional bearer auth (otherwise _ensure_auth would try to log
+    # in through the mocked _request_json and fail on a missing access_token).
+    module.AUTH_USERNAME = None
+    module.AUTH_PASSWORD = None
+    return module
 
 
 def test_checksum_is_sha256_of_file_bytes(script, tmp_path: Path) -> None:

@@ -125,6 +125,8 @@ def compare(
     strategy: str,
     timeout: float,
     dry_run: bool,
+    username: str | None = None,
+    password: str | None = None,
 ) -> dict[str, Any]:
     """Run the comparison for one preset, or plan it with ``dry_run``."""
     if dry_run:
@@ -133,6 +135,10 @@ def compare(
     api_origin = api_origin.rstrip("/")
     ingest_module.API_ORIGIN = api_origin
     ingest_module.API_V1 = f"{api_origin}/api/v1"
+    if username is not None:
+        ingest_module.AUTH_USERNAME = username
+        ingest_module.AUTH_PASSWORD = password
+    ingest_module._ensure_auth(timeout)
 
     workspace_id = ingest_module._find_or_create_workspace(workspace_name)
     summary = ingest_module.ingest(
@@ -180,6 +186,8 @@ def _parser() -> argparse.ArgumentParser:
         choices=["hybrid", "semantic"],
     )
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--username", default=os.getenv("INGEST_USERNAME"))
+    parser.add_argument("--password", default=os.getenv("INGEST_PASSWORD"))
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -199,6 +207,8 @@ def main() -> None:
         strategy=args.strategy,
         timeout=args.timeout,
         dry_run=args.dry_run,
+        username=args.username,
+        password=args.password,
     )
     print(json.dumps(result, sort_keys=True))
 
