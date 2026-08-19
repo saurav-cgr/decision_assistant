@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     ollama_embedding_model: str = "embeddinggemma"
     ollama_embedding_dimension: int = 768
     frontend_origin: str = "http://localhost:5173"
+    auth_jwt_secret: SecretStr | None = None
+    auth_access_token_ttl_minutes: int = 24 * 60
+    auth_bootstrap_username: str | None = None
+    auth_bootstrap_password: SecretStr | None = None
     max_upload_bytes: int = 25 * 1024 * 1024
     model_timeout_seconds: float = 120.0
     model_retry_count: int = 2
