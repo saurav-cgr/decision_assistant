@@ -6,6 +6,7 @@ import {
   setActiveWorkspaceId,
 } from "../api/client";
 import { WorkspaceSelector } from "./WorkspaceSelector";
+import { useAuth } from "../app/AuthContext";
 
 const navigation = [
   { label: "Workspace", to: "/", end: true },
@@ -15,6 +16,7 @@ const navigation = [
 ] as const;
 
 export function AppShell() {
+  const { user, signOut } = useAuth();
   const [activeWorkspaceId, setWorkspace] = useState<string | null>(
     getActiveWorkspaceId(),
   );
@@ -66,6 +68,9 @@ export function AppShell() {
           <span aria-hidden="true" />
           Local
         </div>
+        <button className="account-button" type="button" onClick={() => void signOut()}>
+          Sign out {user?.username}
+        </button>
       </header>
 
       <nav className="primary-nav" aria-label="Primary navigation">

@@ -1,5 +1,7 @@
 import type {
   ApiErrorPayload,
+  AuthResponse,
+  AuthenticatedUser,
   DecisionCorrectionRequest,
   DecisionDetail,
   DecisionListResponse,
@@ -23,6 +25,16 @@ const configuredOrigin = import.meta.env.VITE_API_URL || "http://localhost:8000"
 const API_V1 = `${configuredOrigin.replace(/\/$/, "")}/api/v1`;
 
 let activeWorkspaceId: string | null = null;
+let accessToken: string | null = null;
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
 
 export function setActiveWorkspaceId(workspaceId: string | null): void {
   activeWorkspaceId = workspaceId;
@@ -73,15 +85,65 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("accept", "application/json");
+  if (accessToken) {
+    headers.set("authorization", `Bearer ${accessToken}`);
+  }
   const response = await fetch(`${API_V1}${path}`, { ...init, headers });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      unauthorizedHandler?.();
+    }
     throw new ApiClientError(response.status, await parseApiError(response));
   }
   if (response.status === 204) {
     return undefined as T;
   }
   return (await response.json()) as T;
+}
+
+export function signUp(username: string, password: string): Promise<AuthResponse> {
+  return apiRequest<AuthResponse>("/auth/signup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function login(username: string, password: string): Promise<AuthResponse> {
+  return apiRequest<AuthResponse>("/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function logout(): Promise<void> {
+  return apiRequest<void>("/auth/logout", { method: "POST" });
+}
+
+export function recoverUsername(recoveryCode: string): Promise<{ username: string }> {
+  return apiRequest<{ username: string }>("/auth/recover-username", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ recovery_code: recoveryCode }),
+  });
+}
+
+export function resetPassword(
+  username: string,
+  password: string,
+  recoveryCode: string,
+): Promise<{ recovery_code: string }> {
+  return apiRequest<{ recovery_code: string }>("/auth/reset-password", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      username,
+      password,
+      recovery_code: recoveryCode,
+    }),
+  });
 }
 
 export function listWorkspaces(): Promise<WorkspaceListResponse> {

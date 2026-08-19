@@ -89,4 +89,24 @@ describe("Decision Assistant API client", () => {
       "/questions/history?page=2&page_size=5&query=authentication+owner",
     );
   });
+
+  it("adds the in-memory bearer token to protected requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const clientModule = "./client";
+    const { listWorkspaces, setAccessToken } = await import(
+      /* @vite-ignore */ clientModule
+    );
+    setAccessToken("access-token");
+
+    await listWorkspaces();
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(new Headers(init.headers).get("authorization")).toBe(
+      "Bearer access-token",
+    );
+    setAccessToken(null);
+  });
 });

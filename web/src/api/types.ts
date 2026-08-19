@@ -387,3 +387,12 @@ export type WorkspaceDetail = WorkspaceSummary & {
 };
 
 export type WorkspaceListResponse = { items: WorkspaceSummary[] };
+
+export type AuthenticatedUser = { id: string; username: string };
+
+export type AuthResponse = {
+  access_token: string;
+  token_type: "bearer";
+  user: AuthenticatedUser;
+  recovery_code: string | null;
+};
