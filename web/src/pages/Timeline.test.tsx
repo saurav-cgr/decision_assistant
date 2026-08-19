@@ -3,12 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
+  getDocument: vi.fn(),
   getTimeline: vi.fn(),
 }));
 
 vi.mock("../api/client", () => ({
-  documentDetailUrl: (documentId: string) =>
-    `http://localhost:8000/api/v1/documents/${documentId}`,
+  getDocument: api.getDocument,
   getTimeline: api.getTimeline,
 }));
 
@@ -156,22 +156,10 @@ describe("Decision timeline", () => {
     expect(events[2]).toHaveTextContent("2026-07-20");
     expect(events[2]).toHaveTextContent("Superseded");
 
-    const evidenceLinks = within(orderedTimeline).getAllByRole("link", {
+    const evidenceButtons = within(orderedTimeline).getAllByRole("button", {
       name: /view source evidence/i,
     });
-    expect(evidenceLinks).toHaveLength(3);
-    expect(evidenceLinks[0]).toHaveAttribute(
-      "href",
-      "http://localhost:8000/api/v1/documents/document-1",
-    );
-    expect(evidenceLinks[1]).toHaveAttribute(
-      "href",
-      "http://localhost:8000/api/v1/documents/document-2",
-    );
-    expect(evidenceLinks[2]).toHaveAttribute(
-      "href",
-      "http://localhost:8000/api/v1/documents/document-3",
-    );
+    expect(evidenceButtons).toHaveLength(3);
   });
 
   it("labels model-inferred revision candidates as possible", async () => {

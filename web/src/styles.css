@@ -935,6 +935,25 @@ a {
   font-weight: 750;
 }
 
+.timeline-evidence__source {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.timeline-evidence__source:hover {
+  text-decoration: underline;
+}
+
+.timeline-evidence__error {
+  color: var(--signal);
+  font-size: 0.78rem;
+}
+
 .ask-page {
   display: grid;
   gap: 30px;
@@ -1137,6 +1156,28 @@ a {
   color: var(--accent);
   font-size: 0.76rem;
   font-weight: 750;
+}
+
+.citation-list button.citation-source {
+  grid-column: 2;
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+}
+
+.citation-list button.citation-source:hover {
+  text-decoration: underline;
+}
+
+.citation-error {
+  color: var(--signal);
+  font-size: 0.78rem;
 }
 
 .retrieval-trace {

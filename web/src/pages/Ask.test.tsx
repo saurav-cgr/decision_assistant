@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   answerQuestion: vi.fn(),
+  getDocument: vi.fn(),
   getQuestionHistoryItem: vi.fn(),
   getRetrievalTrace: vi.fn(),
   listQuestionHistory: vi.fn(),
@@ -11,8 +12,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock("../api/client", () => ({
   answerQuestion: api.answerQuestion,
-  documentDetailUrl: (documentId: string) =>
-    `http://localhost:8000/api/v1/documents/${documentId}`,
+  getDocument: api.getDocument,
   getQuestionHistoryItem: api.getQuestionHistoryItem,
   getRetrievalTrace: api.getRetrievalTrace,
   listQuestionHistory: api.listQuestionHistory,
@@ -244,11 +244,10 @@ describe("Ask", () => {
 
     expect(screen.getByText(firstCitation.quote)).toBeVisible();
     expect(
-      screen.getByRole("link", { name: /architecture-review\.md.*lines 12–14/i }),
-    ).toHaveAttribute(
-      "href",
-      "http://localhost:8000/api/v1/documents/document-1",
-    );
+      screen.getByRole("button", {
+        name: /architecture-review\.md.*lines 12–14/i,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("shows unsupported facets beside a partial answer", async () => {

@@ -341,10 +341,6 @@ export function listEvaluationRuns(
   );
 }
 
-export function documentDetailUrl(documentId: string): string {
-  return `${API_V1}/workspaces/${requireWorkspace()}/documents/${encodeURIComponent(documentId)}`;
-}
-
 export function retryDocument(documentId: string): Promise<RetryResponse> {
   return apiRequest<RetryResponse>(
     projectPath(`/documents/${encodeURIComponent(documentId)}/retry`),
