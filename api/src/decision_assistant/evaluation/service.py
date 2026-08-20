@@ -147,7 +147,12 @@ class EvaluationService:
             workspace_id = (
                 await WorkspaceService(self._session).get_or_create_active()
             ).id
-        await self._sync_questions(dataset, workspace_id)
+        await self._sync_questions(
+            dataset,
+            workspace_id,
+            allow_unresolved_passage_references=request.strategy
+            in {"sentence_expanded", "parent_child_merged"},
+        )
         corpus_snapshot = await self._build_corpus_snapshot(workspace_id)
         run = EvaluationRun(
             workspace_id=workspace_id,
@@ -526,6 +531,8 @@ class EvaluationService:
         self,
         dataset: EvaluationDataset,
         workspace_id: UUID,
+        *,
+        allow_unresolved_passage_references: bool = False,
     ) -> None:
         document_cache: dict[str, Document] = {}
         passage_cache: dict[UUID, list[Passage]] = {}
@@ -535,6 +542,7 @@ class EvaluationService:
                     question,
                     document_cache=document_cache,
                     passage_cache=passage_cache,
+                    allow_unresolved_passage_references=allow_unresolved_passage_references,
                 )
             )
             stored = await self._session.scalar(
@@ -573,6 +581,7 @@ class EvaluationService:
         *,
         document_cache: dict[str, Document],
         passage_cache: dict[UUID, list[Passage]],
+        allow_unresolved_passage_references: bool,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         documents = [dict(item) for item in question.expected_documents]
         passages = [dict(item) for item in question.expected_passages]
@@ -616,6 +625,9 @@ class EvaluationService:
                 and self._locator_covers(passage.locator, locator)
             ]
             if not matches:
+                if allow_unresolved_passage_references:
+                    item["document_id"] = str(document.id)
+                    continue
                 raise FatalEvaluationError(
                     code="dataset_reference_unresolved",
                     message=(
@@ -629,6 +641,9 @@ class EvaluationService:
             # ambiguity.
             matches = self._narrow_passage_matches(matches)
             if len(matches) != 1:
+                if allow_unresolved_passage_references:
+                    item["document_id"] = str(document.id)
+                    continue
                 raise FatalEvaluationError(
                     code="dataset_reference_unresolved",
                     message=(
