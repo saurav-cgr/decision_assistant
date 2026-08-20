@@ -215,6 +215,22 @@ async def test_retrieval_unit_hierarchy_schema_contract(
 
 
 @pytest.mark.asyncio
+async def test_evaluation_schema_allows_retrieval_unit_strategies(
+    db_session: AsyncSession,
+) -> None:
+    constraint = await db_session.execute(
+        text(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE conrelid = 'evaluation_runs'::regclass "
+            "AND conname = 'ck_evaluation_runs_strategy'"
+        )
+    )
+    definition = constraint.scalar_one()
+    assert "sentence_expanded" in definition
+    assert "parent_child_merged" in definition
+
+
+@pytest.mark.asyncio
 async def test_passage_embedding_profile_is_required_no_legacy_state(
     db_session: AsyncSession,
 ) -> None:

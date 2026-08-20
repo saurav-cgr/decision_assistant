@@ -131,7 +131,13 @@ class RecordingExecutor:
         self.observed_progress.append(
             (run.status, run.completed_questions, run.total_questions)
         )
-        assert strategy in {"semantic", "hybrid"}
+        assert strategy in {
+            "semantic",
+            "hybrid",
+            "passage_hybrid",
+            "sentence_expanded",
+            "parent_child_merged",
+        }
         assert configuration == RUN_CONFIGURATION
         if self.fatal_error is not None:
             raise self.fatal_error

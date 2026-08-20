@@ -4,6 +4,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+EvaluationStrategy = Literal[
+    "semantic",
+    "hybrid",
+    "passage_hybrid",
+    "sentence_expanded",
+    "parent_child_merged",
+]
+
 
 class EvaluationModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -39,7 +47,7 @@ class EvaluationDataset(EvaluationModel):
 
 
 class EvaluationRunRequest(EvaluationModel):
-    strategy: Literal["semantic", "hybrid"]
+    strategy: EvaluationStrategy
     dataset_version: Annotated[str, Field(min_length=1)]
     configuration: dict[str, Any] = Field(default_factory=dict)
     generation_profile: dict[str, Any] = Field(default_factory=dict)
@@ -96,7 +104,7 @@ class EvaluationResultResponse(EvaluationModel):
 
 class EvaluationRunResponse(EvaluationModel):
     id: UUID
-    strategy: Literal["semantic", "hybrid"]
+    strategy: EvaluationStrategy
     status: Literal["pending", "running", "completed", "failed"]
     completed_questions: int
     total_questions: int
@@ -117,7 +125,7 @@ class EvaluationRunSummaryResponse(EvaluationModel):
     """Lightweight run metadata without per-question results."""
 
     id: UUID
-    strategy: Literal["semantic", "hybrid"]
+    strategy: EvaluationStrategy
     status: Literal["pending", "running", "completed", "failed"]
     completed_questions: int
     total_questions: int

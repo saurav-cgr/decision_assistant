@@ -59,7 +59,10 @@ class EvaluationRun(TimestampMixin, Base):
     __tablename__ = "evaluation_runs"
     __table_args__ = (
         CheckConstraint(
-            "strategy IN ('semantic', 'hybrid')",
+            "strategy IN ("
+            "'semantic', 'hybrid', 'passage_hybrid', "
+            "'sentence_expanded', 'parent_child_merged'"
+            ")",
             name="ck_evaluation_runs_strategy",
         ),
         CheckConstraint(
