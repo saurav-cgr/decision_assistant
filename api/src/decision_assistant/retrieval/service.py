@@ -10,6 +10,7 @@ from decision_assistant.errors import ApplicationError
 from decision_assistant.models import DocumentVersion, Passage, RetrievalTrace
 from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
+from decision_assistant.ingestion.retrieval_units import RetrievalUnitStrategy
 from decision_assistant.retrieval.repository import RankedPassage, RetrievalRepository
 from decision_assistant.retrieval.reranking import (
     RerankCandidate,
@@ -40,6 +41,7 @@ class RetrievalConfig:
     rerank_candidate_limit: int = 12
     rerank_min_candidates: int = 6
     rerank_final_limit: int = 5
+    strategy: RetrievalUnitStrategy = "passage_hybrid"
 
     def __post_init__(self) -> None:
         if self.semantic_limit < 1 or self.keyword_limit < 1 or self.decision_limit < 1:
@@ -54,25 +56,12 @@ class RetrievalConfig:
             raise ValueError("rerank_final_limit must not exceed rerank_candidate_limit")
         if self.rerank_min_candidates > self.rerank_candidate_limit:
             raise ValueError("rerank_min_candidates must not exceed rerank_candidate_limit")
-    top_k: int = 5
-    rerank_enabled: bool = False
-    rerank_candidate_limit: int = 12
-    rerank_min_candidates: int = 6
-    rerank_final_limit: int = 5
-
-    def __post_init__(self) -> None:
-        if self.semantic_limit < 1 or self.keyword_limit < 1 or self.decision_limit < 1:
-            raise ValueError("retrieval limits must be positive")
-        if self.rrf_k < 1 or self.top_k < 1:
-            raise ValueError("rrf_k and top_k must be positive")
-        if self.rerank_candidate_limit < 1 or self.rerank_min_candidates < 1:
-            raise ValueError("rerank limits must be positive")
-        if self.rerank_final_limit < 1:
-            raise ValueError("rerank_final_limit must be positive")
-        if self.rerank_final_limit > self.rerank_candidate_limit:
-            raise ValueError("rerank_final_limit must not exceed rerank_candidate_limit")
-        if self.rerank_min_candidates > self.rerank_candidate_limit:
-            raise ValueError("rerank_min_candidates must not exceed rerank_candidate_limit")
+        if self.strategy not in {
+            "passage_hybrid",
+            "sentence_expanded",
+            "parent_child_merged",
+        }:
+            raise ValueError("Unknown retrieval strategy")
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -85,6 +74,7 @@ class RetrievalConfig:
             "rerank_candidate_limit": self.rerank_candidate_limit,
             "rerank_min_candidates": self.rerank_min_candidates,
             "rerank_final_limit": self.rerank_final_limit,
+            "strategy": self.strategy,
         }
 
 
@@ -150,6 +140,7 @@ class HybridRetrievalService:
             embedding_profile=self._embedding_provider.profile.as_dict(),
             limit=self._config.semantic_limit,
             workspace_id=workspace_id,
+            retrieval_unit_kind=self._candidate_unit_kind,
         )
         semantic_ms = _elapsed_ms(semantic_started)
 
@@ -159,6 +150,7 @@ class HybridRetrievalService:
             request.filters,
             limit=self._config.keyword_limit,
             workspace_id=workspace_id,
+            retrieval_unit_kind=self._candidate_unit_kind,
         )
         keyword_ms = _elapsed_ms(keyword_started)
 
@@ -168,6 +160,7 @@ class HybridRetrievalService:
             request.filters,
             limit=self._config.decision_limit,
             workspace_id=workspace_id,
+            retrieval_unit_kind=self._candidate_unit_kind,
         )
         decision_ms = _elapsed_ms(decision_started)
 
@@ -192,13 +185,18 @@ class HybridRetrievalService:
             for item in ranked
         }
         fused_by_id = {item.id: item for item in fused}
-        selected_ids, rerank_block, rerank_ms = await self._select_with_rerank(
+        root_ids, rerank_block, rerank_ms = await self._select_with_rerank(
             fused=fused,
             question=request.question,
             passage_by_id=passage_by_id,
         )
+        selected_ids, evidence_by_id, root_ids_by_evidence = (
+            await self._select_evidence_units(root_ids, passage_by_id)
+        )
         selected_passage_metadata = await self._selected_passage_metadata(
-            selected_ids, passage_by_id
+            selected_ids,
+            evidence_by_id,
+            root_ids_by_evidence,
         )
 
         filters = request.filters.model_dump(mode="json", exclude_none=True)
@@ -240,14 +238,97 @@ class HybridRetrievalService:
             results=[
                 RetrievalResult(
                     passage_id=item,
-                    content=passage_by_id[item].content,
-                    locator=passage_by_id[item].locator,
-                    fused_score=fused_by_id[item].score,
-                    source_ranks=fused_by_id[item].source_ranks,
+                    content=evidence_by_id[item].content,
+                    locator=evidence_by_id[item].locator,
+                    fused_score=fused_by_id[root_ids_by_evidence[item][0]].score,
+                    source_ranks=fused_by_id[
+                        root_ids_by_evidence[item][0]
+                    ].source_ranks,
                 )
                 for item in selected_ids
             ],
         )
+
+    @property
+    def _candidate_unit_kind(self) -> str:
+        return "passage" if self._config.strategy == "passage_hybrid" else "sentence"
+
+    async def _select_evidence_units(
+        self,
+        root_ids: list[UUID],
+        passage_by_id: dict[UUID, Passage],
+    ) -> tuple[list[UUID], dict[UUID, Passage], dict[UUID, list[UUID]]]:
+        if self._config.strategy == "passage_hybrid":
+            return root_ids, passage_by_id, {item: [item] for item in root_ids}
+        if self._config.strategy == "sentence_expanded":
+            return await self._expand_sentence_roots(root_ids, passage_by_id)
+        return await self._merge_parent_roots(root_ids, passage_by_id)
+
+    async def _expand_sentence_roots(
+        self,
+        root_ids: list[UUID],
+        passage_by_id: dict[UUID, Passage],
+    ) -> tuple[list[UUID], dict[UUID, Passage], dict[UUID, list[UUID]]]:
+        parent_ids = {
+            passage_by_id[root_id].parent_passage_id
+            for root_id in root_ids
+            if passage_by_id[root_id].parent_passage_id is not None
+        }
+        siblings = list(
+            await self._session.scalars(
+                select(Passage)
+                .where(
+                    Passage.parent_passage_id.in_(parent_ids),
+                    Passage.retrieval_unit_kind == "sentence",
+                )
+                .order_by(Passage.parent_passage_id, Passage.sequence_number)
+            )
+        ) if parent_ids else []
+        by_parent: dict[UUID, list[Passage]] = {}
+        for sibling in siblings:
+            if sibling.parent_passage_id is not None:
+                by_parent.setdefault(sibling.parent_passage_id, []).append(sibling)
+        selected: list[UUID] = []
+        roots_by_evidence: dict[UUID, list[UUID]] = {}
+        evidence_by_id = {**passage_by_id, **{item.id: item for item in siblings}}
+        for root_id in root_ids:
+            root = passage_by_id[root_id]
+            group = by_parent.get(root.parent_passage_id, [])
+            index = next(item for item, sibling in enumerate(group) if sibling.id == root_id)
+            for sibling in group[max(0, index - 1) : index + 2]:
+                if sibling.id not in roots_by_evidence:
+                    selected.append(sibling.id)
+                    roots_by_evidence[sibling.id] = []
+                roots_by_evidence[sibling.id].append(root_id)
+        return selected, evidence_by_id, roots_by_evidence
+
+    async def _merge_parent_roots(
+        self,
+        root_ids: list[UUID],
+        passage_by_id: dict[UUID, Passage],
+    ) -> tuple[list[UUID], dict[UUID, Passage], dict[UUID, list[UUID]]]:
+        parent_ids = [
+            passage_by_id[root_id].parent_passage_id
+            for root_id in root_ids
+            if passage_by_id[root_id].parent_passage_id is not None
+        ]
+        parents = {
+            parent.id: parent
+            for parent in await self._session.scalars(
+                select(Passage).where(Passage.id.in_(parent_ids))
+            )
+        } if parent_ids else {}
+        selected: list[UUID] = []
+        roots_by_evidence: dict[UUID, list[UUID]] = {}
+        for root_id in root_ids:
+            parent_id = passage_by_id[root_id].parent_passage_id
+            if parent_id is None or parent_id not in parents:
+                continue
+            if parent_id not in roots_by_evidence:
+                selected.append(parent_id)
+                roots_by_evidence[parent_id] = []
+            roots_by_evidence[parent_id].append(root_id)
+        return selected, {**passage_by_id, **parents}, roots_by_evidence
 
     async def _select_with_rerank(
         self,
@@ -310,6 +391,7 @@ class HybridRetrievalService:
         self,
         selected_ids: list[UUID],
         passage_by_id: dict[UUID, Passage],
+        root_ids_by_evidence: dict[UUID, list[UUID]],
     ) -> list[dict[str, object]]:
         if not selected_ids:
             return []
@@ -333,6 +415,11 @@ class HybridRetrievalService:
                 ].chunking_profile,
                 "structural_metadata": passage_by_id[passage_id].structural_metadata,
                 "source_kind": _source_kind(passage_by_id[passage_id].locator),
+                "retrieval_strategy": self._config.strategy,
+                "retrieval_root_ids": [
+                    str(root_id)
+                    for root_id in root_ids_by_evidence[passage_id]
+                ],
             }
             for passage_id in selected_ids
         ]

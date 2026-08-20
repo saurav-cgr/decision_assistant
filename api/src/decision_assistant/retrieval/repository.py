@@ -34,11 +34,13 @@ class RetrievalRepository:
         embedding_profile: dict[str, str | int],
         limit: int,
         workspace_id: UUID,
+        retrieval_unit_kind: str = "passage",
     ) -> list[RankedPassage]:
         distance = Passage.embedding.cosine_distance(embedding).label("distance")
         statement = self._active_passages(select(Passage, distance), filters).where(
             Passage.embedding_profile == embedding_profile,
             Document.workspace_id == workspace_id,
+            Passage.retrieval_unit_kind == retrieval_unit_kind,
         )
         rows = (
             await self._session.execute(statement.order_by(distance).limit(limit))
@@ -55,6 +57,7 @@ class RetrievalRepository:
         *,
         limit: int,
         workspace_id: UUID,
+        retrieval_unit_kind: str = "passage",
     ) -> list[RankedPassage]:
         query = func.websearch_to_tsquery(
             literal_column("'english'::regconfig"),
@@ -64,6 +67,7 @@ class RetrievalRepository:
         statement = self._active_passages(select(Passage, rank), filters).where(
             Passage.search_vector.op("@@")(query),
             Document.workspace_id == workspace_id,
+            Passage.retrieval_unit_kind == retrieval_unit_kind,
         )
         rows = (
             await self._session.execute(statement.order_by(rank.desc()).limit(limit))
@@ -80,6 +84,7 @@ class RetrievalRepository:
         *,
         limit: int,
         workspace_id: UUID,
+        retrieval_unit_kind: str = "passage",
     ) -> list[RankedPassage]:
         query = func.websearch_to_tsquery(
             literal_column("'english'::regconfig"),
@@ -112,6 +117,7 @@ class RetrievalRepository:
                 Decision.retired.is_(False),
                 Decision.review_state == "supported",
                 DecisionEvidence.support_state == "supported",
+                Passage.retrieval_unit_kind == retrieval_unit_kind,
                 vector.op("@@")(query),
                 *self._filter_clauses(filters),
             )

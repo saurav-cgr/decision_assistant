@@ -23,7 +23,7 @@ from decision_assistant.providers.fakes import FakeEmbeddingProvider
 from decision_assistant.retrieval.router import get_retrieval_service
 from decision_assistant.retrieval.repository import RetrievalRepository
 from decision_assistant.retrieval.schemas import RetrievalFilters, RetrievalSearchRequest
-from decision_assistant.retrieval.service import HybridRetrievalService
+from decision_assistant.retrieval.service import HybridRetrievalService, RetrievalConfig
 from decision_assistant.workspace.context import (
     WorkspaceContext,
     get_workspace_context,
@@ -91,6 +91,8 @@ async def create_passage(
     sequence_number: int,
     content: str,
     embedding: list[float],
+    retrieval_unit_kind: str = "passage",
+    parent_passage_id: UUID | None = None,
 ) -> Passage:
     passage = Passage(
         document_version_id=version.id,
@@ -102,6 +104,8 @@ async def create_passage(
         locator={"kind": "lines", "start": sequence_number + 1, "end": sequence_number + 1},
         embedding=embedding,
         embedding_profile=EMBEDDING_PROFILE,
+        retrieval_unit_kind=retrieval_unit_kind,
+        parent_passage_id=parent_passage_id,
     )
     session.add(passage)
     await session.flush()
@@ -281,7 +285,83 @@ async def test_hybrid_retrieval_caps_sources_and_excludes_retired_versions(
         "rerank_candidate_limit": 12,
         "rerank_min_candidates": 6,
         "rerank_final_limit": 5,
+        "strategy": "passage_hybrid",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("strategy", "expected_kind"),
+    [
+        ("sentence_expanded", "sentence"),
+        ("parent_child_merged", "parent"),
+    ],
+)
+async def test_sentence_strategies_select_citation_valid_expanded_evidence(
+    db_session: AsyncSession,
+    strategy: str,
+    expected_kind: str,
+) -> None:
+    embedding_provider = FakeEmbeddingProvider(dimension=768)
+    vector = (
+        await embedding_provider.embed(["authentication"], purpose=EmbeddingPurpose.DOCUMENT)
+    )[0]
+    workspace = await create_workspace(db_session)
+    _, version = await create_version(db_session, workspace, name=f"{strategy}.md")
+    parent = await create_passage(
+        db_session,
+        version,
+        sequence_number=0,
+        content="Authentication was postponed. The import flow needed work. Security approved the plan.",
+        embedding=vector,
+        retrieval_unit_kind="parent",
+    )
+    children = [
+        await create_passage(
+            db_session,
+            version,
+            sequence_number=index + 1,
+            content=content,
+            embedding=vector,
+            retrieval_unit_kind="sentence",
+            parent_passage_id=parent.id,
+        )
+        for index, content in enumerate(
+            [
+                "Authentication was postponed.",
+                "The import flow needed work.",
+                "Security approved the plan.",
+            ]
+        )
+    ]
+    service = HybridRetrievalService(
+        session=db_session,
+        embedding_provider=embedding_provider,
+        config=RetrievalConfig(strategy=strategy),  # type: ignore[arg-type]
+    )
+
+    response = await service.search(
+        RetrievalSearchRequest(question="authentication"),
+        request_id=strategy,
+        workspace_id=workspace.id,
+    )
+    trace = await db_session.get(RetrievalTrace, response.trace_id)
+
+    assert trace is not None
+    assert all(
+        item.passage_id
+        in ({parent.id} if expected_kind == "parent" else {child.id for child in children})
+        for item in response.results
+    )
+    assert all(
+        item["retrieval_strategy"] == strategy
+        and item["retrieval_root_ids"]
+        for item in trace.selected_passage_metadata
+    )
+    if strategy == "sentence_expanded":
+        assert {item.passage_id for item in response.results} == {item.id for item in children}
+    else:
+        assert [item.passage_id for item in response.results] == [parent.id]
 
 
 @pytest.mark.asyncio
