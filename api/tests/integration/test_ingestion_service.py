@@ -48,6 +48,8 @@ CHANGED_CONTENT = GOOD_CONTENT.replace(
 async def create_harness(
     db_session: AsyncSession,
     tmp_path: Path,
+    *,
+    retrieval_unit_strategy: str = "passage_hybrid",
 ) -> tuple[IngestionService, Document, FakeEmbeddingProvider]:
     workspace = await WorkspaceService(db_session).get_or_create_active(
         name=f"Test workspace {uuid4()}"
@@ -69,6 +71,7 @@ async def create_harness(
         decision_extractor=DecisionExtractor(decision_provider),
         metadata_extractor=MetadataExtractor(metadata_provider),
         upload_directory=tmp_path / "uploads",
+        retrieval_unit_strategy=retrieval_unit_strategy,  # type: ignore[arg-type]
     )
     return service, document, embedding_provider
 
@@ -175,6 +178,52 @@ async def test_new_passages_store_structural_metadata(
         "paragraph" in passage.structural_metadata["block_types"]
         for passage in passages
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("strategy", "decision_kind"),
+    [
+        ("sentence_expanded", "sentence"),
+        ("parent_child_merged", "parent"),
+    ],
+)
+async def test_sentence_based_strategies_persist_linked_parent_and_sentence_units(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    strategy: str,
+    decision_kind: str,
+) -> None:
+    service, document, embedding_provider = await create_harness(
+        db_session,
+        tmp_path,
+        retrieval_unit_strategy=strategy,
+    )
+    source = write_source(
+        tmp_path,
+        GOOD_CONTENT + "\nThe import flow needs deterministic regression coverage.\n",
+    )
+
+    result = await service.ingest(document.id, source, request_id=strategy)
+    passages = list(
+        await db_session.scalars(
+            select(Passage)
+            .where(Passage.document_version_id == result.version_id)
+            .order_by(Passage.sequence_number)
+        )
+    )
+    parents = [passage for passage in passages if passage.retrieval_unit_kind == "parent"]
+    sentences = [
+        passage for passage in passages if passage.retrieval_unit_kind == "sentence"
+    ]
+
+    assert parents
+    assert len(sentences) >= 2
+    assert all(sentence.parent_passage_id in {parent.id for parent in parents} for sentence in sentences)
+    assert all("sentence_index" in sentence.structural_metadata for sentence in sentences)
+    assert embedding_provider.purposes == [EmbeddingPurpose.DOCUMENT]
+    assert all(passage.retrieval_unit_kind != "passage" for passage in passages)
+    assert decision_kind in {"sentence", "parent"}
 
 
 @pytest.mark.asyncio

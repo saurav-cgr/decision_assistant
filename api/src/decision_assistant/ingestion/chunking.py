@@ -117,7 +117,7 @@ def _split_oversized(
     """
     spans: list[tuple[int, int]] = []
     piece_start: int | None = None
-    for sent_start, sent_end in _sentence_spans(text):
+    for sent_start, sent_end in sentence_spans(text):
         if counter.count(text[sent_start:sent_end]) > max_tokens:
             if piece_start is not None:
                 spans.append((piece_start, sent_start))
@@ -136,7 +136,7 @@ def _split_oversized(
     return spans
 
 
-def _sentence_spans(text: str) -> list[tuple[int, int]]:
+def sentence_spans(text: str) -> list[tuple[int, int]]:
     """Return exact sentence spans partitioning ``text``.
 
     Each span ends after the sentence terminator and any following whitespace,
@@ -331,4 +331,3 @@ def _locator_for_units(units: list[_Unit]) -> SourceLocator:
         "start": int(blocks[0].locator["start"]),
         "end": int(blocks[-1].locator["end"]),
     }
-

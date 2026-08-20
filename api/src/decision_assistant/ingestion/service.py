@@ -14,6 +14,11 @@ from decision_assistant.errors import ApplicationError
 from decision_assistant.ingestion.chunking import chunk_document
 from decision_assistant.ingestion.metadata import MetadataExtractor
 from decision_assistant.ingestion.parsers import parse_document
+from decision_assistant.ingestion.retrieval_units import (
+    RetrievalUnitStrategy,
+    build_retrieval_units,
+    canonical_decision_unit_kind,
+)
 from decision_assistant.models import (
     Decision,
     DecisionEvidence,
@@ -62,6 +67,7 @@ class IngestionService:
         metadata_extractor: MetadataExtractor,
         upload_directory: Path,
         chunking_profile: dict[str, object] | None = None,
+        retrieval_unit_strategy: RetrievalUnitStrategy = "passage_hybrid",
     ) -> None:
         self._session = session
         self._embedding_provider = embedding_provider
@@ -71,6 +77,7 @@ class IngestionService:
         self._chunking_profile = (
             chunking_profile if chunking_profile is not None else CURRENT_CHUNKING_PROFILE
         )
+        self._retrieval_unit_strategy = retrieval_unit_strategy
 
     async def ingest(
         self,
@@ -232,32 +239,69 @@ class IngestionService:
             max_tokens=int(self._chunking_profile["max_tokens"]),
             overlap_tokens=int(self._chunking_profile["overlap_tokens"]),
         )
+        unit_drafts = build_retrieval_units(
+            drafts,
+            strategy=self._retrieval_unit_strategy,
+        )
         embeddings = await self._embedding_provider.embed(
-            [draft.content for draft in drafts],
+            [unit.draft.content for unit in unit_drafts],
             purpose=EmbeddingPurpose.DOCUMENT,
         )
-        if len(embeddings) != len(drafts):
+        if len(embeddings) != len(unit_drafts):
             raise IngestionError(
                 "Embedding provider returned wrong result count",
                 code="embedding_count_mismatch",
             )
 
-        passage_rows = [
-            Passage(
+        parent_rows: dict[int, Passage] = {}
+        passage_rows: list[Passage] = []
+        for storage_sequence, (unit, embedding) in enumerate(
+            zip(unit_drafts, embeddings, strict=True)
+        ):
+            if unit.kind == "sentence":
+                continue
+            draft = unit.draft
+            row = Passage(
                 document_version_id=version.id,
-                sequence_number=draft.sequence_number,
+                sequence_number=storage_sequence,
                 content=draft.content,
                 start_offset=draft.start_offset,
                 end_offset=draft.end_offset,
                 content_hash=draft.content_hash,
                 locator=draft.locator,
                 structural_metadata=draft.structural_metadata,
+                retrieval_unit_kind=unit.kind,
                 embedding=embedding,
                 embedding_profile=self._embedding_provider.profile.as_dict(),
             )
-            for draft, embedding in zip(drafts, embeddings, strict=True)
-        ]
+            passage_rows.append(row)
+            if unit.kind == "parent" and unit.parent_index is None:
+                parent_rows[len(parent_rows)] = row
         self._session.add_all(passage_rows)
+        await self._session.flush()
+
+        sentence_rows = [
+            Passage(
+                document_version_id=version.id,
+                sequence_number=storage_sequence,
+                content=unit.draft.content,
+                start_offset=unit.draft.start_offset,
+                end_offset=unit.draft.end_offset,
+                content_hash=unit.draft.content_hash,
+                locator=unit.draft.locator,
+                structural_metadata=unit.draft.structural_metadata,
+                retrieval_unit_kind="sentence",
+                parent_passage_id=parent_rows[unit.parent_index].id,
+                embedding=embedding,
+                embedding_profile=self._embedding_provider.profile.as_dict(),
+            )
+            for storage_sequence, (unit, embedding) in enumerate(
+                zip(unit_drafts, embeddings, strict=True)
+            )
+            if unit.kind == "sentence"
+        ]
+        passage_rows.extend(sentence_rows)
+        self._session.add_all(sentence_rows)
         await self._session.flush()
 
         job.stage = "extracting_decisions"
@@ -270,6 +314,8 @@ class IngestionService:
                     content_hash=passage.content_hash,
                 )
                 for passage in passage_rows
+                if passage.retrieval_unit_kind
+                == canonical_decision_unit_kind(self._retrieval_unit_strategy)
             ]
         )
         passage_by_id = {passage.id: passage for passage in passage_rows}
