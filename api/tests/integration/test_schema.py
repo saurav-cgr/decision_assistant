@@ -179,6 +179,42 @@ async def test_passage_structural_metadata_is_required_with_empty_default(
 
 
 @pytest.mark.asyncio
+async def test_retrieval_unit_hierarchy_schema_contract(
+    db_session: AsyncSession,
+) -> None:
+    columns = await db_session.execute(
+        text(
+            "SELECT column_name, is_nullable, column_default "
+            "FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'passages' "
+            "AND column_name IN ('retrieval_unit_kind', 'parent_passage_id') "
+            "ORDER BY column_name"
+        )
+    )
+    assert columns.all() == [
+        ("parent_passage_id", "YES", None),
+        ("retrieval_unit_kind", "NO", "'passage'::character varying"),
+    ]
+
+    constraints = await db_session.execute(
+        text(
+            "SELECT conname FROM pg_constraint "
+            "WHERE conrelid = 'passages'::regclass "
+            "AND conname IN ("
+            "'ck_passages_retrieval_unit_kind', "
+            "'ck_passages_parent_unit_link', "
+            "'fk_passages_parent_passage_id') "
+            "ORDER BY conname"
+        )
+    )
+    assert [name for (name,) in constraints] == [
+        "ck_passages_parent_unit_link",
+        "ck_passages_retrieval_unit_kind",
+        "fk_passages_parent_passage_id",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_passage_embedding_profile_is_required_no_legacy_state(
     db_session: AsyncSession,
 ) -> None:

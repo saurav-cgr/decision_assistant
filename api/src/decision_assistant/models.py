@@ -187,6 +187,15 @@ class Passage(TimestampMixin, Base):
         ),
         CheckConstraint("start_offset >= 0", name="ck_passages_start_offset"),
         CheckConstraint("end_offset >= start_offset", name="ck_passages_end_offset"),
+        CheckConstraint(
+            "retrieval_unit_kind IN ('passage', 'parent', 'sentence')",
+            name="ck_passages_retrieval_unit_kind",
+        ),
+        CheckConstraint(
+            "(retrieval_unit_kind = 'sentence' AND parent_passage_id IS NOT NULL) "
+            "OR (retrieval_unit_kind <> 'sentence' AND parent_passage_id IS NULL)",
+            name="ck_passages_parent_unit_link",
+        ),
         Index("ix_passages_search_vector", "search_vector", postgresql_using="gin"),
         Index(
             "ix_passages_embedding_hnsw",
@@ -227,6 +236,17 @@ class Passage(TimestampMixin, Base):
         nullable=False,
         default=dict,
         server_default=text("'{}'::jsonb"),
+    )
+    retrieval_unit_kind: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="passage",
+        server_default=text("'passage'"),
+    )
+    parent_passage_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("passages.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
 
 
