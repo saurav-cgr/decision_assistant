@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.config import Settings
 from decision_assistant.db import get_session, session_factory
-from decision_assistant.ingestion.profiles import resolve_chunking_profile
+from decision_assistant.ingestion.profiles import resolve_corpus_profile
 from decision_assistant.evaluation.schemas import (
     EvaluationRunRequest,
     EvaluationRunResponse,
@@ -43,7 +43,11 @@ def _build_evaluation_service(
             session=session,
             embedding_provider=providers.embedding,
             generation_provider=providers.generation,
-            chunking_profile=resolve_chunking_profile(settings.chunking_profile_preset),
+            chunking_profile=resolve_corpus_profile(
+                settings.chunking_profile_preset,
+                settings.retrieval_unit_strategy,
+            ),
+            retrieval_unit_strategy=settings.retrieval_unit_strategy,
         ),
         judge=GenerationClaimJudge(providers.generation),
     )

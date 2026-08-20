@@ -23,7 +23,7 @@ from decision_assistant.decisions.router import router as decisions_router
 from decision_assistant.documents.router import router as documents_router
 from decision_assistant.errors import ApplicationError, ErrorResponse
 from decision_assistant.evaluation.router import router as evaluation_router
-from decision_assistant.ingestion.profiles import resolve_chunking_profile
+from decision_assistant.ingestion.profiles import resolve_corpus_profile
 from decision_assistant.retrieval.router import router as retrieval_router
 from decision_assistant.providers.base import ProviderConfigurationInvalid
 from decision_assistant.providers.factory import (
@@ -217,7 +217,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await require_current_corpus_profiles(
                 session,
                 configured_embedding_profile(resolved_settings),
-                resolve_chunking_profile(resolved_settings.chunking_profile_preset),
+                resolve_corpus_profile(
+                    resolved_settings.chunking_profile_preset,
+                    resolved_settings.retrieval_unit_strategy,
+                ),
             )
         except (
             ProviderConfigurationInvalid,

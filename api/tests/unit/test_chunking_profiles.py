@@ -6,6 +6,8 @@ from decision_assistant.ingestion.profiles import (
     CHUNKING_PROFILE_PRESETS,
     CURRENT_CHUNKING_PROFILE,
     DEFAULT_CHUNKING_PROFILE_PRESET,
+    RETRIEVAL_UNIT_STRATEGIES,
+    resolve_corpus_profile,
     resolve_chunking_profile,
 )
 
@@ -43,7 +45,9 @@ def test_preset_token_budgets() -> None:
 
 def test_default_preset_is_baseline() -> None:
     assert DEFAULT_CHUNKING_PROFILE_PRESET == "baseline"
-    assert CURRENT_CHUNKING_PROFILE is CHUNKING_PROFILE_PRESETS["baseline"]
+    assert CURRENT_CHUNKING_PROFILE == resolve_corpus_profile(
+        "baseline", "passage_hybrid"
+    )
     assert CURRENT_CHUNKING_PROFILE["algorithm"] == "structural-token-v2"
 
 
@@ -57,6 +61,14 @@ def test_resolver_rejects_unknown_preset() -> None:
         resolve_chunking_profile("bogus")
 
 
+def test_corpus_profile_includes_and_validates_retrieval_strategy() -> None:
+    assert resolve_corpus_profile("baseline", "sentence_expanded")[
+        "retrieval_unit_strategy"
+    ] == "sentence_expanded"
+    with pytest.raises(ValueError):
+        resolve_corpus_profile("baseline", "unknown")
+
+
 def test_settings_default_is_baseline() -> None:
     settings = Settings()
     assert settings.chunking_profile_preset == "baseline"
@@ -64,6 +76,7 @@ def test_settings_default_is_baseline() -> None:
         resolve_chunking_profile(settings.chunking_profile_preset)["algorithm"]
         == "structural-token-v2"
     )
+    assert settings.retrieval_unit_strategy == "passage_hybrid"
 
 
 @pytest.mark.parametrize("preset", ["baseline", "compact", "expanded"])
@@ -74,3 +87,9 @@ def test_settings_accepts_valid_presets(preset: str) -> None:
 def test_settings_rejects_invalid_preset() -> None:
     with pytest.raises(ValidationError):
         Settings(chunking_profile_preset="bogus")
+
+
+def test_settings_rejects_invalid_retrieval_strategy() -> None:
+    assert "parent_child_merged" in RETRIEVAL_UNIT_STRATEGIES
+    with pytest.raises(ValidationError):
+        Settings(retrieval_unit_strategy="unknown")

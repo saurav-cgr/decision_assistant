@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from decision_assistant.ingestion.profiles import (
     CHUNKING_PROFILE_PRESETS,
     DEFAULT_CHUNKING_PROFILE_PRESET,
+    RETRIEVAL_UNIT_STRATEGIES,
 )
 
 
@@ -49,6 +50,7 @@ class Settings(BaseSettings):
     rerank_min_candidates: int = 6
     rerank_final_limit: int = 5
     chunking_profile_preset: str = DEFAULT_CHUNKING_PROFILE_PRESET
+    retrieval_unit_strategy: str = "passage_hybrid"
     evaluation_dataset_path: Path = Path("/workspace/evaluation/questions.json")
 
     @field_validator("chunking_profile_preset")
@@ -58,6 +60,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"Unknown chunking profile preset {value!r}; "
                 f"expected one of {sorted(CHUNKING_PROFILE_PRESETS)}"
+            )
+        return value
+
+    @field_validator("retrieval_unit_strategy")
+    @classmethod
+    def _validate_retrieval_unit_strategy(cls, value: str) -> str:
+        if value not in RETRIEVAL_UNIT_STRATEGIES:
+            raise ValueError(
+                f"Unknown retrieval unit strategy {value!r}; "
+                f"expected one of {sorted(RETRIEVAL_UNIT_STRATEGIES)}"
             )
         return value
 

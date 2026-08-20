@@ -63,6 +63,7 @@ from decision_assistant.workspace.embedding_profile import (
     require_current_corpus_profiles,
 )
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
+from decision_assistant.ingestion.retrieval_units import RetrievalUnitStrategy
 from decision_assistant.workspace.service import WorkspaceService
 
 CLAIM_JUDGE_PROMPT_VERSION = "claim-support-v3"
@@ -959,6 +960,7 @@ class RuntimeEvaluationExecutor:
         embedding_provider: EmbeddingProvider,
         generation_provider: GenerationProvider,
         chunking_profile: dict[str, object] | None = None,
+        retrieval_unit_strategy: RetrievalUnitStrategy = "passage_hybrid",
     ) -> None:
         self._session = session
         self._embedding_provider = embedding_provider
@@ -966,6 +968,7 @@ class RuntimeEvaluationExecutor:
         self._chunking_profile = (
             chunking_profile if chunking_profile is not None else CURRENT_CHUNKING_PROFILE
         )
+        self._retrieval_unit_strategy = retrieval_unit_strategy
 
     @property
     def embedding_profile(self) -> dict[str, Any]:
@@ -993,6 +996,7 @@ class RuntimeEvaluationExecutor:
                 embedding_provider=self._embedding_provider,
                 top_k=top_k,
                 chunking_profile=self._chunking_profile,
+                retrieval_unit_strategy=self._retrieval_unit_strategy,
             )
         else:
             rerank_enabled = bool(configuration.get("rerank_enabled", False))
@@ -1015,6 +1019,9 @@ class RuntimeEvaluationExecutor:
                     ),
                     rerank_final_limit=int(
                         configuration.get("rerank_final_limit", 5)
+                    ),
+                    strategy=configuration.get(
+                        "strategy", self._retrieval_unit_strategy
                     ),
                 ),
                 reranker=reranker,
@@ -1103,6 +1110,7 @@ class SemanticRetrievalService:
         embedding_provider: EmbeddingProvider,
         top_k: int,
         chunking_profile: dict[str, object] | None = None,
+        retrieval_unit_strategy: RetrievalUnitStrategy = "passage_hybrid",
     ) -> None:
         self._session = session
         self._embedding_provider = embedding_provider
@@ -1111,6 +1119,7 @@ class SemanticRetrievalService:
         self._chunking_profile = (
             chunking_profile if chunking_profile is not None else CURRENT_CHUNKING_PROFILE
         )
+        self._retrieval_unit_strategy = retrieval_unit_strategy
 
     async def search(
         self,
@@ -1143,6 +1152,11 @@ class SemanticRetrievalService:
             embedding_profile=self._embedding_provider.profile.as_dict(),
             limit=self._top_k,
             workspace_id=workspace_id,
+            retrieval_unit_kind=(
+                "passage"
+                if self._retrieval_unit_strategy == "passage_hybrid"
+                else "sentence"
+            ),
         )
         elapsed_ms = round((perf_counter() - started) * 1_000, 3)
         trace = RetrievalTrace(

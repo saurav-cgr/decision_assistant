@@ -43,14 +43,9 @@ CHUNKING_PROFILE_PRESETS: dict[str, dict[str, object]] = {
 }
 
 DEFAULT_CHUNKING_PROFILE_PRESET = "baseline"
-
-# Canonical default mapping: the resolved ``baseline`` preset. New service
-# boundaries resolve a profile from application settings; this constant remains
-# the default when no explicit profile is injected (e.g. offline tests).
-CURRENT_CHUNKING_PROFILE: dict[str, object] = CHUNKING_PROFILE_PRESETS[
-    DEFAULT_CHUNKING_PROFILE_PRESET
-]
-
+RETRIEVAL_UNIT_STRATEGIES = frozenset(
+    {"passage_hybrid", "sentence_expanded", "parent_child_merged"}
+)
 
 def resolve_chunking_profile(preset: str) -> dict[str, object]:
     """Return the complete chunking profile for a named preset.
@@ -64,3 +59,25 @@ def resolve_chunking_profile(preset: str) -> dict[str, object]:
             f"expected one of {sorted(CHUNKING_PROFILE_PRESETS)}"
         )
     return CHUNKING_PROFILE_PRESETS[preset]
+
+
+def resolve_corpus_profile(
+    preset: str,
+    retrieval_unit_strategy: str,
+) -> dict[str, object]:
+    """Return the complete incompatible corpus representation contract."""
+    if retrieval_unit_strategy not in RETRIEVAL_UNIT_STRATEGIES:
+        raise ValueError(
+            f"Unknown retrieval unit strategy {retrieval_unit_strategy!r}; "
+            f"expected one of {sorted(RETRIEVAL_UNIT_STRATEGIES)}"
+        )
+    return {
+        **resolve_chunking_profile(preset),
+        "retrieval_unit_strategy": retrieval_unit_strategy,
+    }
+
+
+CURRENT_CHUNKING_PROFILE = resolve_corpus_profile(
+    DEFAULT_CHUNKING_PROFILE_PRESET,
+    "passage_hybrid",
+)
