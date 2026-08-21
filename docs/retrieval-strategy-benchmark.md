@@ -26,10 +26,9 @@ Additional quality metrics: citation structural validity `1.0`, citation
 correctness `0.966667`, answer faithfulness `0.962963`, abstention accuracy
 `0.9`, and facet abstention accuracy `0.837209`.
 
-This is the comparison baseline only, not a selected winner. Benchmark
-`sentence_expanded` and `parent_child_merged` on their own freshly reset,
-reingested Gemini corpora before applying the agreed selection order: MRR,
-then gold citation coverage, then lower median latency.
+This was the initial comparison baseline. The completed three-way selection is
+recorded below using MRR, then gold citation coverage, then lower median
+latency.
 
 ## Gemini sentence-expanded — 2026-08-21
 
@@ -54,5 +53,37 @@ facet abstention accuracy `0.72093`.
 
 Compared with the passage-hybrid baseline, sentence expansion is faster by
 456.701 ms at median latency but lower on MRR (0.604167 vs 0.848958) and gold
-citation coverage (0.75 vs 0.9375). `parent_child_merged` remains pending, so
-no winner is selected yet.
+citation coverage (0.75 vs 0.9375).
+
+## Gemini parent-child merged — 2026-08-21
+
+| Field | Value |
+| --- | --- |
+| Retrieval strategy | `parent_child_merged` |
+| Corpus profile | `structural-token-v2`, `cl100k_base`, target/max/overlap `450/600/60` |
+| Corpus units | 6 active documents; 23 `parent` units; 107 `sentence` children |
+| Generation provider | Gemini `gemini-3.1-flash-lite`, JSON-schema mode, temperature 0 |
+| Embedding provider | Gemini `gemini-embedding-2`, 768 dimensions, `retrieval-prefix-v1` |
+| Evaluation run | `0f5d6790-6d07-4374-adb2-a6cade5697f0` |
+| Dataset | `atlas-v3` (20 questions) |
+| Started / completed | 2026-08-21 07:03:41 / 07:07:41 UTC |
+
+| Top-5 hit rate | MRR | Gold citation coverage | Median / p95 latency | Failures |
+| ---: | ---: | ---: | ---: | ---: |
+| 1.0 | 0.708333 | 0.75 | 5012.847 / 10018.352 ms | 0 |
+
+Additional quality metrics: citation structural validity `1.0`, citation
+correctness `0.96`, answer faithfulness `0.956522`, abstention accuracy `0.85`,
+and facet abstention accuracy `0.72093`.
+
+## Selection
+
+| Strategy | MRR | Gold citation coverage | Median latency |
+| --- | ---: | ---: | ---: |
+| `passage_hybrid` | **0.848958** | **0.9375** | 6367.664 ms |
+| `sentence_expanded` | 0.604167 | 0.75 | 5910.964 ms |
+| `parent_child_merged` | 0.708333 | 0.75 | **5012.847 ms** |
+
+**Selected strategy: `passage_hybrid`.** It has the highest MRR, the first
+selection criterion. Its higher latency does not override that result; tie
+breakers are not reached.
