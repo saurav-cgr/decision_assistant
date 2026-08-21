@@ -56,6 +56,15 @@ def test_locator_span_ignores_pdf_page() -> None:
     assert EvaluationService._locator_span({"kind": "lines", "start": 31, "end": 33}) == 2
 
 
+def test_gold_identifier_falls_back_to_stable_document_reference() -> None:
+    expected = {
+        "expected_passages": [{"document_id": "document-1"}],
+        "expected_documents": [],
+    }
+
+    assert EvaluationService._expected_identifiers(expected) == {"document-1"}
+
+
 @pytest.mark.asyncio
 async def test_successful_result_copies_answer_diagnostics() -> None:
     service = EvaluationService(

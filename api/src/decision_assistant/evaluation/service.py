@@ -908,6 +908,13 @@ class EvaluationService:
         }
         if passages:
             return passages
+        passage_documents = {
+            str(item["document_id"])
+            for item in expected.get("expected_passages", [])
+            if item.get("document_id") is not None
+        }
+        if passage_documents:
+            return passage_documents
         return {
             str(item["document_id"])
             for item in expected.get("expected_documents", [])
