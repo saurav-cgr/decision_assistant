@@ -1,194 +1,271 @@
-# Decision Memory Assistant
+<!-- ROUTE=direct | WRITE_READY=1 | READ_READY=0 | EXISTING=0 | PLANNED_DISPATCH=0 | LEAD=/root | REASON=review_cost | DETAIL=Single README diagram accuracy correction; delegation adds transfer and acceptance review on one shared document. -->
 
-A local-data-first application that converts project notes, specifications, meeting records, PDFs, and Word documents into a searchable history of decisions. Ask questions such as *"Why was authentication postponed, who decided it, and was it later changed?"* and get a concise cited answer, an ordered decision timeline, and exact source passages.
+# 🧠 Decision Memory Assistant
 
-The system distinguishes supported facts from conflicts and missing evidence. It does not fill gaps with model-generated assumptions: when evidence is absent it abstains, and when evidence conflicts it shows the competing passages instead of silently picking a winner.
+###### Evidence-first decision history for project teams
+
+Turn project notes, specifications, meeting records, PDFs, and Word documents into a searchable memory of decisions. Ask *“Why was authentication postponed, who decided it, and was it later changed?”* and receive a concise, cited answer, ordered timeline, and exact source passages.
 
 ---
 
-## Quick Start
+## 🛡️ Architecture
 
-Host requirements:
+```mermaid
+flowchart LR
+    U[Browser] -->|HTTP /api/v1| W[React 19 + TypeScript + Vite]
+    W --> A[FastAPI modular monolith]
+    A --> P[(PostgreSQL 16 + pgvector)]
+    A --> G[Gemini API]
+    O[Ollama optional profile] -.-> A
 
-- **Git** and **Docker Desktop**
-- A free-tier **Gemini API key** and network access for live inference (only needed for live model calls; the deterministic suite and fake smoke run offline)
-- No host Python, Node, npm, or PostgreSQL — every command runs through Docker Compose
+    subgraph API[FastAPI: Python 3.12]
+        A
+    end
+```
+
+The browser owns presentation and interaction state. FastAPI owns domain rules, persistence, ingestion, retrieval, evaluation, provider calls, and secret isolation. PostgreSQL stores the local corpus, decisions, audit history, and retrieval traces; Gemini is the default model provider, while Ollama is optional.
+
+---
+
+## 📚 Table of Contents
+
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [FastAPI + RAG System](#-fastapi--rag-system)
+- [Technology Stack](#-technology-stack)
+- [Installation & Setup](#-installation--setup)
+- [Usage](#-usage)
+- [Corpus Reset & Reingestion](#-corpus-reset--reingestion)
+- [Evaluation](#-evaluation)
+- [Testing](#-testing)
+- [Privacy & Limitations](#-privacy--limitations)
+- [Troubleshooting](#-troubleshooting)
+
+---
+
+## 📌 Overview
+
+Decision Memory Assistant is local-data-first decision intelligence for project evidence. It extracts structured decisions from documents, preserves immutable source versions and locators, and refuses to invent missing support. When evidence is absent, it abstains; when evidence conflicts, it presents competing passages instead of silently choosing one.
+
+### What this project demonstrates
+
+- Hybrid RAG with semantic search, PostgreSQL full-text search, structured decision fields, and Reciprocal Rank Fusion (RRF).
+- Structural, token-budgeted chunking with source locators and corpus-profile safety.
+- Evidence-only, schema-constrained generation with citation validation, repairs, conflict handling, and abstention.
+- Versioned document ingestion, manual decision corrections, revision history, timelines, inspectable retrieval traces, and benchmark evaluation.
+
+---
+
+## ✨ Key Features
+
+| Capability | Implemented behavior |
+| --- | --- |
+| 📄 **Document ingestion** | Upload `.md`, `.txt`, `.pdf`, and `.docx`; preserve line, page, paragraph, and offset locators. Empty/scanned, encrypted, and corrupt PDFs receive explicit errors. |
+| 🧩 **Decision extraction** | Extract statement, date, owner, status, reasons, alternatives, topic, and candidate relationships, each tied to evidence. |
+| ✏️ **Human correction** | Edit structured decision fields without changing source text. Corrections create audit revisions with `supported`, `unsupported`, or `needs_review` labels. |
+| 🔎 **Hybrid retrieval** | Fuse vector, passage full-text, and decision-field search with RRF; store an inspectable trace for every query. |
+| ✅ **Cited answers** | Return atomic cited claims; deterministically verify quotes, hashes, offsets, central claims, and conflicts before answering. |
+| 🗓️ **Decision timelines** | Build chronological, evidence-backed histories with `supersedes`, `revises`, and `relates_to` relationships. |
+| 📊 **Evaluation** | Compare semantic-only and hybrid retrieval on the versioned Atlas benchmark with stored diagnostics. |
+| 🔐 **Private workspaces** | Keep each business query scoped to its owner-private workspace; local username/password authentication uses Argon2 and bearer tokens. |
+
+---
+
+## ⚙️ FastAPI + RAG System
+
+### RAG architecture
+
+```mermaid
+flowchart TB
+    subgraph Ingestion
+        D[Source documents] --> P[Parsers]
+        P --> B[Source-neutral ParsedBlocks]
+        B --> C[Structural token-budgeted chunker]
+        C --> RU[Retrieval-unit builder: passage default, parent/sentence optional]
+        RU --> E[Embedding provider]
+        RU --> S[(Passages + locators + pgvector embeddings)]
+        E --> S
+        S --> DX[Decision extraction]
+        DX --> DE[(Decisions + evidence links)]
+    end
+
+    subgraph Retrieval
+        Q[User question] --> QE[Query embedding]
+        QE --> VS[Vector search]
+        Q --> FTS[Passage + decision FTS]
+        VS --> RRF[Reciprocal Rank Fusion]
+        FTS --> RRF
+        RRF --> RR{Rerank enabled?}
+        RR -->|yes| RK[Schema-constrained reranker]
+        RR -->|no / fallback| EV[Top evidence]
+        RK --> EV
+    end
+
+    subgraph Answering
+        EV --> EP[Evidence pack]
+        EP --> G[Schema-constrained generation]
+        G --> CV[Citation materialization + verifier]
+        CV --> O[Cited answer / partial / conflict / abstain]
+    end
+
+    S --> VS
+    S --> FTS
+    DE --> FTS
+    VS -. semantic candidates .-> T[RetrievalTrace]
+    FTS -. keyword + decision candidates .-> T
+    RRF -. fusion + selections + timings .-> T
+    RK -. rerank data .-> T
+```
+
+### Evidence path
+
+```text
+Upload → parse into source-neutral blocks → structural chunks → embeddings
+      → vector + FTS + decision retrieval → RRF → optional rerank
+      → evidence pack → schema-constrained answer → verifier → cited answer / partial / conflict / abstain
+```
+
+- **Ingestion** normalizes every supported source into `ParsedBlock` values, then applies one token-budgeted structural chunker. Chunks retain exact locators and do not cross hard source boundaries.
+- **Retrieval** combines semantic search, PostgreSQL English full-text search, and structured decisions. RRF creates candidate order; disabled-by-default reranker may only reorder supplied candidates and fails open to RRF.
+- **Answering** separates trusted system instructions from untrusted questions and document evidence. It validates citations against stored source content and abstains safely when support is insufficient.
+- **Observability and evaluation** store retrieval candidates, fusion/rerank details, timings, selected-passage metadata, corpus snapshots, and answer-pipeline diagnostics.
+
+### FastAPI modules
+
+| Domain | Responsibility |
+| --- | --- |
+| `auth` | Signup, login, credential recovery, password/username changes, and local bootstrap account. |
+| `workspace` | Owner-private workspaces, activation, and embedding/chunking corpus-profile guards. |
+| `documents` + `ingestion` | Uploads, source storage, background indexing, parsing, chunking, embeddings, and active-version replacement. |
+| `decisions` | Decision records, evidence links, corrections, revision history, and relationships. |
+| `retrieval` | Hybrid search, RRF, optional reranking, hierarchical evidence selection, and retrieval traces. |
+| `answering` | Evidence-pack construction, structured generation, citation materialization, verification, repairs, and abstention. |
+| `timelines` | Topic matching, relationship expansion, chronology, and timeline responses. |
+| `evaluation` | Versioned benchmark runs, corpus snapshots, retrieval metrics, citation checks, and diagnostics. |
+| `providers` | `GenerationProvider` and `EmbeddingProvider` contracts, Gemini/Ollama adapters, and deterministic test fakes. |
+
+All business endpoints use `/api/v1`. `/health`, `/ready`, `/docs`, and `/openapi.json` are intentionally unversioned.
+
+---
+
+## 🛠️ Technology Stack
+
+| Component | Technologies |
+| --- | --- |
+| Frontend | React 19, TypeScript, Vite, React Router |
+| Backend | Python 3.12, FastAPI, SQLAlchemy, Alembic |
+| Data | PostgreSQL 16, pgvector, PostgreSQL full-text search |
+| AI providers | Gemini by default; Ollama via optional Compose profile |
+| Retrieval | Structural chunking, embeddings, RRF, optional schema-constrained reranking |
+| Local runtime | Docker Compose |
+| Testing | pytest, pytest-asyncio, Vitest, Testing Library |
+
+---
+
+## 🚀 Installation & Setup
+
+### Prerequisites
+
+- Git and Docker Desktop
+- Gemini API key and network access for live model calls
+- No host Python, Node, npm, or PostgreSQL required
+
+### 1️⃣ Clone and configure
 
 ```bash
 git clone <this-repo>
 cd decision_assistant
-
-# Keep an existing .env unchanged. Add GEMINI_API_KEY to it before continuing.
 cp -n .env.example .env
-
-# Clean rebuild. WARNING: this deletes this project's Docker volumes and data.
-docker compose down \
-  --volumes \
-  --remove-orphans \
-  --rmi all
-docker compose build --no-cache --pull
-
-# Start PostgreSQL, create the schema, then start the application.
-docker compose up -d db --wait
-docker compose run --rm api alembic upgrade head
-docker compose up -d api web --wait
-
-# Verify the migration and service readiness.
-docker compose exec api alembic current
-curl -i http://localhost:8000/ready
-docker compose ps
-
-# macOS: open the web UI. On other systems, visit the same URL in a browser.
-open http://localhost:5173
 ```
 
-After a normal code change, a destructive clean rebuild is usually unnecessary. Run
-`docker compose build`, `docker compose run --rm api alembic upgrade head`, and
-`docker compose up -d --wait` instead.
-
-- **Unversioned `GET /health`** — process/database liveness. Stays green in provider-degraded, schema-migration-pending, or corpus-reset-required states.
-- **Unversioned `GET /ready`** — `200` only when the database schema is current, the selected providers have their required configuration, and no corpus reset is required; otherwise a sanitized `503`. It checks configuration *presence*, not remote credential validity.
-- **`/docs`** — interactive FastAPI OpenAPI documentation.
-
-The API binds locally by default. Business endpoints require a local account and
-must still be deployed only behind appropriate network controls.
-
----
-
-## What It Does
-
-| Capability | Behavior |
-|---|---|
-| **Ingest** | `.md`, `.txt`, `.pdf`, `.docx` with exact page/paragraph/line locators. Empty/scanned PDFs are rejected as `ocr_not_supported`; password-protected and corrupt files get explicit errors. |
-| **Extract decisions** | Schema-constrained extraction of statement, date, owner, status, reasons, alternatives, topic, and candidate relationships, each aligned to an exact source passage. |
-| **Correct** | Users edit structured fields without touching source text. Every correction writes an audit revision and is labeled `supported`, `unsupported`, or `needs_review`. |
-| **Retrieve** | Hybrid retrieval: vector search + PostgreSQL full-text (English) + structured decision fields, fused with Reciprocal Rank Fusion. Every query stores an inspectable trace. |
-| **Answer** | Cited, atomic claims with a deterministic structural verifier, conflict display, and explicit partial/full abstention. |
-| **Timeline** | Chronological, evidence-backed decision history with `supersedes` / `revises` / `relates_to` relationships. |
-| **Evaluate** | A versioned ~20-question benchmark comparing semantic-only and hybrid retrieval with documented metrics. |
-
----
-
-## Architecture
-
-Three local components run under Docker Compose:
-
-```mermaid
-flowchart LR
-    U[Browser] -->|HTTP /api/v1| A[FastAPI modular monolith]
-    A --> P[(PostgreSQL 16 + pgvector)]
-    A --> G[Gemini API]
-    subgraph W[Web: React 19 + TypeScript]
-        U
-    end
-    subgraph B[API: Python 3.12]
-        A
-    end
-    O[Ollama - optional profile] -.-> A
-```
-
-- **Web** — React 19, TypeScript, Vite, React Router. Browser routes are unversioned (`/`, `/ask`, `/timeline`, `/decisions/:id`, `/evaluation`).
-- **API** — a single-worker FastAPI modular monolith. It owns ingestion orchestration, domain rules, retrieval, answer construction, evaluation, provider calls, and secret isolation.
-- **Database** — PostgreSQL 16 with pgvector, managed by Alembic.
-- **Providers** — Gemini is the default generation and embedding provider behind application-owned interfaces. A deterministic fake keeps tests offline. Ollama remains an optional adapter behind the `ollama` Compose profile.
-
-All public business endpoints use the `/api/v1` prefix. `/health`, `/ready`, `/docs`, and `/openapi.json` remain unversioned. No unversioned compatibility aliases exist because no external client predates this contract.
-
-### Module boundaries
-
-| Module | Responsibility |
-|---|---|
-| `workspace` | Owner-private workspaces, configuration, corpus-active embedding/chunking profiles, and corpus-reset guard. |
-| `documents` | Upload validation, persistence, metadata, source rendering, ingestion status. |
-| `ingestion` | Parsing, normalization, chunking, change detection, background execution, retries. |
-| `decisions` | Extraction, validation, manual correction, evidence associations, relationships. |
-| `retrieval` | Query analysis, filters, vector/full-text search, fusion, traces. |
-| `answering` | Evidence-pack construction, structured generation, citation validation, conflicts, abstention. |
-| `timelines` | Topic matching, relationship expansion, chronological ordering, timeline DTOs. |
-| `evaluation` | Fixtures, runs, metrics, per-question diagnostics, strategy comparison. |
-| `providers` | Generation/embedding interfaces, factory, Gemini adapter, optional Ollama adapter, test fakes. |
-
-Domain modules depend only on shared database and provider interfaces; routes are thin adapters over application services. A composition-root factory selects providers from validated settings so ingestion, retrieval, answering, and evaluation share one consistent provider configuration.
-
----
-
-## Configuration
-
-Copy `.env.example` to `.env` and set values. The API container reads it; it is never committed and `GEMINI_API_KEY` is never logged or returned to the browser.
-
-### Local authentication
-
-Authentication is fully local: usernames, Argon2 password hashes, recovery-code
-hashes, and token versions are stored in PostgreSQL. Set the following values in
-the untracked `.env` file before starting the API:
+Set these required values in untracked `.env`. Never commit or log them.
 
 ```dotenv
-AUTH_JWT_SECRET=<a-long-random-secret>
-AUTH_ACCESS_TOKEN_TTL_MINUTES=1440
+GEMINI_API_KEY=<gemini-api-key>
+AUTH_JWT_SECRET=<long-random-secret>
 AUTH_BOOTSTRAP_USERNAME=<initial-owner-username>
 AUTH_BOOTSTRAP_PASSWORD=<initial-owner-password>
 ```
 
-On its first startup, the API creates the bootstrap account and assigns any
-pre-authentication workspaces to it. The bootstrap password and JWT secret must
-never be committed or logged. Users can then sign up with their own unique
-username; every user may create multiple private workspaces, and workspaces are
-not shareable.
+`GEMINI_API_KEY` is needed only for live inference. Fake-provider tests and deterministic smoke flow run without it. On first startup, API creates bootstrap account; its password and JWT secret must remain private.
 
-The browser keeps a 24-hour bearer token only in memory, so a page reload
-requires signing in again. Signup, password reset, and recovery-code rotation
-show a recovery code once. Store it safely: without it, and without an active
-session, there is no self-service recovery path. Changing a username or password
-invalidates active access tokens and requires a new sign-in.
+### 2️⃣ Build and start
 
-Key settings:
+```bash
+docker compose build
+docker compose up -d db --wait
+docker compose run --rm api alembic upgrade head
+docker compose up -d api web --wait
+```
 
-| Setting | Default | Purpose |
-|---|---|---|
-| `GENERATION_PROVIDER` / `EMBEDDING_PROVIDER` | `gemini` | Active provider for each contract. |
-| `GEMINI_API_KEY` | *(empty)* | Provider key. Empty is fine for `/health` and offline tests; live provider calls fail with `provider_configuration_invalid`. |
-| `GEMINI_GENERATION_MODEL` | `gemini-3.1-flash-lite` | Pinned stable generation model with structured output + temperature 0 on the free tier. |
-| `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-2` | 768-dimension embedding model. |
-| `GEMINI_EMBEDDING_DIMENSION` | `768` | Must match the fixed `vector(768)` schema column; any other value is rejected as `provider_configuration_invalid`. |
-| `GEMINI_EMBEDDING_CONFIG_VERSION` | `retrieval-prefix-v1` | Versioned purpose-formatting contract. |
-| `GEMINI_GENERATION_PROMPT_VERSION` | `gemini-json-v3` | Versioned generation prompt contract. |
-| `GEMINI_EMBEDDING_BATCH_SIZE` | `32` | Max embedding inputs per provider request. |
-| `GEMINI_MAX_PROMPT_CHARACTERS` | `100000` | Generation prompt budget; never silently truncated. |
-| `RERANK_ENABLED` | `false` | Enable schema-constrained reranking after RRF (disabled by default). |
-| `RERANK_CANDIDATE_LIMIT` | `12` | Max fused candidates sent to the reranker. |
-| `RERANK_MIN_CANDIDATES` | `6` | Minimum fused candidates before reranking runs. |
-| `RERANK_FINAL_LIMIT` | `5` | Evidence passages selected after reranking. |
-| `OLLAMA_*` | *(optional)* | Only used behind the `ollama` Compose profile. |
+### 3️⃣ Verify
 
-### Provider swapping
+```bash
+docker compose exec api alembic current
+curl -i http://localhost:8000/ready
+docker compose ps
+```
 
-Providers implement `EmbeddingProvider` and `GenerationProvider`. To switch, change the `*_PROVIDER` settings and (for embeddings) reset the database and reingest the corpus (see below). The optional Ollama path:
+Open [http://localhost:5173](http://localhost:5173). FastAPI OpenAPI docs: [http://localhost:8000/docs](http://localhost:8000/docs).
+
+### Service checks
+
+- `GET /health` checks process/database liveness; stays green during provider, migration, or corpus-profile problems.
+- `GET /ready` returns `200` only when schema, configured provider settings, and corpus profiles are ready; otherwise sanitized `503`.
+- `GET /docs` provides interactive API documentation.
+
+### Optional Ollama provider
 
 ```bash
 docker compose --profile ollama up -d ollama
-# set GENERATION_PROVIDER=ollama and EMBEDDING_PROVIDER=ollama
+# Set GENERATION_PROVIDER=ollama and EMBEDDING_PROVIDER=ollama in .env.
 ```
 
-### Corpus-contract reset (development policy)
+After normal source changes, use `docker compose build`, run migrations, then `docker compose up -d --wait`. Clean rebuild only for deliberate local cleanup:
 
-An embedding profile is `(provider, model, dimension, adapter_config_version)`, and a chunking profile is `(algorithm, encoding, target/max/overlap tokens)`. Vectors from different profiles are never compared. This project is in development and provides **no legacy-corpus compatibility and no in-place migration path**.
+```bash
+# WARNING: deletes every project Docker volume and its data.
+docker compose down --volumes --remove-orphans --rmi all
+docker compose build --no-cache --pull
+```
 
-If the configured embedding or chunking contract changes, the application returns `corpus_reset_required` instead of attempting a migration. Reset the PostgreSQL database and reingest every reproducible source document with the current code version:
+---
+
+## 🧭 Usage
+
+1. Sign in with bootstrap credentials; create or activate workspace.
+2. Upload Atlas sample files or project documents; wait for indexing.
+3. Open decision; correct structured metadata if needed; review evidence and revision history.
+4. Ask question; inspect citations, conflicts, abstentions, developer retrieval trace.
+5. Open Timeline to trace topic through related and superseding decisions.
+6. Run semantic-only and hybrid evaluations from Evaluation dashboard.
+
+### Deterministic demo
+
+```bash
+SMOKE_PROVIDER_MODE=fake bash scripts/smoke.sh
+# expected: SMOKE PASS: upload -> index -> ask -> citation -> timeline
+```
+
+Live Gemini acceptance flow:
+
+```bash
+SMOKE_PROVIDER_MODE=gemini bash scripts/smoke.sh
+```
+
+---
+
+## 🔄 Corpus Reset & Reingestion
+
+Embedding profile includes provider, model, dimension, and adapter configuration. Chunking profile includes algorithm, encoding, and token budgets. Different profiles cannot be compared.
+
+This development project has no legacy-corpus compatibility or in-place corpus migration. When either profile changes, app returns `corpus_reset_required`. Reset PostgreSQL only, then reingest every source:
 
 ```bash
 docker compose stop api web
 docker compose exec -T db sh -lc \
   'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
 docker compose run --rm api alembic upgrade head
-```
-
-This does **not** delete `uploads_data`, `ollama_data`, or `web_node_modules` volumes; only PostgreSQL is reset. Until a fresh, uniformly reingested corpus exists, hybrid/semantic retrieval, answering, and evaluation return `corpus_reset_required`; keyword-only inspection and correction workflows stay available.
-
-### Reingesting a reproducible corpus
-
-The reingestion script creates/activates the target workspace, uploads every supported file in stable filename order, polls each job, and prints a machine-readable manifest (checksum, document ID, active version ID, passage count):
-
-```bash
 docker compose up -d api web --wait
 docker compose run --rm -T api \
   python /workspace/scripts/ingest_corpus.py \
@@ -197,177 +274,70 @@ docker compose run --rm -T api \
   --workspace-name Atlas
 ```
 
-It never reads old database rows or uploads to reconstruct sources; all sources must exist under `sample_data`, fixtures, scripts, or an explicit external directory.
+This preserves `uploads_data`, `ollama_data`, and `web_node_modules`; resets PostgreSQL only. Do not use `docker compose down -v` for this workflow.
 
 ---
 
-## Balanced Retrieval & Prompting
+## 📊 Evaluation
 
-This project splits retrieval into deterministic structural chunking + an optional schema-constrained reranker, and separates trusted application instructions from untrusted user content at the provider boundary.
+`evaluation/questions.json` contains versioned Atlas benchmark: answerable, unsupported, multi-part, supersession, and conflict questions with expected evidence and statuses.
 
-### Token-budgeted structural chunking
+Measured results exist only after live provider run; not fabricated here. Compare stored metrics:
 
-Parsers normalize every source into a **source-neutral block contract** (`ParsedBlock`: text, block type, namespaced `group_path`, `boundary_before`, bounded attributes, JSON locator). A single chunker consumes these blocks for all source types — no source-specific branches.
+- Top-five retrieval hit rate and mean reciprocal rank
+- Citation correctness and gold-citation coverage
+- Answer faithfulness and answer/facet abstention accuracy
+- Median and p95 end-to-end and stage latency
 
-- Offline token counter: pinned `tiktoken` `cl100k_base` (a budgeting **approximation**, not a claim of token equivalence with any provider). The rank cache is baked into the image at `TIKTOKEN_CACHE_DIR`; runtime token counting works with the network disabled.
-- Budgets: target **450**, hard max **600**, overlap **≤ 60** budgeting tokens.
-- Chunks never cross hard boundaries (section/page/channel/thread) and never mix `group_path`s (thread/channel). Oversized units split at sentence then token-window boundaries, preserving exact source through offsets.
-- The current profile `structural-token-v1` is stored per active `DocumentVersion`. Changing chunking or embedding contracts is **not migratable** — it fails with `corpus_reset_required` (see above).
-
-### Trusted prompt roles
-
-`GenerationProvider.generate` takes a `GenerationRequest` with two roles:
-
-- **System instruction** — stable application policy: task/role, evidence-only behavior, the untrusted-content / prompt-injection rule, citation and abstention requirements, and output semantics not already in the JSON Schema.
-- **User content** — request-specific data only: questions, delimited passages/evidence, candidates, and judge payloads. Document text and user questions are always untrusted user-role content.
-
-Schema-invalid provider output receives one schema-repair attempt. A structured answer rejected by citation materialization or verification receives at most one additional answer-repair call with allowlisted application error codes. Both repairs append trusted system guidance while preserving user content byte-for-byte. If answer repair fails, the service safely keeps the original abstention path. Generation prompt contract versions are `gemini-json-v3` / `ollama-json-v3`.
-
-### Schema-constrained reranking
-
-When enabled and at least `RERANK_MIN_CANDIDATES` fused candidates exist, the first `RERANK_CANDIDATE_LIMIT` RRF candidates are sent to a schema-constrained reranker that returns an ordered list of the supplied passage IDs. Validation drops duplicates/unknowns, appends omitted valid IDs in RRF order, and treats an empty ranking as invalid. Any provider error, schema failure, or invalid output **falls back to RRF** and is recorded in the trace. `CancelledError` is never swallowed. The reranker may only reorder supplied IDs — it never adds evidence.
-
-Settings (all validated at startup): `RERANK_ENABLED=false`, `RERANK_CANDIDATE_LIMIT=12`, `RERANK_MIN_CANDIDATES=6`, `RERANK_FINAL_LIMIT=5`. It is **disabled by default**; enable only after recorded benchmark evidence shows measurable quality improvement without an abstention regression.
-
-`RetrievalTrace` records `rerank` (`status`, input/output order, `profile`, `fallback_reason`), `rerank_ms`, and per-selected-passage metadata (`chunking_profile`, `source_kind`). Evaluation runs snapshot the active corpus (`corpus_snapshot`) at creation so pre/post comparisons are auditable even if documents activate or retire later.
-
-### Conversation-shaped sources (contract only)
-
-Slack/Teams messages are supported as a **normalization contract** (see `tests/fixtures/conversations/` and `test_conversation_block_contract.py`): one `message` block per message with canonical `[UTC] Author: text` prefixes, channel/thread `group_path`, and `slack_message`/`teams_message` locators. Secrets, tokens, full connector payloads, and reactions are excluded. Actual Slack/Teams authentication and connector clients are **out of scope**; source adapters are plug-compatible but not shipped.
+Benchmark target: hybrid top-five hit rate ≥80% on answerable questions. Diagnostics preserve generation attempts, verification failures, dropped citations, and repair outcomes without prompts, full evidence packs, or secrets.
 
 ---
 
-## Data Model & Versioning
+## 🧪 Testing
 
-Core entities: `Workspace`, `Document`, `DocumentVersion`, `Passage`, `Decision`, `DecisionEvidence`, `DecisionRelation`, `DecisionRevision`, `IngestionJob`, `RetrievalTrace`, and the `Evaluation*` records.
-
-- **Versioned documents.** Each upload creates an immutable `DocumentVersion` (`staging` → `active`). Only the active version participates in retrieval. Re-uploading an identical file (SHA-256) is idempotent; a changed file stages a new version and atomically retires the old one.
-- **Passages** carry stable locators (line range, PDF page + offsets, DOCX paragraph range + offsets), a content hash, an FTS vector, an embedding, and its embedding profile.
-- **Decisions** belong to the version they came from. Re-indexed documents retire automatically extracted decisions; user corrections survive but become `needs_review` until re-associated with active passages. They are never silently overwritten.
-- **Relationship authority.** Only explicit or user-confirmed `supersedes` links drive authoritative supersession display. Model-inferred links appear as `possible revision` and do not change status.
-- **Retired versions** are retained so revision history and old citations remain inspectable.
-
----
-
-## Supported Formats & Limitations
-
-- `.md` — heading/line context preserved
-- `.txt` — normalized plain text, line ranges
-- `.pdf` — embedded text page-by-page, page anchors
-- `.docx` — paragraphs + linearized table cells, paragraph anchors
-
-The MVP does not attempt layout reconstruction. PDF tables and multi-column layouts may extract imperfectly. Image-only/scanned PDFs are rejected as requiring OCR. Macro/script execution, link following, and password recovery are out of scope. Extracted document text is treated as **untrusted evidence**, never as system instructions.
-
----
-
-## Data Transfer & Privacy Boundaries
-
-The application is **local-data-first**: source files, PostgreSQL data, and embeddings persist in local Docker volumes. It is not fully offline — model inference happens via the Gemini API, and transmitted content is processed by Google under its terms.
-
-What is sent to Gemini:
-- Document-purpose embeddings of every normalized passage
-- The question (as a query embedding and in the answer prompt)
-- Selected evidence passages, passage IDs, and corrected fields during answering
-- Metadata/decision extraction (can cover the complete normalized document across bounded batches)
-- Evaluation questions, selected evidence, generated claims, and judge material
-
-What is **never** sent: original binary files, local storage paths, database credentials, the API key in request content, unrelated passages during answering, or application telemetry. The free tier is appropriate for the fictional Atlas corpus and non-confidential demo content only; do not ingest confidential material without accepting Google's applicable terms.
-
----
-
-## Evaluation
-
-The versioned benchmark (`evaluation/questions.json`, dataset `atlas-v3`) contains ~20 questions covering multi-part questions, supersession, conflicts, and unsupported/abstain cases, with expected claims, document/passage locators, expected status, and answer-or-abstain expectations.
-
-### Metrics
-
-- **Top-five retrieval hit rate** — fraction of answerable questions with at least one expected passage (or document) in the top five.
-- **Mean Reciprocal Rank** — mean reciprocal position of the first expected result; a miss scores 0.
-- **Citation correctness** — fraction of structurally valid claim-citation links that the temperature-zero judge confirms support their claims; valid alternative evidence is accepted.
-- **Gold citation coverage** — fraction of answerable questions citing at least one benchmark gold passage/document. This stays separate from citation correctness and retrieval ranking.
-- **Answer faithfulness** — fraction of generated atomic claims judged supported by their cited passages, using a versioned temperature-zero judge with stored output.
-- **Abstention accuracy** — question-level classification accuracy against the expected answer/partial/abstain outcome.
-- **Facet abstention accuracy** — per-facet accuracy for whether each part of a multi-part question was answered, partially answered, or withheld.
-- **Latency** — median and p95 end-to-end, plus retrieval/generation/verification stage timings.
-
-### Running the benchmark
+All tests run through Docker Compose.
 
 ```bash
-# Start semantic-only and hybrid runs from the Evaluation dashboard, or via the API:
-# POST /api/v1/workspaces/{workspace_id}/evaluations/runs {"strategy": "hybrid", ...}
-# GET  /api/v1/workspaces/{workspace_id}/evaluations/runs/{id}
+make test-api    # pytest; live_provider tests excluded by default
+make test-web    # Vitest + Testing Library
+make migrate     # Alembic upgrade head
+make smoke       # deterministic fake-provider smoke flow
 ```
 
-**Measured results are populated after a live Gemini run** (requires `GEMINI_API_KEY`). They are deliberately not fabricated here. The target for the definition of done is a hybrid top-five hit rate of at least 80% on answerable questions.
-
-Each evaluation result stores bounded answer-pipeline diagnostics: generation attempts, verification failures, dropped citations, repair outcome, and structured candidates. Open **View diagnostics** in the Evaluation dashboard to inspect why an answer was accepted, repaired, or withheld; prompts, full evidence packs, and secrets are not stored there.
-
-#### Judge disagreement audit
-
-Completed by manual review after each live run. For every judge/human disagreement, record question ID, claim, judge result, human result, and resolution. (Pending live run.)
+- API: parsers, chunking, locators, RRF, reranking, evidence alignment, citations, abstention, timelines, corpus guards, provider fakes, API integration.
+- Web: uploads, ingestion status, citations, conflicts, errors, polling, corrections, timelines, evaluation, accessibility behavior.
+- Live provider contracts marked `live_provider`; run only when live Gemini/Ollama execution intended.
 
 ---
 
-## Demo Flow (3–5 minutes)
+## 🔒 Privacy & Limitations
 
-```bash
-SMOKE_PROVIDER_MODE=gemini bash scripts/smoke.sh
-```
+Source files, DB records, embeddings, and traces persist in local Docker volumes. App is not fully offline when Gemini selected: normalized passage text for embeddings, questions, selected evidence, extraction material, and evaluation payloads go to Gemini under Google terms.
 
-1. Ingest the two Atlas Markdown fixtures (02-architecture-sync, 03-auth-rollout) — watch extraction.
-2. Open **Decision Detail** and correct a structured field; observe the revision history and evidence label.
-3. **Ask** the authentication question; see the cited answer, then expand the developer retrieval trace.
-4. Open **Timeline** for `authentication`; confirm the later decision `supersedes` the earlier proposal and the earlier one displays as superseded.
-5. Open **Evaluation**; start semantic-only and hybrid runs and compare metrics.
+Original binary files, local paths, DB credentials, API keys, unrelated answer-time passages, and application telemetry do not go to Gemini. Use fictional Atlas corpus for demos; do not ingest confidential material without accepting provider terms.
 
-The deterministic equivalent uses fake providers and needs no key or network:
-
-```bash
-SMOKE_PROVIDER_MODE=fake bash scripts/smoke.sh
-# expected: SMOKE PASS: upload -> index -> ask -> citation -> timeline
-```
+Supported formats: Markdown, text, PDFs with embedded text, DOCX. Scanned PDFs need OCR and are rejected. Complex PDF layout, tables, multi-column text, encrypted files, macros, link following, password recovery out of scope. Source text stays untrusted evidence, never system instructions.
 
 ---
 
-## Testing
-
-Everything runs through Docker; no host runtimes required.
-
-```bash
-make test-api        # docker compose run --rm api pytest -m 'not live_provider'
-make test-web        # docker compose run --rm web npm test -- --run
-make migrate         # docker compose run --rm api alembic upgrade head
-make smoke           # bash scripts/smoke.sh (defaults to fake mode)
-```
-
-- Unit: parsing, chunking, locators, RRF, evidence alignment, citation validation, abstention, timeline ordering, provider fakes.
-- Integration: PostgreSQL full-text/vector queries, staged ingestion transactions, active-version replacement, corpus-reset guards, and API endpoints.
-- Provider contract: mocked-transport Gemini request mapping (purpose formatting, schema, cardinality/order/dimension/finite-value validation, retry/error classification, secret redaction); optional Ollama contracts; deterministic fakes.
-- Frontend: upload/status, citations, conflicts, errors, polling, corrections, timeline rendering.
-- Smoke: fake-provider Compose flow runs deterministically; a separately marked live Gemini acceptance repeats the full cited-answer flow. Live-provider tests are marked `live_provider` and excluded from the deterministic suite.
-
-Tests do not require live model output except the explicitly marked Gemini acceptance, which passes only after a real upload → Gemini embedding/extraction → question → cited answer → timeline flow. Missing credentials or quota exhaustion marks it skipped/inconclusive — never a pass.
-
----
-
-## Troubleshooting
+## 🩺 Troubleshooting
 
 | Symptom | Cause / fix |
-|---|---|
-| Live calls fail with `provider_configuration_invalid` | `GEMINI_API_KEY` is empty. Add it to `.env` (never commit it). |
-| `provider_quota_exhausted` | Free-tier daily quota hit. Wait for reset or change provider/tier. |
-| `provider_authentication_failed` | Key rejected by Gemini. Check the key. |
-| `corpus_reset_required` | Embedding or chunking profile changed; reset PostgreSQL and reingest the corpus (no in-place migration). |
-| Hybrid answers abstain | Not enough supported evidence in active passages; inspect the retrieval trace. |
-| Stale `running` ingestion jobs | An API restart interrupted in-process jobs; the UI exposes a retry action. |
+| --- | --- |
+| `provider_configuration_invalid` | Add `GEMINI_API_KEY`, or verify selected provider settings. |
+| API exits at startup | Set `AUTH_JWT_SECRET`, `AUTH_BOOTSTRAP_USERNAME`, `AUTH_BOOTSTRAP_PASSWORD` in `.env`. |
+| `provider_quota_exhausted` | Gemini free-tier quota reached; wait for reset or use another configured provider. |
+| `provider_authentication_failed` | Gemini rejected key; verify value and permissions. |
+| `corpus_reset_required` | Embedding or chunking profile changed; reset PostgreSQL and reingest sources. |
+| Hybrid answer abstains | Active corpus lacks enough supported evidence; inspect retrieval trace. |
+| Ingestion job stays `running` | API restart interrupted in-process work; use UI retry. |
 
 ---
 
-## Known Trade-offs
+## ⚖️ Trade-offs
 
-- Modular monolith: boundaries are visible without distributed-operations overhead.
-- FastAPI background tasks are in-process; an API restart interrupts non-durable jobs.
-- RRF is transparent and deterministic; the implemented schema-constrained reranker remains disabled by default until evaluation justifies enabling it.
-- Gemini removes local model download/CPU and improves demo reliability but adds network, quota, vendor, and data-governance dependencies.
-- Exact source anchors are reliable for normalized extracted text, not pixel-perfect PDF coordinates.
-- The evaluation set is intentionally small and project-specific — results demonstrate disciplined measurement, not broad production generalization.
+- Modular monolith keeps boundaries visible without distributed-systems overhead.
+- FastAPI background ingestion is in-process; API restart interrupts non-durable jobs.
+- RRF is transparent; reranking stays disabled until benchmark evidence proves benefit without abstention regression.
+- Gemini improves demo reliability but adds network, quota, vendor, and data-governance dependencies.
+- Source anchors exact for normalized text, not pixel-perfect PDF coordinates.
