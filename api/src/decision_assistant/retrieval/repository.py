@@ -158,6 +158,7 @@ class RetrievalRepository:
             .over(
                 partition_by=func.coalesce(Passage.embedding_cache_id, Passage.id),
                 order_by=(
+                    score.desc() if descending else score,
                     Document.display_name,
                     DocumentVersion.version_number,
                     Passage.sequence_number,

@@ -593,6 +593,75 @@ async def test_decision_fields_add_their_evidence_passage_as_candidate(
 
 
 @pytest.mark.asyncio
+async def test_decision_search_keeps_the_highest_rank_for_shared_passage(
+    db_session: AsyncSession,
+) -> None:
+    workspace = await create_workspace(db_session)
+    _, version = await create_version(db_session, workspace, name="decision-rank.md")
+    passage = await create_passage(
+        db_session,
+        version,
+        sequence_number=0,
+        content="The rollout dependency remains unresolved.",
+        embedding=[0.0] * 768,
+    )
+    decisions = [
+        Decision(
+            document_version_id=version.id,
+            statement="authentication rollout needs more operational review",
+            status="active",
+            reasons=[],
+            alternatives=[],
+            project="Atlas",
+            topic="authentication",
+            provenance="extracted",
+            review_state="supported",
+            user_edited=False,
+            retired=False,
+        ),
+        Decision(
+            document_version_id=version.id,
+            statement="authentication",
+            status="active",
+            reasons=[],
+            alternatives=[],
+            project="Atlas",
+            topic="authentication",
+            provenance="extracted",
+            review_state="supported",
+            user_edited=False,
+            retired=False,
+        ),
+    ]
+    db_session.add_all(decisions)
+    await db_session.flush()
+    db_session.add_all(
+        DecisionEvidence(
+            decision_id=decision.id,
+            passage_id=passage.id,
+            field_name=None,
+            start_offset=0,
+            end_offset=len(passage.content),
+            support_state="supported",
+            is_primary=True,
+            content_hash=passage.content_hash,
+        )
+        for decision in decisions
+    )
+    await db_session.flush()
+
+    results = await RetrievalRepository(db_session).decision_search(
+        "authentication",
+        RetrievalFilters(),
+        limit=1,
+        workspace_id=workspace.id,
+    )
+
+    assert results[0].passage.id == passage.id
+    assert results[0].raw_score > 0.1
+
+
+@pytest.mark.asyncio
 async def test_trace_api_returns_trace_and_stable_not_found(
     db_session: AsyncSession,
 ) -> None:
