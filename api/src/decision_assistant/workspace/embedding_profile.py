@@ -5,11 +5,17 @@ from hashlib import sha256
 import json
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import Document, DocumentVersion, Passage, Workspace
+from decision_assistant.models import (
+    Document,
+    DocumentVersion,
+    EmbeddingCache,
+    Passage,
+    Workspace,
+)
 from decision_assistant.providers.base import EmbeddingProfile
 
 
@@ -83,11 +89,27 @@ async def get_corpus_state(
     mismatched_embedding = 0
     mismatched_chunking = 0
     if active_count:
+        profile_fingerprint = embedding_profile_fingerprint(configured_embedding)
         mismatched_embedding = int(
             await session.scalar(
-                select(func.count(Passage.id)).where(
+                select(func.count(Passage.id))
+                .select_from(Passage)
+                .join(
+                    DocumentVersion,
+                    DocumentVersion.id == Passage.document_version_id,
+                )
+                .join(Document, Document.id == DocumentVersion.document_id)
+                .outerjoin(
+                    EmbeddingCache,
+                    Passage.embedding_cache_id == EmbeddingCache.id,
+                )
+                .where(
                     *active,
-                    Passage.embedding_profile != profile,
+                    or_(
+                        EmbeddingCache.id.is_(None),
+                        EmbeddingCache.embedding_profile_fingerprint
+                        != profile_fingerprint,
+                    ),
                 )
             )
             or 0

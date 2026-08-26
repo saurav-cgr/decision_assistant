@@ -24,6 +24,7 @@ from decision_assistant.models import (
     DecisionRevision,
     Document,
     DocumentVersion,
+    EmbeddingCache,
     Passage,
     Workspace,
 )
@@ -32,6 +33,7 @@ from decision_assistant.providers.fakes import (
     FakeGenerationProvider,
 )
 from decision_assistant.workspace.context import WorkspaceContext, get_workspace_context
+from decision_assistant.workspace.embedding_profile import embedding_profile_fingerprint
 
 FAKE_EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
 
@@ -156,6 +158,19 @@ async def decisions_api(
     )
     db_session.add_all([active_passage, retired_passage])
     await db_session.flush()
+    for passage in (active_passage, retired_passage):
+        cache = EmbeddingCache(
+            workspace_id=workspace.id,
+            content_hash=passage.content_hash,
+            embedding_profile_fingerprint=embedding_profile_fingerprint(
+                FAKE_EMBEDDING_PROFILE
+            ),
+            embedding_profile=FAKE_EMBEDDING_PROFILE,
+            embedding=passage.embedding,
+        )
+        db_session.add(cache)
+        await db_session.flush()
+        passage.embedding_cache_id = cache.id
 
     earlier_decision = Decision(
         document_version_id=active_version.id,

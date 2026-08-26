@@ -153,6 +153,11 @@ async def test_hybrid_retrieval_abstains_before_provider_call_when_reindex_requi
         embedding=[0.0] * 768,
     )
     passage.embedding_profile = {"provider": "legacy", "model": "old"}
+    cache = await db_session.get(EmbeddingCache, passage.embedding_cache_id)
+    assert cache is not None
+    cache.embedding_profile_fingerprint = embedding_profile_fingerprint(
+        passage.embedding_profile
+    )
     await db_session.flush()
 
     with pytest.raises(CorpusResetRequired) as error:

@@ -19,6 +19,7 @@ from decision_assistant.models import (
     DecisionEvidence,
     Document,
     DocumentVersion,
+    EmbeddingCache,
     Passage,
     Workspace,
 )
@@ -26,6 +27,7 @@ from decision_assistant.providers.base import EmbeddingPurpose
 from decision_assistant.providers.fakes import FakeEmbeddingProvider
 from decision_assistant.retrieval.service import HybridRetrievalService
 from decision_assistant.timelines.service import TimelineService
+from decision_assistant.workspace.embedding_profile import embedding_profile_fingerprint
 
 EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
 
@@ -90,6 +92,18 @@ async def _seed_workspace(
     )
     session.add(passage)
     await session.flush()
+    cache = EmbeddingCache(
+        workspace_id=workspace.id,
+        content_hash=passage.content_hash,
+        embedding_profile_fingerprint=embedding_profile_fingerprint(
+            EMBEDDING_PROFILE
+        ),
+        embedding_profile=EMBEDDING_PROFILE,
+        embedding=_embedding,
+    )
+    session.add(cache)
+    await session.flush()
+    passage.embedding_cache_id = cache.id
 
     decision = Decision(
         document_version_id=version.id,

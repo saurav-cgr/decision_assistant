@@ -7,7 +7,13 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.models import Document, DocumentVersion, Passage, Workspace
+from decision_assistant.models import (
+    Document,
+    DocumentVersion,
+    EmbeddingCache,
+    Passage,
+    Workspace,
+)
 from decision_assistant.providers.base import EmbeddingPurpose
 from decision_assistant.providers.fakes import FakeEmbeddingProvider, FakeGenerationProvider
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
@@ -18,6 +24,7 @@ from decision_assistant.retrieval.reranking import (
 )
 from decision_assistant.retrieval.schemas import RetrievalSearchRequest
 from decision_assistant.retrieval.service import HybridRetrievalService, RetrievalConfig
+from decision_assistant.workspace.embedding_profile import embedding_profile_fingerprint
 
 
 def test_resolve_reranked_order_reorders_and_appends_omitted() -> None:
@@ -119,6 +126,19 @@ async def _corpus(
         )
         db_session.add(passage)
         passages.append(passage)
+    await db_session.flush()
+    profile = embedding.profile.as_dict()
+    for passage in passages:
+        cache = EmbeddingCache(
+            workspace_id=workspace.id,
+            content_hash=passage.content_hash,
+            embedding_profile_fingerprint=embedding_profile_fingerprint(profile),
+            embedding_profile=profile,
+            embedding=passage.embedding,
+        )
+        db_session.add(cache)
+        await db_session.flush()
+        passage.embedding_cache_id = cache.id
     await db_session.flush()
     return workspace, embedding, passages
 

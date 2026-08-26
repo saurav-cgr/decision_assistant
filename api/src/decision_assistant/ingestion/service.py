@@ -251,16 +251,9 @@ class IngestionService:
             document.workspace_id,
             unit_drafts,
         )
-        embeddings = [
-            embedding_cache[unit.draft.content_hash].embedding
-            for unit in unit_drafts
-        ]
-
         parent_rows: dict[int, Passage] = {}
         passage_rows: list[Passage] = []
-        for storage_sequence, (unit, embedding) in enumerate(
-            zip(unit_drafts, embeddings, strict=True)
-        ):
+        for storage_sequence, unit in enumerate(unit_drafts):
             if unit.kind == "sentence":
                 continue
             draft = unit.draft
@@ -275,8 +268,6 @@ class IngestionService:
                 structural_metadata=draft.structural_metadata,
                 retrieval_unit_kind=unit.kind,
                 embedding_cache_id=embedding_cache[draft.content_hash].id,
-                embedding=embedding,
-                embedding_profile=self._embedding_provider.profile.as_dict(),
             )
             passage_rows.append(row)
             if unit.kind == "parent" and unit.parent_index is None:
@@ -297,12 +288,8 @@ class IngestionService:
                 retrieval_unit_kind="sentence",
                 parent_passage_id=parent_rows[unit.parent_index].id,
                 embedding_cache_id=embedding_cache[unit.draft.content_hash].id,
-                embedding=embedding,
-                embedding_profile=self._embedding_provider.profile.as_dict(),
             )
-            for storage_sequence, (unit, embedding) in enumerate(
-                zip(unit_drafts, embeddings, strict=True)
-            )
+            for storage_sequence, unit in enumerate(unit_drafts)
             if unit.kind == "sentence"
         ]
         passage_rows.extend(sentence_rows)
