@@ -231,7 +231,7 @@ async def test_evaluation_schema_allows_retrieval_unit_strategies(
 
 
 @pytest.mark.asyncio
-async def test_passage_embedding_profile_is_required_no_legacy_state(
+async def test_passage_embedding_profile_is_nullable_for_cache_backed_rows(
     db_session: AsyncSession,
 ) -> None:
     nullability = await db_session.execute(
@@ -242,7 +242,77 @@ async def test_passage_embedding_profile_is_required_no_legacy_state(
             "AND column_name = 'embedding_profile'"
         )
     )
-    assert nullability.scalar_one() == "NO"
+    assert nullability.scalar_one() == "YES"
+
+
+@pytest.mark.asyncio
+async def test_embedding_cache_schema_contract(db_session: AsyncSession) -> None:
+    columns = await db_session.execute(
+        text(
+            "SELECT column_name, is_nullable "
+            "FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'embedding_cache' "
+            "AND column_name IN ("
+            "'workspace_id', 'content_hash', 'embedding_profile_fingerprint', "
+            "'embedding_profile', 'embedding') ORDER BY column_name"
+        )
+    )
+    assert columns.all() == [
+        ("content_hash", "NO"),
+        ("embedding", "NO"),
+        ("embedding_profile", "NO"),
+        ("embedding_profile_fingerprint", "NO"),
+        ("workspace_id", "NO"),
+    ]
+
+    constraints = await db_session.execute(
+        text(
+            "SELECT conname FROM pg_constraint "
+            "WHERE conrelid = 'embedding_cache'::regclass "
+            "AND conname IN ("
+            "'uq_embedding_cache_content_profile', "
+            "'embedding_cache_workspace_id_fkey') ORDER BY conname"
+        )
+    )
+    assert [name for (name,) in constraints] == [
+        "embedding_cache_workspace_id_fkey",
+        "uq_embedding_cache_content_profile",
+    ]
+
+    passage_fk = await db_session.execute(
+        text(
+            "SELECT confdeltype FROM pg_constraint "
+            "WHERE conname = 'fk_passages_embedding_cache_id'"
+        )
+    )
+    assert passage_fk.scalar_one().decode() == "n"
+
+    index = await db_session.execute(
+        text(
+            "SELECT indexdef FROM pg_indexes "
+            "WHERE schemaname = 'public' "
+            "AND indexname = 'ix_embedding_cache_embedding_hnsw'"
+        )
+    )
+    assert "USING hnsw" in index.scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_passage_embedding_columns_are_deprecated_and_nullable(
+    db_session: AsyncSession,
+) -> None:
+    result = await db_session.execute(
+        text(
+            "SELECT column_name, is_nullable FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'passages' "
+            "AND column_name IN ('embedding', 'embedding_profile') "
+            "ORDER BY column_name"
+        )
+    )
+    assert result.all() == [
+        ("embedding", "YES"),
+        ("embedding_profile", "YES"),
+    ]
 
 
 @pytest.mark.asyncio
