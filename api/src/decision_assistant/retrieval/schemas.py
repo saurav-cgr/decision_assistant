@@ -30,12 +30,21 @@ class RetrievalSearchRequest(RetrievalModel):
         return normalized
 
 
+class EquivalentSource(RetrievalModel):
+    passage_id: UUID
+    document_id: UUID
+    document_version_id: UUID
+    document_name: str
+    locator: dict[str, Any]
+
+
 class RetrievalResult(RetrievalModel):
     passage_id: UUID
     content: str
     locator: dict[str, Any]
     fused_score: float
     source_ranks: dict[str, int]
+    equivalent_sources: list[EquivalentSource] = Field(default_factory=list)
 
 
 class RetrievalSearchResponse(RetrievalModel):

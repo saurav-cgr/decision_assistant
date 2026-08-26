@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from decision_assistant.retrieval.schemas import EquivalentSource
+
 
 class AnswerModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -63,6 +65,7 @@ class SourceCitation(Citation):
     document_id: UUID
     document_name: str
     locator: dict[str, Any]
+    equivalent_sources: list[EquivalentSource] = Field(default_factory=list)
 
 
 class AnswerClaim(AnswerModel):

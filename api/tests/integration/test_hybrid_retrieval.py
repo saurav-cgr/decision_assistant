@@ -366,10 +366,19 @@ async def test_retrieval_collapses_passages_sharing_an_embedding_cache_entry(
     trace = await db_session.get(RetrievalTrace, results.trace_id)
 
     assert [item.passage_id for item in results.results] == [first.id]
+    assert [item.passage_id for item in results.results[0].equivalent_sources] == [
+        first.id,
+        second.id,
+    ]
     assert trace is not None
     assert len(trace.semantic_candidates) == 1
     assert len(trace.keyword_candidates) == 1
     assert trace.fused_results[0]["passage_id"] == str(first.id)
+    selected_metadata = trace.selected_passage_metadata[0]
+    assert selected_metadata["embedding_cache_id"] == str(first.embedding_cache_id)
+    assert [
+        item["passage_id"] for item in selected_metadata["equivalent_sources"]
+    ] == [str(first.id), str(second.id)]
 
 
 @pytest.mark.asyncio
