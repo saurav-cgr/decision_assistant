@@ -40,7 +40,7 @@ from decision_assistant.providers.base import GenerationProvider, GenerationRequ
 from decision_assistant.providers.orchestration import (
     generate_with_repair_diagnostics,
 )
-from decision_assistant.retrieval.schemas import RetrievalSearchRequest
+from decision_assistant.retrieval.schemas import EquivalentSource, RetrievalSearchRequest
 from decision_assistant.retrieval.service import HybridRetrievalService
 
 
@@ -144,6 +144,10 @@ class AnswerService:
             workspace_id=workspace_id,
         )
         passage_ids = [result.passage_id for result in retrieval.results]
+        equivalent_sources = {
+            result.passage_id: result.equivalent_sources
+            for result in retrieval.results
+        }
         passages = await self._load_active_passages(passage_ids)
         fields = await self._load_decision_fields(passage_ids)
         evidence_pack = build_evidence_pack(passages, fields)
@@ -251,7 +255,10 @@ class AnswerService:
                 state=verification.state,
                 confidence=generated.confidence,
                 claims=generated.claims,
-                citations=await self._source_citations(generated.citations),
+                citations=await self._source_citations(
+                    generated.citations,
+                    equivalent_sources,
+                ),
                 conflicts=verification.conflicts,
                 unsupported_facets=verification.unsupported_facets,
                 trace_id=retrieval.trace_id,
@@ -262,6 +269,7 @@ class AnswerService:
     async def _source_citations(
         self,
         citations: list[Citation],
+        equivalent_sources: dict[UUID, list[EquivalentSource]] | None = None,
     ) -> list[SourceCitation]:
         if not citations:
             return []
@@ -290,6 +298,9 @@ class AnswerService:
                 document_id=source_by_passage[citation.passage_id][1].id,
                 document_name=source_by_passage[citation.passage_id][1].display_name,
                 locator=source_by_passage[citation.passage_id][0].locator,
+                equivalent_sources=(equivalent_sources or {}).get(
+                    citation.passage_id, []
+                ),
             )
             for citation in citations
             if citation.passage_id in source_by_passage

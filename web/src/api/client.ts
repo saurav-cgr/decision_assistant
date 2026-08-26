@@ -364,6 +364,9 @@ export function uploadDocuments(
       `${API_V1}/workspaces/${requireWorkspace()}/documents/upload`,
     );
     request.setRequestHeader("accept", "application/json");
+    if (accessToken) {
+      request.setRequestHeader("authorization", `Bearer ${accessToken}`);
+    }
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) {
         onProgress(Math.round((event.loaded / event.total) * 100));

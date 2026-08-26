@@ -177,6 +177,37 @@ class DocumentVersion(TimestampMixin, Base):
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class EmbeddingCache(TimestampMixin, Base):
+    __tablename__ = "embedding_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "content_hash",
+            "embedding_profile_fingerprint",
+            name="uq_embedding_cache_content_profile",
+        ),
+        Index(
+            "ix_embedding_cache_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        index=True,
+    )
+    content_hash: Mapped[str] = mapped_column(String(64))
+    embedding_profile_fingerprint: Mapped[str] = mapped_column(String(64))
+    embedding_profile: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # Deprecated duplicate; semantic retrieval uses EmbeddingCache.embedding.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSION), nullable=True
+    )
+
+
 class Passage(TimestampMixin, Base):
     __tablename__ = "passages"
     __table_args__ = (
@@ -223,10 +254,9 @@ class Passage(TimestampMixin, Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSION))
     # Embedding-only; chunking metadata lives on DocumentVersion.chunking_profile.
     # Non-null: this schema generation has no legacy migratable rows.
-    embedding_profile: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
+    # Deprecated duplicate; profile identity lives on EmbeddingCache.
+    embedding_profile: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
     )
     # Structural context of the passage's units (shared group_path and sorted
     # unique block_types). Historic rows carry the '{}' default until the
@@ -236,6 +266,11 @@ class Passage(TimestampMixin, Base):
         nullable=False,
         default=dict,
         server_default=text("'{}'::jsonb"),
+    )
+    embedding_cache_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("embedding_cache.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     retrieval_unit_kind: Mapped[str] = mapped_column(
         String(20),

@@ -95,7 +95,16 @@ export type SourceCitation = {
   content_hash: string;
   document_id: string;
   document_name: string;
-  locator: Record<string, string | number>;
+  locator: Record<string, unknown>;
+  equivalent_sources: EquivalentSource[];
+};
+
+export type EquivalentSource = {
+  passage_id: string;
+  document_id: string;
+  document_version_id: string;
+  document_name: string;
+  locator: Record<string, unknown>;
 };
 
 export type EvidenceConflict = {
@@ -145,6 +154,15 @@ export type RetrievalCandidate = {
   source_ranks?: Record<string, number>;
 };
 
+export type RetrievalResult = {
+  passage_id: string;
+  content: string;
+  locator: Record<string, unknown>;
+  fused_score: number;
+  source_ranks: Record<string, number>;
+  equivalent_sources: EquivalentSource[];
+};
+
 export type RetrievalTraceResponse = {
   id: string;
   request_id: string;
@@ -165,8 +183,10 @@ export type RetrievalTraceResponse = {
 export type SelectedPassageMetadata = {
   passage_id: string;
   document_version_id: string;
+  embedding_cache_id: string | null;
   chunking_profile: Record<string, unknown>;
   source_kind: string;
+  equivalent_sources: EquivalentSource[];
 };
 
 export type RerankTrace = {

@@ -7,11 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import DocumentVersion, Passage, RetrievalTrace
+from decision_assistant.models import Passage, RetrievalTrace
 from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.ingestion.retrieval_units import RetrievalUnitStrategy
 from decision_assistant.retrieval.repository import RankedPassage, RetrievalRepository
+from decision_assistant.retrieval.provenance import (
+    load_equivalent_sources,
+    selected_passage_metadata,
+)
 from decision_assistant.retrieval.reranking import (
     RerankCandidate,
     RerankingProvider,
@@ -193,10 +197,19 @@ class HybridRetrievalService:
         selected_ids, evidence_by_id, root_ids_by_evidence = (
             await self._select_evidence_units(root_ids, passage_by_id)
         )
-        selected_passage_metadata = await self._selected_passage_metadata(
+        equivalent_sources = await load_equivalent_sources(
+            self._session,
+            selected_ids,
+            evidence_by_id,
+            workspace_id=workspace_id,
+        )
+        selected_metadata = await selected_passage_metadata(
+            self._session,
             selected_ids,
             evidence_by_id,
             root_ids_by_evidence,
+            equivalent_sources,
+            retrieval_strategy=self._config.strategy,
         )
 
         filters = request.filters.model_dump(mode="json", exclude_none=True)
@@ -225,7 +238,7 @@ class HybridRetrievalService:
                 for item in fused
             ],
             selected_passage_ids=[str(item) for item in selected_ids],
-            selected_passage_metadata=selected_passage_metadata,
+            selected_passage_metadata=selected_metadata,
             rerank=rerank_block,
             timings=timings,
             configuration=self._config.as_dict(),
@@ -244,6 +257,7 @@ class HybridRetrievalService:
                     source_ranks=fused_by_id[
                         root_ids_by_evidence[item][0]
                     ].source_ranks,
+                    equivalent_sources=equivalent_sources.get(item, []),
                 )
                 for item in selected_ids
             ],
@@ -387,43 +401,6 @@ class HybridRetrievalService:
             rerank_ms,
         )
 
-    async def _selected_passage_metadata(
-        self,
-        selected_ids: list[UUID],
-        passage_by_id: dict[UUID, Passage],
-        root_ids_by_evidence: dict[UUID, list[UUID]],
-    ) -> list[dict[str, object]]:
-        if not selected_ids:
-            return []
-        version_ids = {
-            passage_by_id[passage_id].document_version_id for passage_id in selected_ids
-        }
-        versions = {
-            version.id: version
-            for version in await self._session.scalars(
-                select(DocumentVersion).where(DocumentVersion.id.in_(version_ids))
-            )
-        }
-        return [
-            {
-                "passage_id": str(passage_id),
-                "document_version_id": str(
-                    passage_by_id[passage_id].document_version_id
-                ),
-                "chunking_profile": versions[
-                    passage_by_id[passage_id].document_version_id
-                ].chunking_profile,
-                "structural_metadata": passage_by_id[passage_id].structural_metadata,
-                "source_kind": _source_kind(passage_by_id[passage_id].locator),
-                "retrieval_strategy": self._config.strategy,
-                "retrieval_root_ids": [
-                    str(root_id)
-                    for root_id in root_ids_by_evidence[passage_id]
-                ],
-            }
-            for passage_id in selected_ids
-        ]
-
     async def get_trace(
         self,
         trace_id: UUID,
@@ -451,23 +428,6 @@ class HybridRetrievalService:
             configuration=trace.configuration,
             created_at=trace.created_at,
         )
-
-
-def _source_kind(locator: dict[str, object]) -> str:
-    kind = locator.get("kind")
-    if kind == "slack_message" or (
-        kind == "message_range" and locator.get("source") == "slack"
-    ):
-        return "slack"
-    if kind == "teams_message" or (
-        kind == "message_range" and locator.get("source") == "teams"
-    ):
-        return "teams"
-    if kind == "pdf_page":
-        return "pdf"
-    if kind == "docx_paragraphs":
-        return "docx"
-    return "text"
 
 
 def _candidate_trace(candidates: list[RankedPassage]) -> list[dict[str, object]]:

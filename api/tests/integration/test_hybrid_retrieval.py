@@ -14,6 +14,7 @@ from decision_assistant.models import (
     DecisionEvidence,
     Document,
     DocumentVersion,
+    EmbeddingCache,
     Passage,
     RetrievalTrace,
     Workspace,
@@ -29,6 +30,7 @@ from decision_assistant.workspace.context import (
     get_workspace_context,
 )
 from decision_assistant.workspace.embedding_profile import CorpusResetRequired
+from decision_assistant.workspace.embedding_profile import embedding_profile_fingerprint
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 
 EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
@@ -109,6 +111,30 @@ async def create_passage(
     )
     session.add(passage)
     await session.flush()
+    document = await session.get(Document, version.document_id)
+    assert document is not None
+    cache = await session.scalar(
+        select(EmbeddingCache).where(
+            EmbeddingCache.workspace_id == document.workspace_id,
+            EmbeddingCache.content_hash == passage.content_hash,
+            EmbeddingCache.embedding_profile_fingerprint
+            == embedding_profile_fingerprint(EMBEDDING_PROFILE),
+        )
+    )
+    if cache is None:
+        cache = EmbeddingCache(
+            workspace_id=document.workspace_id,
+            content_hash=passage.content_hash,
+            embedding_profile_fingerprint=embedding_profile_fingerprint(
+                EMBEDDING_PROFILE
+            ),
+            embedding_profile=EMBEDDING_PROFILE,
+            embedding=embedding,
+        )
+        session.add(cache)
+        await session.flush()
+    passage.embedding_cache_id = cache.id
+    await session.flush()
     return passage
 
 
@@ -127,6 +153,11 @@ async def test_hybrid_retrieval_abstains_before_provider_call_when_reindex_requi
         embedding=[0.0] * 768,
     )
     passage.embedding_profile = {"provider": "legacy", "model": "old"}
+    cache = await db_session.get(EmbeddingCache, passage.embedding_cache_id)
+    assert cache is not None
+    cache.embedding_profile_fingerprint = embedding_profile_fingerprint(
+        passage.embedding_profile
+    )
     await db_session.flush()
 
     with pytest.raises(CorpusResetRequired) as error:
@@ -171,6 +202,14 @@ async def test_vector_query_filters_active_versions_by_configured_passage_profil
         **EMBEDDING_PROFILE,
         "adapter_config_version": "legacy-v0",
     }
+    mismatched_cache = await db_session.get(
+        EmbeddingCache,
+        mismatched.embedding_cache_id,
+    )
+    assert mismatched_cache is not None
+    mismatched_cache.embedding_profile_fingerprint = embedding_profile_fingerprint(
+        mismatched.embedding_profile
+    )
     _, retired_version = await create_version(
         db_session,
         workspace,
@@ -287,6 +326,59 @@ async def test_hybrid_retrieval_caps_sources_and_excludes_retired_versions(
         "rerank_final_limit": 5,
         "strategy": "passage_hybrid",
     }
+
+
+@pytest.mark.asyncio
+async def test_retrieval_collapses_passages_sharing_an_embedding_cache_entry(
+    db_session: AsyncSession,
+) -> None:
+    embedding_provider = FakeEmbeddingProvider(dimension=768)
+    vector = await embedding_provider.embed(
+        ["authentication"], purpose=EmbeddingPurpose.DOCUMENT
+    )
+    workspace = await create_workspace(db_session)
+    _, first_version = await create_version(db_session, workspace, name="a.md")
+    _, second_version = await create_version(db_session, workspace, name="b.md")
+    first = await create_passage(
+        db_session,
+        first_version,
+        sequence_number=0,
+        content="Authentication was postponed.",
+        embedding=vector[0],
+    )
+    second = await create_passage(
+        db_session,
+        second_version,
+        sequence_number=0,
+        content=first.content,
+        embedding=vector[0],
+    )
+    assert first.embedding_cache_id == second.embedding_cache_id
+
+    results = await HybridRetrievalService(
+        session=db_session,
+        embedding_provider=embedding_provider,
+    ).search(
+        RetrievalSearchRequest(question="authentication"),
+        request_id="deduplicated-retrieval",
+        workspace_id=workspace.id,
+    )
+    trace = await db_session.get(RetrievalTrace, results.trace_id)
+
+    assert [item.passage_id for item in results.results] == [first.id]
+    assert [item.passage_id for item in results.results[0].equivalent_sources] == [
+        first.id,
+        second.id,
+    ]
+    assert trace is not None
+    assert len(trace.semantic_candidates) == 1
+    assert len(trace.keyword_candidates) == 1
+    assert trace.fused_results[0]["passage_id"] == str(first.id)
+    selected_metadata = trace.selected_passage_metadata[0]
+    assert selected_metadata["embedding_cache_id"] == str(first.embedding_cache_id)
+    assert [
+        item["passage_id"] for item in selected_metadata["equivalent_sources"]
+    ] == [str(first.id), str(second.id)]
 
 
 @pytest.mark.asyncio
@@ -498,6 +590,75 @@ async def test_decision_fields_add_their_evidence_passage_as_candidate(
         if item["passage_id"] == str(passage.id)
     )
     assert fused["source_ranks"]["decision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_decision_search_keeps_the_highest_rank_for_shared_passage(
+    db_session: AsyncSession,
+) -> None:
+    workspace = await create_workspace(db_session)
+    _, version = await create_version(db_session, workspace, name="decision-rank.md")
+    passage = await create_passage(
+        db_session,
+        version,
+        sequence_number=0,
+        content="The rollout dependency remains unresolved.",
+        embedding=[0.0] * 768,
+    )
+    decisions = [
+        Decision(
+            document_version_id=version.id,
+            statement="authentication rollout needs more operational review",
+            status="active",
+            reasons=[],
+            alternatives=[],
+            project="Atlas",
+            topic="authentication",
+            provenance="extracted",
+            review_state="supported",
+            user_edited=False,
+            retired=False,
+        ),
+        Decision(
+            document_version_id=version.id,
+            statement="authentication",
+            status="active",
+            reasons=[],
+            alternatives=[],
+            project="Atlas",
+            topic="authentication",
+            provenance="extracted",
+            review_state="supported",
+            user_edited=False,
+            retired=False,
+        ),
+    ]
+    db_session.add_all(decisions)
+    await db_session.flush()
+    db_session.add_all(
+        DecisionEvidence(
+            decision_id=decision.id,
+            passage_id=passage.id,
+            field_name=None,
+            start_offset=0,
+            end_offset=len(passage.content),
+            support_state="supported",
+            is_primary=True,
+            content_hash=passage.content_hash,
+        )
+        for decision in decisions
+    )
+    await db_session.flush()
+
+    results = await RetrievalRepository(db_session).decision_search(
+        "authentication",
+        RetrievalFilters(),
+        limit=1,
+        workspace_id=workspace.id,
+    )
+
+    assert results[0].passage.id == passage.id
+    assert results[0].raw_score > 0.1
 
 
 @pytest.mark.asyncio

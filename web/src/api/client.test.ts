@@ -109,4 +109,34 @@ describe("Decision Assistant API client", () => {
     );
     setAccessToken(null);
   });
+
+  it("adds the in-memory bearer token to document uploads", async () => {
+    const loadListeners: Array<() => void> = [];
+    const xhr = {
+      upload: { addEventListener: vi.fn() },
+      open: vi.fn(),
+      setRequestHeader: vi.fn(),
+      addEventListener: vi.fn((event: string, listener: () => void) => {
+        if (event === "load") loadListeners.push(listener);
+      }),
+      send: vi.fn(() => loadListeners[0]?.()),
+      status: 202,
+      responseText: JSON.stringify({ request_id: "upload", results: [] }),
+    };
+    vi.stubGlobal("XMLHttpRequest", vi.fn(() => xhr));
+    const clientModule = "./client";
+    const { setAccessToken, setActiveWorkspaceId, uploadDocuments } = await import(
+      /* @vite-ignore */ clientModule
+    );
+    setAccessToken("access-token");
+    setActiveWorkspaceId("workspace-1");
+
+    await uploadDocuments([new File(["content"], "meeting.md")], vi.fn());
+
+    expect(xhr.setRequestHeader).toHaveBeenCalledWith(
+      "authorization",
+      "Bearer access-token",
+    );
+    setAccessToken(null);
+  });
 });

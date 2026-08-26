@@ -50,6 +50,7 @@ export function CitationList({ citations }: CitationListProps) {
       <ol className="citation-list" aria-label="Citations">
         {citations.map((citation, index) => {
           const location = locatorLabel(citation.locator);
+          const equivalentSources = citation.equivalent_sources ?? [];
           return (
             <li key={`${citation.passage_id}-${index}`}>
               <span className="citation-number" aria-hidden="true">
@@ -64,6 +65,26 @@ export function CitationList({ citations }: CitationListProps) {
               >
                 {citation.document_name} · {location}
               </button>
+              {equivalentSources.filter(
+                (source) => source.passage_id !== citation.passage_id,
+              ).length > 0 && (
+                <ul aria-label="Equivalent sources">
+                  {equivalentSources
+                    .filter((source) => source.passage_id !== citation.passage_id)
+                    .map((source) => (
+                      <li key={source.passage_id}>
+                        <button
+                          type="button"
+                          className="citation-source"
+                          onClick={() => handleViewSource(source.document_id)}
+                          aria-label={`${source.document_name}, ${locatorLabel(source.locator)}`}
+                        >
+                          Also in {source.document_name} · {locatorLabel(source.locator)}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
             </li>
           );
         })}

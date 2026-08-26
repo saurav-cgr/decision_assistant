@@ -162,26 +162,25 @@ class DocumentService:
                 )
                 continue
 
-            document = existing or Document(
-                id=document_id,
-                workspace_id=workspace.id,
-                display_name=filename,
-                media_type=upload.content_type or "application/octet-stream",
+            duplicate = await self._session.execute(
+                select(Document, DocumentVersion)
+                .join(DocumentVersion, DocumentVersion.document_id == Document.id)
+                .where(
+                    Document.workspace_id == workspace.id,
+                    DocumentVersion.checksum == stored.checksum,
+                    DocumentVersion.state == "active",
+                    Document.active_version_id == DocumentVersion.id,
+                )
+                .limit(1)
             )
-            if existing is None:
-                self._session.add(document)
-
-            active_version = (
-                await self._session.get(DocumentVersion, document.active_version_id)
-                if document.active_version_id is not None
-                else None
-            )
-            if active_version is not None and active_version.checksum == stored.checksum:
+            duplicate_match = duplicate.first()
+            if duplicate_match is not None:
+                duplicate_document, duplicate_version = duplicate_match
                 self._storage.delete(stored.key)
                 job = IngestionJob(
                     id=job_id,
-                    document_id=document.id,
-                    document_version_id=active_version.id,
+                    document_id=duplicate_document.id,
+                    document_version_id=duplicate_version.id,
                     stage="unchanged",
                     status="completed",
                     progress=100,
@@ -196,11 +195,22 @@ class DocumentService:
                     UploadFileResult(
                         filename=filename,
                         status="accepted",
-                        document_id=document.id,
+                        document_id=duplicate_document.id,
                         job_id=job.id,
+                        duplicate_of_document_id=duplicate_document.id,
+                        duplicate_of_version_id=duplicate_version.id,
                     )
                 )
                 continue
+
+            document = existing or Document(
+                id=document_id,
+                workspace_id=workspace.id,
+                display_name=filename,
+                media_type=upload.content_type or "application/octet-stream",
+            )
+            if existing is None:
+                self._session.add(document)
 
             version_number = (
                 await self._session.scalar(

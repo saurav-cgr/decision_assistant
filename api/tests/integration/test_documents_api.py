@@ -179,6 +179,50 @@ async def test_single_upload_is_sanitized_and_accepted(
 
 
 @pytest.mark.asyncio
+async def test_same_file_under_new_name_is_accepted_as_duplicate(
+    documents_api: tuple[httpx.AsyncClient, RecordingDispatcher, Settings],
+    db_session: AsyncSession,
+) -> None:
+    client, dispatcher, settings = documents_api
+    content = b"# Architecture\n"
+
+    first_response = await client.post(
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
+        files={"files": ("original.md", content, "text/markdown")},
+    )
+    first_result = first_response.json()["results"][0]
+    document = await db_session.get(Document, UUID(first_result["document_id"]))
+    assert document is not None
+    version = await db_session.scalar(
+        select(DocumentVersion).where(DocumentVersion.document_id == document.id)
+    )
+    assert version is not None
+    version.state = "active"
+    document.active_version_id = version.id
+    await db_session.flush()
+
+    second_response = await client.post(
+        "/api/v1/workspaces/{WORKSPACE_ID}/documents/upload",
+        files={"files": ("renamed.md", content, "text/markdown")},
+    )
+
+    assert second_response.status_code == 202
+    result = second_response.json()["results"][0]
+    assert result["status"] == "accepted"
+    assert result["document_id"] == str(document.id)
+    assert result["duplicate_of_document_id"] == str(document.id)
+    assert result["duplicate_of_version_id"] == str(version.id)
+    assert len(dispatcher.calls) == 1
+    incoming = list((settings.upload_directory / "documents").glob("*/incoming/*"))
+    assert incoming == [dispatcher.calls[0]["source_path"]]
+    job = await db_session.get(IngestionJob, UUID(result["job_id"]))
+    assert job is not None
+    assert job.document_version_id == version.id
+    assert job.stage == "unchanged"
+    assert job.status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_multiple_valid_uploads_return_one_result_each(
     documents_api: tuple[httpx.AsyncClient, RecordingDispatcher, Settings],
 ) -> None:

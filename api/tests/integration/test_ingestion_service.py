@@ -14,6 +14,7 @@ from decision_assistant.models import (
     Decision,
     Document,
     DocumentVersion,
+    EmbeddingCache,
     IngestionJob,
     Passage,
     Workspace,
@@ -24,7 +25,10 @@ from decision_assistant.providers.fakes import (
     FakeGenerationProvider,
 )
 from decision_assistant.workspace.service import WorkspaceService
-from decision_assistant.workspace.embedding_profile import CorpusResetRequired
+from decision_assistant.workspace.embedding_profile import (
+    CorpusResetRequired,
+    embedding_profile_fingerprint,
+)
 
 GOOD_CONTENT = """---
 title: Architecture Sync
@@ -108,7 +112,48 @@ async def test_unchanged_checksum_skips_new_version(
 
 
 @pytest.mark.asyncio
-async def test_new_passages_store_the_validated_embedding_profile(
+async def test_identical_chunks_share_one_embedding_cache_entry(
+    db_session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    service, document, embedding_provider = await create_harness(db_session, tmp_path)
+    second_document = Document(
+        workspace_id=document.workspace_id,
+        display_name="second-meeting.md",
+        media_type="text/markdown",
+    )
+    db_session.add(second_document)
+    await db_session.flush()
+    source = write_source(tmp_path, GOOD_CONTENT)
+
+    first = await service.ingest(document.id, source, request_id="cache-first")
+    second = await service.ingest(
+        second_document.id,
+        source,
+        request_id="cache-second",
+    )
+
+    first_passage = await db_session.scalar(
+        select(Passage).where(Passage.document_version_id == first.version_id)
+    )
+    second_passage = await db_session.scalar(
+        select(Passage).where(Passage.document_version_id == second.version_id)
+    )
+    cache_count = await db_session.scalar(select(func.count(EmbeddingCache.id)))
+    distinct_hash_count = await db_session.scalar(
+        select(func.count(func.distinct(Passage.content_hash)))
+    )
+
+    assert first_passage is not None
+    assert second_passage is not None
+    assert first_passage.id != second_passage.id
+    assert first_passage.embedding_cache_id == second_passage.embedding_cache_id
+    assert cache_count == distinct_hash_count
+    assert embedding_provider.purposes == [EmbeddingPurpose.DOCUMENT]
+
+
+@pytest.mark.asyncio
+async def test_new_passages_reference_the_validated_embedding_cache(
     db_session: AsyncSession,
     tmp_path: Path,
 ) -> None:
@@ -132,7 +177,23 @@ async def test_new_passages_store_the_validated_embedding_profile(
         "dimension": embedding_provider.profile.dimension,
         "adapter_config_version": embedding_provider.profile.adapter_config_version,
     }
-    assert all(passage.embedding_profile == expected_profile for passage in passages)
+    caches = list(
+        await db_session.scalars(
+            select(EmbeddingCache).where(
+                EmbeddingCache.id.in_(
+                    [passage.embedding_cache_id for passage in passages]
+                )
+            )
+        )
+    )
+    assert all(passage.embedding is None for passage in passages)
+    assert all(passage.embedding_profile is None for passage in passages)
+    assert all(cache.embedding_profile == expected_profile for cache in caches)
+    assert all(
+        cache.embedding_profile_fingerprint
+        == embedding_profile_fingerprint(expected_profile)
+        for cache in caches
+    )
     workspace = await db_session.get(Workspace, document.workspace_id)
     assert workspace is not None
     assert workspace.embedding_profile == expected_profile
@@ -307,8 +368,17 @@ async def test_waiting_old_profile_ingestion_cannot_activate_mixed_corpus(
             select(Passage).where(Passage.document_version_id == first.version_id)
         )
     )
-    for passage in active_passages:
-        passage.embedding_profile = migrated_profile
+    cache_ids = [passage.embedding_cache_id for passage in active_passages]
+    active_caches = list(
+        await db_session.scalars(
+            select(EmbeddingCache).where(EmbeddingCache.id.in_(cache_ids))
+        )
+    )
+    for cache in active_caches:
+        cache.embedding_profile = migrated_profile
+        cache.embedding_profile_fingerprint = embedding_profile_fingerprint(
+            migrated_profile
+        )
     await db_session.flush()
     write_source(tmp_path, CHANGED_CONTENT)
 
@@ -324,16 +394,7 @@ async def test_waiting_old_profile_ingestion_cannot_activate_mixed_corpus(
             .order_by(DocumentVersion.version_number)
         )
     )
-    searchable_profiles = list(
-        await db_session.scalars(
-            select(Passage.embedding_profile)
-            .join(
-                DocumentVersion,
-                DocumentVersion.id == Passage.document_version_id,
-            )
-            .where(DocumentVersion.state == "active")
-        )
-    )
+    searchable_profiles = [cache.embedding_profile for cache in active_caches]
     assert error.value.code == "corpus_reset_required"
     assert document.active_version_id == first.version_id
     assert [version.state for version in versions] == ["active", "failed"]

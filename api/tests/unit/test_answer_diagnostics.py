@@ -92,6 +92,7 @@ class DiagnosticAnswerService(AnswerService):
     async def _source_citations(
         self,
         citations: list[Citation],
+        equivalent_sources: dict[UUID, object] | None = None,
     ) -> list[SourceCitation]:
         return [
             SourceCitation(
