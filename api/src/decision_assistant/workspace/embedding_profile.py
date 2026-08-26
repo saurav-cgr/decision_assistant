@@ -13,9 +13,12 @@ from decision_assistant.models import Document, DocumentVersion, Passage, Worksp
 from decision_assistant.providers.base import EmbeddingProfile
 
 
-def embedding_profile_fingerprint(profile: EmbeddingProfile) -> str:
+def embedding_profile_fingerprint(
+    profile: EmbeddingProfile | dict[str, str | int],
+) -> str:
+    profile_data = profile.as_dict() if isinstance(profile, EmbeddingProfile) else profile
     payload = json.dumps(
-        profile.as_dict(), sort_keys=True, separators=(",", ":")
+        profile_data, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
     return sha256(payload).hexdigest()
 

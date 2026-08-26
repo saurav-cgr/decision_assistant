@@ -14,6 +14,7 @@ from decision_assistant.models import (
     DecisionEvidence,
     Document,
     DocumentVersion,
+    EmbeddingCache,
     Passage,
     RetrievalTrace,
     Workspace,
@@ -29,6 +30,7 @@ from decision_assistant.workspace.context import (
     get_workspace_context,
 )
 from decision_assistant.workspace.embedding_profile import CorpusResetRequired
+from decision_assistant.workspace.embedding_profile import embedding_profile_fingerprint
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 
 EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
@@ -109,6 +111,30 @@ async def create_passage(
     )
     session.add(passage)
     await session.flush()
+    document = await session.get(Document, version.document_id)
+    assert document is not None
+    cache = await session.scalar(
+        select(EmbeddingCache).where(
+            EmbeddingCache.workspace_id == document.workspace_id,
+            EmbeddingCache.content_hash == passage.content_hash,
+            EmbeddingCache.embedding_profile_fingerprint
+            == embedding_profile_fingerprint(EMBEDDING_PROFILE),
+        )
+    )
+    if cache is None:
+        cache = EmbeddingCache(
+            workspace_id=document.workspace_id,
+            content_hash=passage.content_hash,
+            embedding_profile_fingerprint=embedding_profile_fingerprint(
+                EMBEDDING_PROFILE
+            ),
+            embedding_profile=EMBEDDING_PROFILE,
+            embedding=embedding,
+        )
+        session.add(cache)
+        await session.flush()
+    passage.embedding_cache_id = cache.id
+    await session.flush()
     return passage
 
 
@@ -171,6 +197,14 @@ async def test_vector_query_filters_active_versions_by_configured_passage_profil
         **EMBEDDING_PROFILE,
         "adapter_config_version": "legacy-v0",
     }
+    mismatched_cache = await db_session.get(
+        EmbeddingCache,
+        mismatched.embedding_cache_id,
+    )
+    assert mismatched_cache is not None
+    mismatched_cache.embedding_profile_fingerprint = embedding_profile_fingerprint(
+        mismatched.embedding_profile
+    )
     _, retired_version = await create_version(
         db_session,
         workspace,
@@ -287,6 +321,50 @@ async def test_hybrid_retrieval_caps_sources_and_excludes_retired_versions(
         "rerank_final_limit": 5,
         "strategy": "passage_hybrid",
     }
+
+
+@pytest.mark.asyncio
+async def test_retrieval_collapses_passages_sharing_an_embedding_cache_entry(
+    db_session: AsyncSession,
+) -> None:
+    embedding_provider = FakeEmbeddingProvider(dimension=768)
+    vector = await embedding_provider.embed(
+        ["authentication"], purpose=EmbeddingPurpose.DOCUMENT
+    )
+    workspace = await create_workspace(db_session)
+    _, first_version = await create_version(db_session, workspace, name="a.md")
+    _, second_version = await create_version(db_session, workspace, name="b.md")
+    first = await create_passage(
+        db_session,
+        first_version,
+        sequence_number=0,
+        content="Authentication was postponed.",
+        embedding=vector[0],
+    )
+    second = await create_passage(
+        db_session,
+        second_version,
+        sequence_number=0,
+        content=first.content,
+        embedding=vector[0],
+    )
+    assert first.embedding_cache_id == second.embedding_cache_id
+
+    results = await HybridRetrievalService(
+        session=db_session,
+        embedding_provider=embedding_provider,
+    ).search(
+        RetrievalSearchRequest(question="authentication"),
+        request_id="deduplicated-retrieval",
+        workspace_id=workspace.id,
+    )
+    trace = await db_session.get(RetrievalTrace, results.trace_id)
+
+    assert [item.passage_id for item in results.results] == [first.id]
+    assert trace is not None
+    assert len(trace.semantic_candidates) == 1
+    assert len(trace.keyword_candidates) == 1
+    assert trace.fused_results[0]["passage_id"] == str(first.id)
 
 
 @pytest.mark.asyncio

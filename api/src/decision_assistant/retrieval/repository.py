@@ -11,9 +11,11 @@ from decision_assistant.models import (
     DecisionEvidence,
     Document,
     DocumentVersion,
+    EmbeddingCache,
     Passage,
 )
 from decision_assistant.retrieval.schemas import RetrievalFilters
+from decision_assistant.workspace.embedding_profile import embedding_profile_fingerprint
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,14 +38,23 @@ class RetrievalRepository:
         workspace_id: UUID,
         retrieval_unit_kind: str = "passage",
     ) -> list[RankedPassage]:
-        distance = Passage.embedding.cosine_distance(embedding).label("distance")
-        statement = self._active_passages(select(Passage, distance), filters).where(
-            Passage.embedding_profile == embedding_profile,
-            Document.workspace_id == workspace_id,
-            Passage.retrieval_unit_kind == retrieval_unit_kind,
+        distance = EmbeddingCache.embedding.cosine_distance(embedding).label(
+            "distance"
+        )
+        statement = (
+            self._active_passages(select(Passage, distance), filters)
+            .join(EmbeddingCache, Passage.embedding_cache_id == EmbeddingCache.id)
+            .where(
+                EmbeddingCache.embedding_profile_fingerprint
+                == embedding_profile_fingerprint(embedding_profile),
+                Document.workspace_id == workspace_id,
+                Passage.retrieval_unit_kind == retrieval_unit_kind,
+            )
         )
         rows = (
-            await self._session.execute(statement.order_by(distance).limit(limit))
+            await self._session.execute(
+                self._deduplicated_query(statement, distance, limit, descending=False)
+            )
         ).all()
         return [
             RankedPassage(passage=passage, raw_score=1.0 - float(value))
@@ -70,7 +81,9 @@ class RetrievalRepository:
             Passage.retrieval_unit_kind == retrieval_unit_kind,
         )
         rows = (
-            await self._session.execute(statement.order_by(rank.desc()).limit(limit))
+            await self._session.execute(
+                self._deduplicated_query(statement, rank, limit, descending=True)
+            )
         ).all()
         return [
             RankedPassage(passage=passage, raw_score=float(value))
@@ -121,20 +134,50 @@ class RetrievalRepository:
                 vector.op("@@")(query),
                 *self._filter_clauses(filters),
             )
-            .order_by(rank.desc())
-            .limit(limit * 2)
         )
-        rows = (await self._session.execute(statement)).all()
-        unique: list[RankedPassage] = []
-        seen: set[UUID] = set()
-        for passage, value in rows:
-            if passage.id in seen:
-                continue
-            seen.add(passage.id)
-            unique.append(RankedPassage(passage=passage, raw_score=float(value)))
-            if len(unique) == limit:
-                break
-        return unique
+        rows = (
+            await self._session.execute(
+                self._deduplicated_query(statement, rank, limit, descending=True)
+            )
+        ).all()
+        return [
+            RankedPassage(passage=passage, raw_score=float(value))
+            for passage, value in rows
+        ]
+
+    def _deduplicated_query(
+        self,
+        statement: Select[Any],
+        score: Any,
+        limit: int,
+        *,
+        descending: bool,
+    ) -> Select[Any]:
+        ranked = statement.add_columns(
+            func.row_number()
+            .over(
+                partition_by=func.coalesce(Passage.embedding_cache_id, Passage.id),
+                order_by=(
+                    Document.display_name,
+                    DocumentVersion.version_number,
+                    Passage.sequence_number,
+                    Passage.id,
+                ),
+            )
+            .label("representative_rank"),
+            Passage.id.label("representative_passage_id"),
+        ).subquery()
+        ranked_score = ranked.c[score.key]
+        return (
+            select(Passage, ranked_score)
+            .join(
+                ranked,
+                ranked.c.representative_passage_id == Passage.id,
+            )
+            .where(ranked.c.representative_rank == 1)
+            .order_by(ranked_score.desc() if descending else ranked_score)
+            .limit(limit)
+        )
 
     def _active_passages(
         self,
