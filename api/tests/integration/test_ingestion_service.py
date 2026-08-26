@@ -14,6 +14,7 @@ from decision_assistant.models import (
     Decision,
     Document,
     DocumentVersion,
+    EmbeddingCache,
     IngestionJob,
     Passage,
     Workspace,
@@ -105,6 +106,47 @@ async def test_unchanged_checksum_skips_new_version(
     assert workspace is not None
     await db_session.refresh(workspace)
     assert workspace.knowledge_revision == 2
+
+
+@pytest.mark.asyncio
+async def test_identical_chunks_share_one_embedding_cache_entry(
+    db_session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    service, document, embedding_provider = await create_harness(db_session, tmp_path)
+    second_document = Document(
+        workspace_id=document.workspace_id,
+        display_name="second-meeting.md",
+        media_type="text/markdown",
+    )
+    db_session.add(second_document)
+    await db_session.flush()
+    source = write_source(tmp_path, GOOD_CONTENT)
+
+    first = await service.ingest(document.id, source, request_id="cache-first")
+    second = await service.ingest(
+        second_document.id,
+        source,
+        request_id="cache-second",
+    )
+
+    first_passage = await db_session.scalar(
+        select(Passage).where(Passage.document_version_id == first.version_id)
+    )
+    second_passage = await db_session.scalar(
+        select(Passage).where(Passage.document_version_id == second.version_id)
+    )
+    cache_count = await db_session.scalar(select(func.count(EmbeddingCache.id)))
+    distinct_hash_count = await db_session.scalar(
+        select(func.count(func.distinct(Passage.content_hash)))
+    )
+
+    assert first_passage is not None
+    assert second_passage is not None
+    assert first_passage.id != second_passage.id
+    assert first_passage.embedding_cache_id == second_passage.embedding_cache_id
+    assert cache_count == distinct_hash_count
+    assert embedding_provider.purposes == [EmbeddingPurpose.DOCUMENT]
 
 
 @pytest.mark.asyncio

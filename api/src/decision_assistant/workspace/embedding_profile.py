@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
+import json
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -9,6 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from decision_assistant.errors import ApplicationError
 from decision_assistant.models import Document, DocumentVersion, Passage, Workspace
 from decision_assistant.providers.base import EmbeddingProfile
+
+
+def embedding_profile_fingerprint(profile: EmbeddingProfile) -> str:
+    payload = json.dumps(
+        profile.as_dict(), sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return sha256(payload).hexdigest()
 
 
 class CorpusResetRequired(ApplicationError):

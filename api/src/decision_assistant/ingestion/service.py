@@ -16,6 +16,7 @@ from decision_assistant.ingestion.metadata import MetadataExtractor
 from decision_assistant.ingestion.parsers import parse_document
 from decision_assistant.ingestion.retrieval_units import (
     RetrievalUnitStrategy,
+    RetrievalUnitDraft,
     build_retrieval_units,
     canonical_decision_unit_kind,
 )
@@ -25,6 +26,7 @@ from decision_assistant.models import (
     DecisionRelation,
     Document,
     DocumentVersion,
+    EmbeddingCache,
     IngestionJob,
     Passage,
     Workspace,
@@ -34,6 +36,7 @@ from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.workspace.embedding_profile import (
     CorpusResetRequired,
     acquire_workspace_embedding_lock,
+    embedding_profile_fingerprint,
     get_corpus_state,
 )
 from decision_assistant.workspace.revision import bump_knowledge_revision
@@ -243,15 +246,15 @@ class IngestionService:
             drafts,
             strategy=self._retrieval_unit_strategy,
         )
-        embeddings = await self._embedding_provider.embed(
-            [unit.draft.content for unit in unit_drafts],
-            purpose=EmbeddingPurpose.DOCUMENT,
+        await acquire_workspace_embedding_lock(self._session, document.workspace_id)
+        embedding_cache = await self._resolve_embedding_cache(
+            document.workspace_id,
+            unit_drafts,
         )
-        if len(embeddings) != len(unit_drafts):
-            raise IngestionError(
-                "Embedding provider returned wrong result count",
-                code="embedding_count_mismatch",
-            )
+        embeddings = [
+            embedding_cache[unit.draft.content_hash].embedding
+            for unit in unit_drafts
+        ]
 
         parent_rows: dict[int, Passage] = {}
         passage_rows: list[Passage] = []
@@ -271,6 +274,7 @@ class IngestionService:
                 locator=draft.locator,
                 structural_metadata=draft.structural_metadata,
                 retrieval_unit_kind=unit.kind,
+                embedding_cache_id=embedding_cache[draft.content_hash].id,
                 embedding=embedding,
                 embedding_profile=self._embedding_provider.profile.as_dict(),
             )
@@ -292,6 +296,7 @@ class IngestionService:
                 structural_metadata=unit.draft.structural_metadata,
                 retrieval_unit_kind="sentence",
                 parent_passage_id=parent_rows[unit.parent_index].id,
+                embedding_cache_id=embedding_cache[unit.draft.content_hash].id,
                 embedding=embedding,
                 embedding_profile=self._embedding_provider.profile.as_dict(),
             )
@@ -373,7 +378,6 @@ class IngestionService:
 
         job.stage = "activating"
         job.progress = 90
-        await acquire_workspace_embedding_lock(self._session, document.workspace_id)
         corpus_state = await get_corpus_state(
             self._session,
             document.workspace_id,
@@ -401,6 +405,53 @@ class IngestionService:
         job.progress = 100
         job.finished_at = datetime.now(timezone.utc)
         await self._session.flush()
+
+    async def _resolve_embedding_cache(
+        self,
+        workspace_id: UUID,
+        unit_drafts: list[RetrievalUnitDraft],
+    ) -> dict[str, EmbeddingCache]:
+        profile = self._embedding_provider.profile
+        fingerprint = embedding_profile_fingerprint(profile)
+        content_hashes = list(dict.fromkeys(unit.draft.content_hash for unit in unit_drafts))
+        existing = list(
+            await self._session.scalars(
+                select(EmbeddingCache).where(
+                    EmbeddingCache.workspace_id == workspace_id,
+                    EmbeddingCache.embedding_profile_fingerprint == fingerprint,
+                    EmbeddingCache.content_hash.in_(content_hashes),
+                )
+            )
+        )
+        by_hash = {entry.content_hash: entry for entry in existing}
+        missing = [
+            unit.draft
+            for unit in unit_drafts
+            if unit.draft.content_hash not in by_hash
+        ]
+        missing = list({draft.content_hash: draft for draft in missing}.values())
+        if missing:
+            vectors = await self._embedding_provider.embed(
+                [draft.content for draft in missing],
+                purpose=EmbeddingPurpose.DOCUMENT,
+            )
+            if len(vectors) != len(missing):
+                raise IngestionError(
+                    "Embedding provider returned wrong result count",
+                    code="embedding_count_mismatch",
+                )
+            for draft, vector in zip(missing, vectors, strict=True):
+                entry = EmbeddingCache(
+                    workspace_id=workspace_id,
+                    content_hash=draft.content_hash,
+                    embedding_profile_fingerprint=fingerprint,
+                    embedding_profile=profile.as_dict(),
+                    embedding=vector,
+                )
+                self._session.add(entry)
+                by_hash[draft.content_hash] = entry
+            await self._session.flush()
+        return by_hash
 
     async def _retire_previous_decisions(self, version_id: UUID) -> None:
         corrected = or_(
