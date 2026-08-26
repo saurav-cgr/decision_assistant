@@ -19,6 +19,8 @@ class UploadFileResult(ApiModel):
     status: Literal["accepted", "rejected"]
     document_id: UUID | None = None
     job_id: UUID | None = None
+    duplicate_of_document_id: UUID | None = None
+    duplicate_of_version_id: UUID | None = None
     error: FileError | None = None
 
 
