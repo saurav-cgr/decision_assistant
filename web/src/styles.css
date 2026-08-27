@@ -1689,7 +1689,7 @@
   .workspace-selector select,
   .workspace-selector__create input,
   .workspace-selector__create button {
-    min-height: 42px;
+    min-height: 44px;
   }
 
   .workspace-selector__row select {
@@ -1767,7 +1767,7 @@
 }
 
 .source-viewer__close {
-  min-height: 34px;
+  min-height: 44px;
   padding: 7px 12px;
   cursor: pointer;
   font-size: 0.78rem;

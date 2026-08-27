@@ -59,6 +59,7 @@ textarea {
 }
 
 button {
+  min-height: 44px;
   transition:
     background-color 160ms ease,
     border-color 160ms ease,
