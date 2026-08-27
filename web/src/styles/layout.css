@@ -2,6 +2,24 @@
   position: relative;
 }
 
+.page-intro h1,
+.workspace-page h1,
+.ask-page h1,
+.decision-detail-page h1,
+.timeline-page h1,
+.evaluation-page h1,
+.error-panel h1,
+.evaluation-run__heading h2,
+.section-heading h2,
+.document-list__heading h2,
+.document-card__heading h2,
+.timeline-event h2 {
+  font-family: inherit;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
 .workspace-selector__create-menu summary {
   padding: 7px 10px;
   color: var(--accent);
