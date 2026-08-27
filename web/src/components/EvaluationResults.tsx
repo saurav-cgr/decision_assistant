@@ -149,8 +149,12 @@ export function EvaluationResults({ run }: EvaluationResultsProps) {
       {run.aggregate_metrics && <MetricSummary metrics={run.aggregate_metrics} />}
 
       {run.results.length > 0 && (
-        <div className="evaluation-table-wrap">
-          <h3 className="evaluation-results__title">Question-level results</h3>
+        <details className="evaluation-details" open>
+          <summary>
+            <span>Question-level results</span>
+            <small>{run.results.length} questions</small>
+          </summary>
+          <div className="evaluation-table-wrap">
           <table aria-label={`${run.strategy} per-question results`}>
             <thead>
               <tr>
@@ -197,16 +201,21 @@ export function EvaluationResults({ run }: EvaluationResultsProps) {
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </details>
       )}
 
       {run.results.filter(hasFailure).map((result) => (
-        <section
-          className="evaluation-diagnostic"
-          id={`diagnostic-${result.id}`}
-          aria-label={`Diagnostic ${result.id}`}
-          key={result.id}
-        >
+        <details className="evaluation-details evaluation-diagnostic-details" open key={result.id}>
+          <summary>
+            <span>Diagnostic · {result.external_id}</span>
+            <small>Failure details</small>
+          </summary>
+          <section
+            className="evaluation-diagnostic"
+            id={`diagnostic-${result.id}`}
+            aria-label={`Diagnostic ${result.id}`}
+          >
           <h3>{result.external_id}</h3>
           {result.failure_reason && <p>{result.failure_reason}</p>}
           <dl>
@@ -265,7 +274,8 @@ export function EvaluationResults({ run }: EvaluationResultsProps) {
             <summary>Stored diagnostic payload</summary>
             <pre>{JSON.stringify(result, null, 2)}</pre>
           </details>
-        </section>
+          </section>
+        </details>
       ))}
     </section>
   );

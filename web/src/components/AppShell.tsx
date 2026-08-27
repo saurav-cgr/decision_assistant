@@ -9,8 +9,8 @@ import { WorkspaceSelector } from "./WorkspaceSelector";
 import { useAuth } from "../app/AuthContext";
 
 const navigation = [
-  { label: "Workspace", to: "/", end: true },
-  { label: "Ask", to: "/ask" },
+  { label: "Ask", to: "/", end: true },
+  { label: "Workspace", to: "/workspace" },
   { label: "Timeline", to: "/timeline" },
   { label: "Evaluation", to: "/evaluation" },
   { label: "Account", to: "/account" },
@@ -65,10 +65,6 @@ export function AppShell() {
           activeWorkspaceId={activeWorkspaceId}
           onSwitch={handleSwitch}
         />
-        <div className="local-status" aria-label="Environment status">
-          <span aria-hidden="true" />
-          Local
-        </div>
         <button className="account-button" type="button" onClick={() => void signOut()}>
           Sign out {user?.username}
         </button>

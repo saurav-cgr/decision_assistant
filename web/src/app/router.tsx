@@ -38,7 +38,8 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Workspace />} />
+        <Route index element={<Ask />} />
+        <Route path="workspace" element={<Workspace />} />
         <Route path="ask" element={<Ask />} />
         <Route path="timeline" element={<Timeline />} />
         <Route path="decisions/:id" element={<DecisionDetail />} />

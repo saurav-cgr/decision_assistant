@@ -28,6 +28,9 @@ export function Workspace() {
   const [sourceDocument, setSourceDocument] = useState<DocumentDetail | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState("name");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -112,6 +115,30 @@ export function Workspace() {
     }
   };
 
+  const visibleDocuments = [...documents]
+    .filter((document) => {
+      if (statusFilter !== "all" && document.status !== statusFilter) return false;
+      const haystack = [
+        document.title,
+        document.display_name,
+        document.project,
+        document.source_type,
+        ...document.participants,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase();
+      return haystack.includes(search.trim().toLocaleLowerCase());
+    })
+    .sort((left, right) => {
+      if (sortOrder === "status") {
+        return (left.status || "").localeCompare(right.status || "");
+      }
+      return (left.title || left.display_name).localeCompare(
+        right.title || right.display_name,
+      );
+    });
+
   return (
     <section className="workspace-page" aria-labelledby="workspace-title">
       <div className="workspace-header">
@@ -166,8 +193,41 @@ export function Workspace() {
         </p>
       )}
 
+      {documents.length > 0 && (
+        <div className="source-filters" aria-label="Filter sources">
+          <label>
+            Find sources
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search title, project, people…"
+            />
+          </label>
+          <label>
+            Status
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="completed">Completed</option>
+              <option value="pending">Queued</option>
+              <option value="running">Indexing</option>
+              <option value="failed">Failed</option>
+            </select>
+          </label>
+          <label>
+            Sort
+            <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}>
+              <option value="name">Name A–Z</option>
+              <option value="status">Status</option>
+            </select>
+          </label>
+        </div>
+      )}
+
       <DocumentTable
-        documents={documents}
+        documents={visibleDocuments}
+        emptyMessage={documents.length > 0 ? "No sources match these filters." : undefined}
+        onUploadRequest={() => inputRef.current?.click()}
         retryingId={retryingId}
         onRetry={handleRetry}
         onViewSource={handleViewSource}

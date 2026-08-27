@@ -159,31 +159,6 @@
   background: #f8e7e1;
 }
 
-.question-examples {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.question-examples button {
-  min-height: 44px;
-  padding: 8px 12px;
-  color: var(--accent);
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 0.78rem;
-}
-
-.question-examples button:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
 .answer-loading {
   display: grid;
   gap: 6px;
@@ -251,8 +226,4 @@
     flex-direction: column;
   }
 
-  .question-examples {
-    align-items: flex-start;
-    flex-direction: column;
-  }
 }

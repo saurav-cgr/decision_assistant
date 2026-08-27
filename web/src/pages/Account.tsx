@@ -63,19 +63,24 @@ export function Account() {
       <div className="account-forms">
         <form onSubmit={changeUsernameSubmit}>
           <h2>Change username</h2>
-          <input aria-label="New username" value={username} onChange={(e) => setUsername(e.target.value)} required />
-          <input aria-label="Current password for username" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
+          <label htmlFor="new-username">New username</label>
+          <input id="new-username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
+          <label htmlFor="username-current-password">Current password</label>
+          <input id="username-current-password" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required />
           <button>Update username</button>
         </form>
         <form onSubmit={changePasswordSubmit}>
           <h2>Change password</h2>
-          <input aria-label="Current password for password" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
-          <input aria-label="New password" type="password" minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+          <label htmlFor="password-current-password">Current password</label>
+          <input id="password-current-password" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required />
+          <label htmlFor="new-password">New password</label>
+          <input id="new-password" type="password" minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" required />
           <button>Update password</button>
         </form>
         <form onSubmit={rotateCodeSubmit}>
           <h2>Replace recovery code</h2>
-          <input aria-label="Current password for recovery" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
+          <label htmlFor="recovery-current-password">Current password</label>
+          <input id="recovery-current-password" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required />
           <button>Generate recovery code</button>
         </form>
       </div>

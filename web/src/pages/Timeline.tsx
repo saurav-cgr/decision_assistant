@@ -75,7 +75,7 @@ export function Timeline() {
             </span>
             <span>
               <i className="timeline-legend__marker timeline-legend__marker--inferred" aria-hidden="true" />
-              Model-inferred link
+              Model-inferred link · review before relying
             </span>
           </div>
           {timeline.entries.length > 0 ? (

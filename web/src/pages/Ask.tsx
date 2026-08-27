@@ -152,18 +152,6 @@ export function Ask() {
             {loading ? "Asking…" : "Ask"}
           </button>
         </div>
-        <div className="question-examples" aria-label="Example questions">
-          <span>Try asking</span>
-          {["Why did this change?", "Who owns this decision?", "What superseded it?"].map((prompt) => (
-            <button
-              key={prompt}
-              type="button"
-              onClick={() => setQuestion(prompt)}
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
       </form>
 
       {error && (
