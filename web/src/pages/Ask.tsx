@@ -152,10 +152,123 @@ export function Ask() {
             {loading ? "Asking…" : "Ask"}
           </button>
         </div>
+        <div className="question-examples" aria-label="Example questions">
+          <span>Try asking</span>
+          {["Why did this change?", "Who owns this decision?", "What superseded it?"].map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => setQuestion(prompt)}
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
       </form>
 
+      {error && (
+        <div className="answer-error" role="alert">
+          <strong>{error.message}</strong>
+          {error.requestId && <span>Request ID: {error.requestId}</span>}
+        </div>
+      )}
+
+      {result && (
+        <article className="answer-card" aria-labelledby="answer-title">
+          <div className="answer-card__heading">
+            <div>
+              <p className="eyebrow">Response</p>
+              <h2 id="answer-title">Answer</h2>
+            </div>
+            <div className="answer-state">
+              <strong className={`answer-state--${result.state}`}>{result.state}</strong>
+              <span>{result.confidence} confidence</span>
+            </div>
+          </div>
+
+          {(result.cached || result.stale) && (
+            <div
+              className={`cached-answer-status${
+                result.stale ? " cached-answer-status--stale" : ""
+              }`}
+            >
+              <span>
+                {result.stale
+                  ? "Corpus changed since this answer was generated."
+                  : "Saved answer — no model tokens used."}
+              </span>
+              <button
+                type="button"
+                onClick={() => void ask(true)}
+                disabled={loading}
+              >
+                {loading ? "Asking…" : "Ask again"}
+              </button>
+            </div>
+          )}
+
+          <p className="answer-text">{result.answer}</p>
+
+          {result.claims.length > 0 && (
+            <ol className="answer-claims" aria-label="Answer claims">
+              {result.claims.map((claim, index) => {
+                const numbers = claim.passage_ids
+                  .map((passageId) => citationNumbers.get(passageId))
+                  .filter((number): number is number => number !== undefined);
+                return (
+                  <li key={`${claim.text}-${index}`}>
+                    {claim.text}{" "}
+                    {numbers.map((number) => (
+                      <a
+                        key={number}
+                        href={`#citation-${number}`}
+                        aria-label={`View citation ${number}`}
+                      >
+                        [{number}]
+                      </a>
+                    ))}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+
+          {result.conflicts.length > 0 && (
+            <div className="conflict-warning" role="alert">
+              <strong>Conflicting evidence</strong>
+              <span>
+                Sources disagree about:{" "}
+                {result.conflicts.map((conflict) => conflict.facet).join(", ")}.
+              </span>
+            </div>
+          )}
+
+          {result.unsupported_facets.length > 0 && (
+            <aside className="unsupported-facets">
+              <strong>Unsupported by current evidence</strong>
+              <ul>
+                {result.unsupported_facets.map((facet) => (
+                  <li key={facet}>{facet}</li>
+                ))}
+              </ul>
+            </aside>
+          )}
+
+          <CitationList citations={result.citations} />
+          <RetrievalTrace traceId={result.trace_id} />
+        </article>
+      )}
+
+      {loading && (
+        <div className="answer-loading" role="status" aria-live="polite">
+          <strong>Searching workspace evidence…</strong>
+          <span>Checking decisions, sources, and possible conflicts.</span>
+          <span className="answer-loading__bar" aria-hidden="true" />
+        </div>
+      )}
+
       <section
-        className="question-history"
+        className="question-history question-history--secondary"
         aria-labelledby="question-history-title"
       >
         <div className="question-history__heading">
@@ -244,90 +357,6 @@ export function Ask() {
           </nav>
         )}
       </section>
-
-      {error && (
-        <div className="answer-error" role="alert">
-          <strong>{error.message}</strong>
-          {error.requestId && <span>Request ID: {error.requestId}</span>}
-        </div>
-      )}
-
-      {result && (
-        <article className="answer-card" aria-labelledby="answer-title">
-          <div className="answer-card__heading">
-            <div>
-              <p className="eyebrow">Response</p>
-              <h2 id="answer-title">Answer</h2>
-            </div>
-            <div className="answer-state">
-              <strong className={`answer-state--${result.state}`}>{result.state}</strong>
-              <span>{result.confidence} confidence</span>
-            </div>
-          </div>
-
-          {(result.cached || result.stale) && (
-            <div
-              className={`cached-answer-status${
-                result.stale ? " cached-answer-status--stale" : ""
-              }`}
-            >
-              <span>
-                {result.stale
-                  ? "Corpus changed since this answer was generated."
-                  : "Saved answer — no model tokens used."}
-              </span>
-              <button
-                type="button"
-                onClick={() => void ask(true)}
-                disabled={loading}
-              >
-                {loading ? "Asking…" : "Ask again"}
-              </button>
-            </div>
-          )}
-
-          <p className="answer-text">{result.answer}</p>
-
-          {result.claims.length > 0 && (
-            <ol className="answer-claims" aria-label="Answer claims">
-              {result.claims.map((claim, index) => {
-                const numbers = claim.passage_ids
-                  .map((passageId) => citationNumbers.get(passageId))
-                  .filter((number): number is number => number !== undefined);
-                return (
-                  <li key={`${claim.text}-${index}`}>
-                    {claim.text} {numbers.map((number) => `[${number}]`).join("")}
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-
-          {result.conflicts.length > 0 && (
-            <div className="conflict-warning" role="alert">
-              <strong>Conflicting evidence</strong>
-              <span>
-                Sources disagree about:{" "}
-                {result.conflicts.map((conflict) => conflict.facet).join(", ")}.
-              </span>
-            </div>
-          )}
-
-          {result.unsupported_facets.length > 0 && (
-            <aside className="unsupported-facets">
-              <strong>Unsupported by current evidence</strong>
-              <ul>
-                {result.unsupported_facets.map((facet) => (
-                  <li key={facet}>{facet}</li>
-                ))}
-              </ul>
-            </aside>
-          )}
-
-          <CitationList citations={result.citations} />
-          <RetrievalTrace traceId={result.trace_id} />
-        </article>
-      )}
     </section>
   );
 }
