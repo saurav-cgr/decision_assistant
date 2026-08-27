@@ -2,7 +2,7 @@
 .authentication-card button {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--paper);
+  background: var(--surface-raised);
   color: var(--ink);
   cursor: pointer;
   padding: 8px 12px;
@@ -18,7 +18,7 @@
 .authentication-card {
   width: min(100%, 460px);
   padding: 38px;
-  background: var(--paper);
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 20px;
   box-shadow: var(--shadow);
@@ -69,8 +69,8 @@
 }
 
 .auth-message--error {
-  color: #9c2f1d;
-  background: #f9dfd7;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .account-forms {
@@ -86,7 +86,7 @@
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--paper);
+  background: var(--surface-raised);
 }
 
 .account-forms h2 {

@@ -1,5 +1,7 @@
 import { type FormEvent, useState } from "react";
 
+import "./Timeline.css";
+
 import { getTimeline } from "../api/client";
 import type { TimelineResponse } from "../api/types";
 import { TimelineEvent } from "../components/TimelineEvent";
@@ -67,6 +69,16 @@ export function Timeline() {
           <div className="section-heading">
             <p className="eyebrow">Chronological evidence</p>
             <h2 id="timeline-topic-title">{timeline.topic}</h2>
+          </div>
+          <div className="timeline-legend" aria-label="Timeline evidence legend">
+            <span>
+              <i className="timeline-legend__marker timeline-legend__marker--confirmed" aria-hidden="true" />
+              Source-confirmed
+            </span>
+            <span>
+              <i className="timeline-legend__marker timeline-legend__marker--inferred" aria-hidden="true" />
+              Model-inferred link · review before relying
+            </span>
           </div>
           {timeline.entries.length > 0 ? (
             <ol className="timeline-list" aria-label="Decision timeline">

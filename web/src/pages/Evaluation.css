@@ -1,0 +1,346 @@
+.evaluation-page {
+  display: grid;
+  gap: 30px;
+}
+
+.evaluation-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 15px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.evaluation-controls > div {
+  display: grid;
+  flex: 1;
+  min-width: 180px;
+  gap: 3px;
+}
+
+.evaluation-controls > div span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.evaluation-controls button {
+  min-height: 44px;
+  padding: 9px 14px;
+  color: white;
+  background: var(--accent);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.evaluation-controls button:last-child {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.evaluation-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.configuration-warning {
+  display: grid;
+  gap: 5px;
+  padding: 16px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-left: 4px solid var(--signal);
+  border-radius: 9px;
+  font-size: 0.84rem;
+}
+
+.evaluation-running-hint {
+  margin: 14px 0 0;
+  padding: 12px 16px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 9px;
+  font-size: 0.84rem;
+}
+
+.evaluation-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+.evaluation-run {
+  min-width: 0;
+  padding: 20px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.evaluation-run__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.evaluation-run__heading h2 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.6rem;
+  font-weight: 500;
+}
+
+.run-status {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.run-status strong {
+  color: var(--accent);
+  text-transform: capitalize;
+}
+
+.run-status--failed strong {
+  color: var(--danger);
+}
+
+.evaluation-progress {
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.evaluation-progress strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.evaluation-progress span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.evaluation-progress__bar {
+  height: 8px;
+  margin-top: 12px;
+  overflow: hidden;
+  background: var(--line);
+  border-radius: 999px;
+}
+
+.evaluation-progress__bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.5s ease;
+}
+
+.metric-summary {
+  margin-top: 20px;
+}
+
+.metric-summary dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.metric-summary dl > div {
+  min-width: 0;
+  padding: 12px;
+  background: var(--surface-subtle);
+}
+
+.metric-summary dt {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.metric-summary dd {
+  margin: 5px 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.35rem;
+}
+
+.metric-summary small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+.evaluation-table-wrap {
+  margin-top: 20px;
+  overflow-x: auto;
+}
+
+.evaluation-results__title {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.evaluation-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.evaluation-table-wrap th,
+.evaluation-table-wrap td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.evaluation-table-wrap thead th {
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.evaluation-table-wrap tbody th {
+  overflow-wrap: anywhere;
+}
+
+.evaluation-table-wrap a {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.result-flags {
+  display: grid;
+  gap: 4px;
+}
+
+.result-flags span {
+  width: fit-content;
+  padding: 3px 6px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.result-flags .result-pass {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.evaluation-diagnostic {
+  min-width: 0;
+  margin-top: 14px;
+  padding: 14px;
+  background: var(--surface-subtle);
+  border-radius: 10px;
+}
+
+.evaluation-diagnostic h3,
+.evaluation-diagnostic p {
+  margin: 0;
+}
+
+.evaluation-diagnostic p {
+  margin-top: 6px;
+  color: var(--danger);
+}
+
+.evaluation-diagnostic dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+  font-size: 0.72rem;
+}
+
+.evaluation-diagnostic dl > div {
+  min-width: 0;
+}
+
+.evaluation-diagnostic dt {
+  color: var(--muted);
+}
+
+.evaluation-diagnostic dd {
+  margin: 2px 0 0;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.evaluation-facet-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evaluation-facet-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.evaluation-facet-list span {
+  min-width: 0;
+  color: var(--muted);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.evaluation-citation-diagnostics,
+.evaluation-citation-diagnostics li,
+.evaluation-diagnostic details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.evaluation-diagnostic summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.evaluation-diagnostic pre {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px;
+  background: var(--surface-dark);
+  border-radius: 7px;
+  color: var(--text-on-dark);
+  font-size: 0.62rem;
+  white-space: pre-wrap;
+}

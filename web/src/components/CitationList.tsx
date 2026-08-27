@@ -52,7 +52,7 @@ export function CitationList({ citations }: CitationListProps) {
           const location = locatorLabel(citation.locator);
           const equivalentSources = citation.equivalent_sources ?? [];
           return (
-            <li key={`${citation.passage_id}-${index}`}>
+            <li id={`citation-${index + 1}`} key={`${citation.passage_id}-${index}`}>
               <span className="citation-number" aria-hidden="true">
                 {index + 1}
               </span>

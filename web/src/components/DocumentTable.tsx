@@ -3,8 +3,10 @@ import { IngestionStatus } from "./IngestionStatus";
 
 type DocumentTableProps = {
   documents: DocumentListItem[];
+  emptyMessage?: string;
   retryingId: string | null;
   onRetry: (documentId: string) => void;
+  onUploadRequest?: () => void;
   onViewSource: (document: DocumentListItem) => void;
 };
 
@@ -33,21 +35,40 @@ function canRetry(document: DocumentListItem): boolean {
 
 export function DocumentTable({
   documents,
+  emptyMessage = "No source documents yet",
   retryingId,
   onRetry,
+  onUploadRequest,
   onViewSource,
 }: DocumentTableProps) {
   if (documents.length === 0) {
     return (
       <div className="workspace-empty">
-        <h2>No source documents yet</h2>
-        <p>Upload project notes to begin building decision memory.</p>
+        <h2>{emptyMessage}</h2>
+        <p>
+          {emptyMessage === "No source documents yet"
+            ? "Upload project notes to begin building decision memory."
+            : "Try a different search or status filter."}
+        </p>
+        {onUploadRequest && emptyMessage === "No source documents yet" && (
+          <button type="button" className="workspace-empty__action" onClick={onUploadRequest}>
+            Upload first source
+          </button>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="document-list" aria-label="Workspace documents">
+    <section aria-labelledby="document-list-title">
+      <div className="document-list__heading">
+        <div>
+          <p className="eyebrow">Indexed evidence</p>
+          <h2 id="document-list-title">Sources</h2>
+        </div>
+        <span>{documents.length} {documents.length === 1 ? "source" : "sources"}</span>
+      </div>
+      <div className="document-list" aria-label="Workspace documents">
       {documents.map((document) => (
         <article className="document-card" key={document.id}>
           <div className="document-card__heading">
@@ -118,6 +139,7 @@ export function DocumentTable({
           </div>
         </article>
       ))}
-    </div>
+      </div>
+    </section>
   );
 }

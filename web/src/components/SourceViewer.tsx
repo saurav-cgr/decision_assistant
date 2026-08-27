@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import "./SourceViewer.css";
+
 import type { DocumentDetail } from "../api/types";
 
 type SourceViewerProps = {
@@ -9,6 +11,7 @@ type SourceViewerProps = {
 
 export function SourceViewer({ document, onClose }: SourceViewerProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     // Use `window` (not `document`) because the `document` prop shadows the
@@ -17,6 +20,22 @@ export function SourceViewer({ document, onClose }: SourceViewerProps) {
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          "button, a, input, select, textarea, [tabindex]:not([tabindex='-1'])",
+        ) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && window.document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && window.document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
@@ -29,6 +48,7 @@ export function SourceViewer({ document, onClose }: SourceViewerProps) {
     <div className="source-viewer-backdrop" onClick={onClose}>
       <section
         className="source-viewer"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="source-viewer-title"

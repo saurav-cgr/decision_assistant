@@ -1,0 +1,223 @@
+.decision-detail-page {
+  display: grid;
+  gap: 30px;
+  max-width: 920px;
+}
+
+.decision-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.decision-badges span {
+  padding: 5px 9px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.decision-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.decision-detail-header {
+  max-width: 760px;
+}
+
+.decision-fields div {
+  min-width: 0;
+  padding: 16px;
+  background: var(--surface-raised);
+}
+
+.decision-fields dt {
+  color: var(--muted);
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.decision-fields dd {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.source-evidence,
+.decision-editor,
+.revision-section,
+.relationship-section {
+  padding: clamp(20px, 4vw, 30px);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 17px;
+}
+
+.source-evidence blockquote {
+  margin: 18px 0 0;
+  padding: 14px 17px;
+  background: var(--surface-subtle);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  line-height: 1.55;
+}
+
+.decision-editor form,
+.relationship-section form {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.decision-editor label,
+.relationship-section label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.decision-editor input,
+.decision-editor select,
+.decision-editor textarea,
+.relationship-section select,
+.relationship-section textarea {
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.decision-editor textarea,
+.relationship-section textarea {
+  resize: vertical;
+}
+
+.decision-editor fieldset {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.decision-editor legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.decision-editor fieldset label {
+  display: flex;
+  grid-template-columns: auto 1fr;
+  align-items: flex-start;
+  gap: 9px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.decision-editor fieldset input {
+  width: auto;
+  margin-top: 3px;
+}
+
+.decision-editor button,
+.relationship-section button,
+.unsupported-confirmation button {
+  width: fit-content;
+  min-height: 44px;
+  padding: 9px 14px;
+  color: white;
+  background: var(--accent);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.decision-editor button:disabled,
+.relationship-section button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.unsupported-confirmation {
+  margin-top: 16px;
+  padding: 16px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-left: 4px solid var(--signal);
+  border-radius: 9px;
+}
+
+.unsupported-confirmation p {
+  margin: 6px 0 14px;
+  line-height: 1.5;
+}
+
+.unsupported-confirmation > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.unsupported-confirmation button:last-child {
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+
+.revision-section ol,
+.relationship-section ul {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.revision-section li,
+.relationship-section li {
+  display: grid;
+  grid-template-columns: minmax(100px, auto) 1fr auto;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface-subtle);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.revision-section small {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.relationship-section form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.relationship-section form label:last-of-type,
+.relationship-section form button {
+  grid-column: 1 / -1;
+}

@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   login as loginRequest,
   logout as logoutRequest,
+  setActiveWorkspaceId,
   setAccessToken,
   setUnauthorizedHandler,
   signUp as signUpRequest,
@@ -29,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setAccessToken(null);
+      setActiveWorkspaceId(null);
       setUser(null);
     });
     return () => setUnauthorizedHandler(null);
@@ -52,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       clearSession() {
         setAccessToken(null);
+        setActiveWorkspaceId(null);
         setUser(null);
       },
       async signOut() {
@@ -59,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await logoutRequest();
         } finally {
           setAccessToken(null);
+          setActiveWorkspaceId(null);
           setUser(null);
         }
       },

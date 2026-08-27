@@ -109,29 +109,36 @@ export function WorkspaceSelector({
           </span>
         ) : null}
       </div>
-      <form
-        className="workspace-selector__create"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void handleCreate();
-        }}
-      >
-        <input
-          aria-label="New workspace name"
-          placeholder="New workspace…"
-          value={newName}
-          onChange={(event) => setNewName(event.target.value)}
-          disabled={creating}
-        />
-        <button type="submit" disabled={creating || !newName.trim()}>
-          {creating ? "Creating…" : "Create"}
-        </button>
-      </form>
-      {createError ? (
-        <p className="form-error" role="alert">
-          {createError}
-        </p>
-      ) : null}
+      <details className="workspace-selector__create-menu">
+        <summary>New workspace</summary>
+        <form
+          className="workspace-selector__create"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleCreate();
+          }}
+        >
+          <label htmlFor="new-workspace-name">Workspace name</label>
+          <div>
+            <input
+              id="new-workspace-name"
+              aria-label="New workspace name"
+              placeholder="e.g. Atlas"
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+              disabled={creating}
+            />
+            <button type="submit" disabled={creating || !newName.trim()}>
+              {creating ? "Creating…" : "Create"}
+            </button>
+          </div>
+        </form>
+        {createError ? (
+          <p className="form-error" role="alert">
+            {createError}
+          </p>
+        ) : null}
+      </details>
       {error ? (
         <p className="form-error" role="alert">
           {error}

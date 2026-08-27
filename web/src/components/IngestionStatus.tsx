@@ -24,7 +24,7 @@ export function IngestionStatus({
       error?.message ||
       "Indexing failed. Inspect the API logs for details.";
     return (
-      <div className="ingestion-status ingestion-status--failed">
+      <div className="ingestion-status ingestion-status--failed" role="alert">
         <strong>Failed</strong>
         <span>{message}</span>
       </div>
@@ -33,7 +33,7 @@ export function IngestionStatus({
 
   if (status === "pending" || status === "running") {
     return (
-      <div className="ingestion-status ingestion-status--working">
+      <div className="ingestion-status ingestion-status--working" role="status" aria-live="polite">
         <strong>{status === "pending" ? "Queued" : "Indexing"}</strong>
         <span>
           {stage || "Preparing"}
@@ -45,7 +45,7 @@ export function IngestionStatus({
 
   if (status === "completed") {
     return (
-      <div className="ingestion-status ingestion-status--complete">
+      <div className="ingestion-status ingestion-status--complete" role="status">
         <strong>Indexed</strong>
         <span>{stage === "unchanged" ? "Content unchanged" : "Ready to search"}</span>
       </div>
