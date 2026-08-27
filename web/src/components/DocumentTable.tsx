@@ -47,7 +47,15 @@ export function DocumentTable({
   }
 
   return (
-    <div className="document-list" aria-label="Workspace documents">
+    <section aria-labelledby="document-list-title">
+      <div className="document-list__heading">
+        <div>
+          <p className="eyebrow">Indexed evidence</p>
+          <h2 id="document-list-title">Sources</h2>
+        </div>
+        <span>{documents.length} {documents.length === 1 ? "source" : "sources"}</span>
+      </div>
+      <div className="document-list" aria-label="Workspace documents">
       {documents.map((document) => (
         <article className="document-card" key={document.id}>
           <div className="document-card__heading">
@@ -118,6 +126,7 @@ export function DocumentTable({
           </div>
         </article>
       ))}
-    </div>
+      </div>
+    </section>
   );
 }

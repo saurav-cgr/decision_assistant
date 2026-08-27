@@ -150,6 +150,7 @@ export function EvaluationResults({ run }: EvaluationResultsProps) {
 
       {run.results.length > 0 && (
         <div className="evaluation-table-wrap">
+          <h3 className="evaluation-results__title">Question-level results</h3>
           <table aria-label={`${run.strategy} per-question results`}>
             <thead>
               <tr>

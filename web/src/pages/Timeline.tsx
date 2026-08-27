@@ -68,6 +68,16 @@ export function Timeline() {
             <p className="eyebrow">Chronological evidence</p>
             <h2 id="timeline-topic-title">{timeline.topic}</h2>
           </div>
+          <div className="timeline-legend" aria-label="Timeline evidence legend">
+            <span>
+              <i className="timeline-legend__marker timeline-legend__marker--confirmed" aria-hidden="true" />
+              Source-confirmed
+            </span>
+            <span>
+              <i className="timeline-legend__marker timeline-legend__marker--inferred" aria-hidden="true" />
+              Model-inferred link
+            </span>
+          </div>
           {timeline.entries.length > 0 ? (
             <ol className="timeline-list" aria-label="Decision timeline">
               {timeline.entries.map((entry) => (
