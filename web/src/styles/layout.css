@@ -77,6 +77,45 @@
   font-weight: 750;
 }
 
+.workspace-bootstrap {
+  display: grid;
+  max-width: 760px;
+  gap: 12px;
+  padding: clamp(28px, 5vw, 48px);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.workspace-bootstrap h1,
+.workspace-bootstrap p {
+  margin: 0;
+}
+
+.workspace-bootstrap h1 {
+  font-family: inherit;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  line-height: 1.05;
+}
+
+.workspace-bootstrap p:not(.eyebrow) {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.workspace-bootstrap button {
+  width: fit-content;
+  margin-top: 8px;
+  padding: 10px 16px;
+  color: white;
+  background: var(--accent);
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 750;
+}
+
 .source-filters {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 170px 150px;

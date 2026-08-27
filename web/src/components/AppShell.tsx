@@ -1,10 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import {
-  getActiveWorkspaceId,
-  listWorkspaces,
-  setActiveWorkspaceId,
-} from "../api/client";
+import { listWorkspaces, setActiveWorkspaceId } from "../api/client";
 import { WorkspaceSelector } from "./WorkspaceSelector";
 import { useAuth } from "../app/AuthContext";
 
@@ -18,31 +14,31 @@ const navigation = [
 
 export function AppShell() {
   const { user, signOut } = useAuth();
-  const [activeWorkspaceId, setWorkspace] = useState<string | null>(
-    getActiveWorkspaceId(),
-  );
+  const [activeWorkspaceId, setWorkspace] = useState<string | null>(null);
+  const [workspaceStatus, setWorkspaceStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+
+  const loadActiveWorkspace = useCallback(async () => {
+    setWorkspaceStatus("loading");
+    try {
+      const response = await listWorkspaces();
+      const active =
+        response.items.find((item) => item.is_active) ?? response.items[0] ?? null;
+      setActiveWorkspaceId(active?.id ?? null);
+      setWorkspace(active?.id ?? null);
+      setWorkspaceError(null);
+      setWorkspaceStatus("ready");
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error ? error.message : "Workspaces could not be loaded.",
+      );
+      setWorkspaceStatus("error");
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadActiveWorkspace() {
-      try {
-        const response = await listWorkspaces();
-        if (cancelled) {
-          return;
-        }
-        const active =
-          response.items.find((item) => item.is_active) ?? response.items[0] ?? null;
-        setActiveWorkspaceId(active?.id ?? null);
-        setWorkspace(active?.id ?? null);
-      } catch {
-        // Leave the active workspace unset; pages surface the API error.
-      }
-    }
     void loadActiveWorkspace();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [loadActiveWorkspace]);
 
   const handleSwitch = (workspaceId: string) => {
     setActiveWorkspaceId(workspaceId);
@@ -86,7 +82,31 @@ export function AppShell() {
       </nav>
 
       <main className="main-content">
-        <Outlet key={activeWorkspaceId ?? "none"} />
+        {workspaceStatus === "loading" && (
+          <section className="workspace-bootstrap" aria-live="polite">
+            <p className="eyebrow">Workspace</p>
+            <h1>Loading your workspace…</h1>
+          </section>
+        )}
+        {workspaceStatus === "error" && (
+          <section className="workspace-bootstrap" role="alert">
+            <p className="eyebrow">Workspace unavailable</p>
+            <h1>{workspaceError ?? "Workspaces could not be loaded."}</h1>
+            <button type="button" onClick={() => void loadActiveWorkspace()}>
+              Try again
+            </button>
+          </section>
+        )}
+        {workspaceStatus === "ready" && activeWorkspaceId && (
+          <Outlet key={activeWorkspaceId} />
+        )}
+        {workspaceStatus === "ready" && !activeWorkspaceId && (
+          <section className="workspace-bootstrap" aria-labelledby="create-workspace-title">
+            <p className="eyebrow">Workspace setup</p>
+            <h1 id="create-workspace-title">Create your first workspace</h1>
+            <p>Use “New workspace” above to create a workspace before asking questions or uploading sources.</p>
+          </section>
+        )}
       </main>
 
       <footer className="site-footer">
