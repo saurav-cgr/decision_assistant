@@ -7,13 +7,18 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --ink: #17201d;
-  --muted: #69716d;
+  --muted: #5f6964;
   --paper: #fbfaf5;
+  --surface-subtle: #f2f5f1;
   --line: #d9d7ce;
+  --line-strong: #bfc5c0;
   --accent: #075d4c;
   --accent-soft: #dbe9e2;
   --signal: #e36d3f;
   --shadow: 0 24px 70px rgb(35 48 43 / 9%);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
 }
 
 * {
@@ -32,11 +37,23 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  line-height: 1.5;
 }
 
 button,
-a {
+a,
+input,
+select,
+textarea {
   font: inherit;
+}
+
+button {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
 }
 
 a {
@@ -46,13 +63,13 @@ a {
 .app-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  width: min(1180px, calc(100% - 40px));
+  width: min(1280px, calc(100% - 32px));
   min-height: calc(100vh - 40px);
   margin: 20px auto;
   overflow: hidden;
   background: rgb(251 250 245 / 92%);
   border: 1px solid rgb(23 32 29 / 12%);
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
 }
@@ -132,7 +149,7 @@ a {
 }
 
 .primary-nav__link {
-  padding: 14px 14px;
+  padding: 12px 14px;
   color: var(--muted);
   border-bottom: 2px solid transparent;
   font-size: 0.86rem;
@@ -144,10 +161,12 @@ a {
 
 .primary-nav__link:hover {
   color: var(--ink);
+  background: var(--surface-subtle);
 }
 
 .primary-nav__link.is-active {
   color: var(--accent);
+  background: var(--accent-soft);
   border-bottom-color: var(--accent);
 }
 
@@ -175,7 +194,7 @@ a {
 .workspace-selector select {
   padding: 7px 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--panel, #fff);
   color: var(--ink);
   font: inherit;
@@ -196,14 +215,14 @@ a {
   width: 150px;
   padding: 7px 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font: inherit;
 }
 
 .workspace-selector__create button {
   padding: 7px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--panel, #fff);
   color: var(--ink);
   font: inherit;
@@ -217,7 +236,7 @@ a {
 
 .main-content {
   min-height: 560px;
-  padding: clamp(24px, 4vw, 48px) clamp(24px, 8vw, 100px);
+  padding: clamp(28px, 4vw, 52px) clamp(24px, 7vw, 88px);
 }
 
 .page-intro {
@@ -1585,11 +1604,32 @@ a {
 }
 
 :focus-visible {
-  outline: 3px solid rgb(227 109 63 / 45%);
+  outline: 3px solid var(--signal);
   outline-offset: 3px;
 }
 
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--accent);
+  outline-color: var(--signal);
+}
+
 @media (max-width: 760px) {
+  .site-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .brand {
+    margin-right: auto;
+  }
+
+  .workspace-selector {
+    flex: 1 1 100%;
+    order: 3;
+  }
+
   .workspace-header,
   .document-card__heading {
     align-items: flex-start;
@@ -1690,6 +1730,32 @@ a {
   .main-content {
     min-height: 520px;
     padding: 54px 22px;
+  }
+
+  .workspace-selector {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace-selector__row,
+  .workspace-selector__create {
+    width: 100%;
+  }
+
+  .workspace-selector select,
+  .workspace-selector__create input,
+  .workspace-selector__create button {
+    min-height: 42px;
+  }
+
+  .workspace-selector__row select {
+    flex: 1;
+    max-width: none;
+  }
+
+  .workspace-selector__create input {
+    flex: 1;
+    width: auto;
   }
 
   .site-footer {
