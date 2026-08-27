@@ -38,7 +38,7 @@
 .decision-fields div {
   min-width: 0;
   padding: 16px;
-  background: #fffefa;
+  background: var(--surface-raised);
 }
 
 .decision-fields dt {
@@ -60,7 +60,7 @@
 .revision-section,
 .relationship-section {
   padding: clamp(20px, 4vw, 30px);
-  background: #fffefa;
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 17px;
 }
@@ -68,7 +68,7 @@
 .source-evidence blockquote {
   margin: 18px 0 0;
   padding: 14px 17px;
-  background: #f3f1e9;
+  background: var(--surface-subtle);
   border-left: 4px solid var(--accent);
   border-radius: 8px;
   line-height: 1.55;
@@ -85,7 +85,7 @@
 .relationship-section label {
   display: grid;
   gap: 7px;
-  color: #4f5955;
+  color: var(--muted);
   font-size: 0.76rem;
   font-weight: 750;
 }
@@ -98,7 +98,7 @@
   width: 100%;
   padding: 10px 12px;
   color: var(--ink);
-  background: #fbfaf5;
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 8px;
   font: inherit;
@@ -162,8 +162,8 @@
 .unsupported-confirmation {
   margin-top: 16px;
   padding: 16px;
-  color: #762e21;
-  background: #f8e7e1;
+  color: var(--danger);
+  background: var(--danger-soft);
   border-left: 4px solid var(--signal);
   border-radius: 9px;
 }
@@ -200,7 +200,7 @@
   grid-template-columns: minmax(100px, auto) 1fr auto;
   gap: 12px;
   padding: 12px;
-  background: #f3f1e9;
+  background: var(--surface-subtle);
   border-radius: 8px;
   font-size: 0.8rem;
 }

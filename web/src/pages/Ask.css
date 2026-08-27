@@ -2,7 +2,7 @@
   display: grid;
   gap: 16px;
   padding: 20px;
-  background: #f5f2e9;
+  background: var(--surface-subtle);
   border: 1px solid var(--line);
   border-radius: 16px;
 }
@@ -32,7 +32,7 @@
   min-height: 40px;
   padding: 8px 11px;
   color: var(--ink);
-  background: #fffefa;
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 9px;
   font: inherit;
@@ -55,7 +55,7 @@
   padding: 12px 14px;
   color: var(--ink);
   text-align: left;
-  background: #fffefa;
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 10px;
   cursor: pointer;
@@ -102,7 +102,7 @@
 }
 
 .question-history__error {
-  color: #762e21;
+  color: var(--danger);
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -137,8 +137,8 @@
   gap: 14px;
   margin: 20px 0 0;
   padding: 10px 12px;
-  color: #315b49;
-  background: #e7f1e9;
+  color: var(--success);
+  background: var(--success-soft);
   border-radius: 9px;
   font-size: 0.78rem;
   font-weight: 700;
@@ -146,7 +146,7 @@
 
 .cached-answer-status button {
   padding: 7px 10px;
-  color: #315b49;
+  color: var(--success);
   background: transparent;
   border: 1px solid currentcolor;
   border-radius: 7px;
@@ -155,8 +155,8 @@
 }
 
 .cached-answer-status--stale {
-  color: #762e21;
-  background: #f8e7e1;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .answer-loading {

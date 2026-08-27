@@ -7,7 +7,7 @@
   margin: 20px auto;
   overflow: hidden;
   background: rgb(251 250 245 / 92%);
-  border: 1px solid rgb(23 32 29 / 12%);
+  border: 1px solid rgb(32 37 43 / 12%);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
@@ -73,10 +73,10 @@
 .local-status span {
   width: 8px;
   height: 8px;
-  background: #1c9a73;
-  border: 2px solid #c9ecdf;
+  background: var(--success);
+  border: 2px solid var(--success-soft);
   border-radius: 999px;
-  box-shadow: 0 0 0 3px rgb(28 154 115 / 14%);
+  box-shadow: 0 0 0 3px var(--success-soft);
 }
 
 .primary-nav {
@@ -137,7 +137,7 @@
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: var(--panel, #fff);
+  background: var(--surface-raised);
   color: var(--ink);
   font: inherit;
 }
@@ -207,7 +207,7 @@
 .page-description {
   max-width: 620px;
   margin: 24px 0 0;
-  color: #4f5955;
+  color: var(--muted);
   font-size: clamp(1rem, 2vw, 1.22rem);
   line-height: 1.65;
 }
@@ -218,8 +218,8 @@
   gap: 18px;
   margin-top: 56px;
   padding: 24px;
-  background: linear-gradient(135deg, var(--accent-soft), #f1f4ee);
-  border: 1px solid rgb(7 93 76 / 14%);
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface-subtle));
+  border: 1px solid rgb(36 87 214 / 14%);
   border-radius: 18px;
 }
 
@@ -244,7 +244,7 @@
 .empty-panel p {
   max-width: 590px;
   margin-top: 7px;
-  color: #53615b;
+  color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.55;
 }
@@ -281,7 +281,7 @@
 .request-id {
   padding: 10px 12px;
   overflow-wrap: anywhere;
-  background: #efede5;
+  background: var(--surface-inset);
   border-radius: 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.76rem;

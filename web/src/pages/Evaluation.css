@@ -9,7 +9,7 @@
   flex-wrap: wrap;
   gap: 10px;
   padding: 15px;
-  background: #fffefa;
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 14px;
 }
@@ -51,8 +51,8 @@
   display: grid;
   gap: 5px;
   padding: 16px;
-  color: #762e21;
-  background: #f8e7e1;
+  color: var(--danger);
+  background: var(--danger-soft);
   border-left: 4px solid var(--signal);
   border-radius: 9px;
   font-size: 0.84rem;
@@ -79,10 +79,10 @@
 .evaluation-run {
   min-width: 0;
   padding: 20px;
-  background: #fffefa;
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: 0 8px 24px rgb(35 48 43 / 5%);
+  box-shadow: var(--shadow-card);
 }
 
 .evaluation-run__heading {
@@ -113,7 +113,7 @@
 }
 
 .run-status--failed strong {
-  color: #8b3d2e;
+  color: var(--danger);
 }
 
 .evaluation-progress {
@@ -170,7 +170,7 @@
 .metric-summary dl > div {
   min-width: 0;
   padding: 12px;
-  background: #f7f5ee;
+  background: var(--surface-subtle);
 }
 
 .metric-summary dt {
@@ -244,8 +244,8 @@
 .result-flags span {
   width: fit-content;
   padding: 3px 6px;
-  color: #8b3d2e;
-  background: #f8e7e1;
+  color: var(--danger);
+  background: var(--danger-soft);
   border-radius: 5px;
   white-space: nowrap;
 }
@@ -259,7 +259,7 @@
   min-width: 0;
   margin-top: 14px;
   padding: 14px;
-  background: #f3f1e9;
+  background: var(--surface-subtle);
   border-radius: 10px;
 }
 
@@ -270,7 +270,7 @@
 
 .evaluation-diagnostic p {
   margin-top: 6px;
-  color: #8b3d2e;
+  color: var(--danger);
 }
 
 .evaluation-diagnostic dl {
@@ -338,9 +338,9 @@
   max-height: 280px;
   overflow: auto;
   padding: 10px;
-  background: #17201d;
+  background: var(--surface-dark);
   border-radius: 7px;
-  color: #d9e0dc;
+  color: var(--text-on-dark);
   font-size: 0.62rem;
   white-space: pre-wrap;
 }

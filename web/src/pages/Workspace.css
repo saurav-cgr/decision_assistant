@@ -48,9 +48,9 @@
   flex-wrap: wrap;
   gap: 8px 20px;
   padding: 15px 18px;
-  color: #51605a;
+  color: var(--muted);
   background: var(--accent-soft);
-  border: 1px solid rgb(7 93 76 / 14%);
+  border: 1px solid rgb(36 87 214 / 14%);
   border-radius: 12px;
   font-size: 0.82rem;
   line-height: 1.5;
@@ -63,23 +63,23 @@
 .workspace-notice {
   margin: 0;
   padding: 13px 16px;
-  background: #edf2ed;
+  background: var(--success-soft);
   border-left: 4px solid var(--accent);
   border-radius: 8px;
   font-size: 0.88rem;
 }
 
 .workspace-notice--error {
-  color: #762e21;
-  background: #f8e7e1;
+  color: var(--danger);
+  background: var(--danger-soft);
   border-left-color: var(--signal);
 }
 
 .workspace-empty {
   padding: 38px;
   text-align: center;
-  background: #f6f4ed;
-  border: 1px dashed #c8c6bc;
+  background: var(--surface-subtle);
+  border: 1px dashed var(--line-strong);
   border-radius: 16px;
 }
 
@@ -100,10 +100,10 @@
 
 .document-card {
   padding: 22px;
-  background: #fffefa;
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: 0 8px 30px rgb(35 48 43 / 5%);
+  box-shadow: var(--shadow-card);
 }
 
 .document-card__heading,
@@ -163,11 +163,11 @@
 
 .ingestion-status--failed {
   max-width: 250px;
-  color: #8b3d2e;
+  color: var(--danger);
 }
 
 .ingestion-status--failed strong {
-  color: #8b3d2e;
+  color: var(--danger);
 }
 
 .document-metadata {

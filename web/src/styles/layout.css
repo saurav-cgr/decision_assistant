@@ -51,7 +51,7 @@
   background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  box-shadow: 0 12px 30px rgb(35 48 43 / 12%);
+  box-shadow: var(--shadow-soft);
 }
 
 .workspace-selector__create label {
@@ -139,7 +139,7 @@
 
 .document-card:hover {
   border-color: var(--line-strong);
-  box-shadow: 0 12px 30px rgb(35 48 43 / 8%);
+  box-shadow: var(--shadow-soft);
 }
 
 .timeline-legend {
