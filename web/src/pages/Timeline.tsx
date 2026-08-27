@@ -1,5 +1,7 @@
 import { type FormEvent, useState } from "react";
 
+import "./Timeline.css";
+
 import { getTimeline } from "../api/client";
 import type { TimelineResponse } from "../api/types";
 import { TimelineEvent } from "../components/TimelineEvent";

@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
+import "./DecisionDetail.css";
+
 import {
   createDecisionRelation,
   getDecision,

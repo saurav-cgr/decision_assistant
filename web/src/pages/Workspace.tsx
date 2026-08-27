@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import "./Workspace.css";
+
 import {
   getDocument,
   listDocuments,

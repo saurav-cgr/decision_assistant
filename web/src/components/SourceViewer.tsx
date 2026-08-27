@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import "./SourceViewer.css";
+
 import type { DocumentDetail } from "../api/types";
 
 type SourceViewerProps = {

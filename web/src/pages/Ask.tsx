@@ -1,5 +1,8 @@
 import { type FormEvent, useEffect, useState } from "react";
 
+import "./AskCore.css";
+import "./Ask.css";
+
 import {
   answerQuestion,
   getQuestionHistoryItem,
