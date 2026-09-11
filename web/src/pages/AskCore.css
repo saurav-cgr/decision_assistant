@@ -168,7 +168,7 @@
   list-style: none;
 }
 
-.citation-list li {
+.citation-list > li {
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -190,19 +190,20 @@
   font-weight: 800;
 }
 
-.citation-list blockquote {
+.citation-list > li > blockquote {
   margin: 1px 0 0;
   line-height: 1.55;
 }
 
-.citation-list a {
+.citation-list > li > a {
   grid-column: 2;
   color: var(--accent);
   font-size: 0.76rem;
   font-weight: 750;
 }
 
-.citation-list button.citation-source {
+.citation-list > li > button.citation-source,
+.citation-list ul .citation-source {
   grid-column: 2;
   justify-self: start;
   padding: 0;
@@ -213,6 +214,15 @@
   font-weight: 750;
   text-align: left;
   cursor: pointer;
+}
+
+.citation-list > li > ul {
+  display: grid;
+  grid-column: 2;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .citation-list button.citation-source:hover {
