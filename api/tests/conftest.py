@@ -46,6 +46,8 @@ _APP_TABLES = (
     "decision_revisions",
     "ingestion_jobs",
     "retrieval_traces",
+    "conversation_messages",
+    "conversations",
     "question_answers",
     "evaluation_questions",
     "evaluation_runs",

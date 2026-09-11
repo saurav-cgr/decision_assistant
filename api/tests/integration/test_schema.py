@@ -494,6 +494,104 @@ async def test_question_answer_history_schema_enforces_cache_identity(
         )
 
 
+@pytest.mark.asyncio
+async def test_conversation_schema_enforces_workspace_scoping_and_turn_order(
+    db_session: AsyncSession,
+) -> None:
+    workspace_id = uuid4()
+    await db_session.execute(
+        text("INSERT INTO workspaces (id, name) VALUES (:id, :name)"),
+        {"id": workspace_id, "name": "Conversation workspace"},
+    )
+    trace_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO retrieval_traces "
+            "(id, workspace_id, request_id, normalized_question) "
+            "VALUES (:id, :workspace_id, :request_id, :question)"
+        ),
+        {
+            "id": trace_id,
+            "workspace_id": workspace_id,
+            "request_id": "conversation-request",
+            "question": "who changed authentication?",
+        },
+    )
+    conversation_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO conversations (id, workspace_id, title) "
+            "VALUES (:id, :workspace_id, :title)"
+        ),
+        {
+            "id": conversation_id,
+            "workspace_id": workspace_id,
+            "title": "Who changed authentication?",
+        },
+    )
+    response = {
+        "answer": "The authentication owner changed.",
+        "state": "answered",
+        "confidence": "high",
+        "claims": [],
+        "citations": [],
+        "conflicts": [],
+        "unsupported_facets": [],
+        "trace_id": str(trace_id),
+    }
+    await db_session.execute(
+        text(
+            "INSERT INTO conversation_messages "
+            "(id, conversation_id, trace_id, turn_number, question, response, "
+            "knowledge_revision) "
+            "VALUES (:id, :conversation_id, :trace_id, 1, :question, :response, 1)"
+        ),
+        {
+            "id": uuid4(),
+            "conversation_id": conversation_id,
+            "trace_id": trace_id,
+            "question": "Who changed authentication?",
+            "response": json.dumps(response),
+        },
+    )
+
+    stored = await db_session.execute(
+        text(
+            "SELECT title, response_schema_version, knowledge_revision "
+            "FROM conversations JOIN conversation_messages "
+            "ON conversations.id = conversation_messages.conversation_id "
+            "WHERE conversations.id = :id"
+        ),
+        {"id": conversation_id},
+    )
+    assert stored.one() == ("Who changed authentication?", 1, 1)
+
+    indexes = await db_session.scalars(
+        text(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE schemaname = 'public' AND tablename = 'conversations'"
+        )
+    )
+    assert "ix_conversations_workspace_updated" in set(indexes)
+
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text(
+                "INSERT INTO conversation_messages "
+                "(id, conversation_id, trace_id, turn_number, question, response, "
+                "knowledge_revision) "
+                "VALUES (:id, :conversation_id, :trace_id, 1, :question, :response, 1)"
+            ),
+            {
+                "id": uuid4(),
+                "conversation_id": conversation_id,
+                "trace_id": trace_id,
+                "question": "Why did this change?",
+                "response": json.dumps(response),
+            },
+        )
+
+
 def test_migration_source_has_no_legacy_backfill_or_profile_path() -> None:
     from pathlib import Path
 

@@ -112,7 +112,7 @@ export type EvidenceConflict = {
   passage_ids: string[];
 };
 
-export type QuestionResponse = {
+export type AnswerResponse = {
   answer: string;
   state: AnswerState;
   confidence: Confidence;
@@ -121,10 +121,33 @@ export type QuestionResponse = {
   conflicts: EvidenceConflict[];
   unsupported_facets: string[];
   trace_id: string;
+};
+
+export type QuestionResponse = AnswerResponse & {
   history_id: string;
   answered_at: string;
   cached: boolean;
   stale: boolean;
+};
+
+export type ConversationMessage = {
+  id: string;
+  turn_number: number;
+  question: string;
+  response: AnswerResponse;
+  answered_at: string;
+  stale: boolean;
+};
+
+export type ConversationSummary = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConversationDetail = ConversationSummary & {
+  messages: ConversationMessage[];
 };
 
 export type QuestionHistorySummary = {

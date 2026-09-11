@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from decision_assistant.answering.diagnostics import AnswerOutcomeReason
 from decision_assistant.answering.schemas import (
     Citation,
+    ConversationContextTurn,
     DecisionFieldEvidence,
     EvidencePassage,
     QuestionRequest,
@@ -33,8 +34,10 @@ CONTENT = (
 class StubRetrievalService:
     def __init__(self, *, include_result: bool = True) -> None:
         self.include_result = include_result
+        self.requests: list[object] = []
 
     async def search(self, *args: object, **kwargs: object) -> RetrievalSearchResponse:
+        self.requests.extend(args)
         results = (
             [
                 RetrievalResult(
@@ -59,11 +62,12 @@ class DiagnosticAnswerService(AnswerService):
         include_evidence: bool = True,
     ) -> None:
         self.include_evidence = include_evidence
+        self.retrieval = StubRetrievalService(include_result=include_evidence)
         super().__init__(
             session=cast(AsyncSession, None),
             retrieval_service=cast(
                 HybridRetrievalService,
-                StubRetrievalService(include_result=include_evidence),
+                self.retrieval,
             ),
             generation_provider=provider,
         )
@@ -303,3 +307,29 @@ async def test_diagnostics_identify_no_evidence_without_generation() -> None:
     assert execution.diagnostics.raw_candidate is None
     assert execution.diagnostics.generation_attempt_count == 0
     assert provider.requests == []
+
+
+@pytest.mark.asyncio
+async def test_conversation_context_expands_retrieval_without_becoming_evidence() -> None:
+    provider = FakeGenerationProvider([supported_candidate(), supported_candidate()])
+    service = DiagnosticAnswerService(provider)
+    context = [
+        ConversationContextTurn(
+            question="Who changed authentication?",
+            answer="Priya changed authentication.",
+        )
+    ]
+
+    await service.answer_with_diagnostics(
+        QuestionRequest(question="Why did this get changed?"),
+        request_id="conversation-context",
+        conversation_context=context,
+    )
+
+    retrieval = service.retrieval.requests[0]
+    assert "Why did this get changed?" in retrieval.question
+    assert "Who changed authentication?" in retrieval.question
+    assert "Priya changed authentication." not in retrieval.question
+    assert "Priya changed authentication." in provider.requests[0].user_content
+    assert "Priya changed authentication." not in provider.requests[0].system_instruction
+    ConversationContextTurn,

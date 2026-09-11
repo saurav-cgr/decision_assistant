@@ -4,8 +4,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from decision_assistant.answering.conversation_service import ConversationService
 from decision_assistant.answering.history_service import QuestionHistoryService
 from decision_assistant.answering.schemas import (
+    ConversationDetail,
+    ConversationMessage,
+    ConversationSummary,
     QuestionAnswerResponse,
     QuestionHistoryListResponse,
     QuestionRequest,
@@ -74,6 +78,82 @@ def get_question_history_service(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> QuestionHistoryService:
     return QuestionHistoryService(session)
+
+
+def get_conversation_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ConversationService:
+    return ConversationService(session)
+
+
+@router.post("/conversations", response_model=ConversationDetail, status_code=201)
+async def create_conversation(
+    payload: QuestionRequest,
+    request: Request,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+    answer_service: Annotated[AnswerService, Depends(get_answer_service)],
+    conversation_service: Annotated[
+        ConversationService,
+        Depends(get_conversation_service),
+    ],
+) -> ConversationDetail:
+    return await conversation_service.create(
+        payload,
+        answer_service=answer_service,
+        request_id=request.state.request_id,
+        workspace_id=workspace.workspace_id,
+    )
+
+
+@router.get("/conversations", response_model=list[ConversationSummary])
+async def list_conversations(
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+    conversation_service: Annotated[
+        ConversationService,
+        Depends(get_conversation_service),
+    ],
+) -> list[ConversationSummary]:
+    return await conversation_service.list(workspace_id=workspace.workspace_id)
+
+
+@router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
+async def get_conversation(
+    conversation_id: UUID,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+    conversation_service: Annotated[
+        ConversationService,
+        Depends(get_conversation_service),
+    ],
+) -> ConversationDetail:
+    return await conversation_service.get(
+        conversation_id,
+        workspace_id=workspace.workspace_id,
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/messages",
+    response_model=ConversationMessage,
+    status_code=201,
+)
+async def append_conversation_message(
+    conversation_id: UUID,
+    payload: QuestionRequest,
+    request: Request,
+    workspace: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+    answer_service: Annotated[AnswerService, Depends(get_answer_service)],
+    conversation_service: Annotated[
+        ConversationService,
+        Depends(get_conversation_service),
+    ],
+) -> ConversationMessage:
+    return await conversation_service.append(
+        conversation_id,
+        payload,
+        answer_service=answer_service,
+        request_id=request.state.request_id,
+        workspace_id=workspace.workspace_id,
+    )
 
 
 @router.post("/questions", response_model=QuestionAnswerResponse)

@@ -254,3 +254,28 @@ class QuestionHistoryListResponse(AnswerModel):
     page_size: int
     total: int
     total_pages: int
+
+
+class ConversationSummary(AnswerModel):
+    id: UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationMessage(AnswerModel):
+    id: UUID
+    turn_number: int
+    question: str
+    response: QuestionResponse
+    answered_at: datetime
+    stale: bool
+
+
+class ConversationContextTurn(AnswerModel):
+    question: Annotated[str, Field(min_length=1, max_length=2_000)]
+    answer: Annotated[str, Field(min_length=1, max_length=2_000)]
+
+
+class ConversationDetail(ConversationSummary):
+    messages: list[ConversationMessage]

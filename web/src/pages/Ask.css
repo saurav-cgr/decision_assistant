@@ -227,3 +227,45 @@
   }
 
 }
+
+.ask-workspace {
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  max-width: 1180px;
+}
+
+.conversation-list {
+  align-self: start;
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.conversation-list__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conversation-list h2 { margin: 3px 0 0; font-size: 1.1rem; }
+.conversation-list__heading button { min-height: 40px; padding: 8px 10px; color: var(--accent); background: transparent; border: 1px solid currentcolor; border-radius: 8px; cursor: pointer; font: inherit; font-weight: 750; }
+.conversation-list ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.conversation-list li button { display: grid; width: 100%; gap: 4px; min-height: 56px; padding: 10px; color: var(--ink); text-align: left; background: var(--surface-raised); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font: inherit; }
+.conversation-list li button[aria-current="page"] { border-color: var(--accent); background: var(--accent-soft); }
+.conversation-list time, .conversation-list__empty { color: var(--muted); font-size: .72rem; }
+.conversation-list__empty { margin: 0; }
+.conversation-thread { display: grid; gap: 22px; min-width: 0; }
+.conversation-turn { display: grid; gap: 12px; }
+.conversation-question { padding: 14px 16px; background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 12px; }
+.conversation-question .eyebrow, .conversation-question p:last-child { margin: 0; }
+.conversation-question p:last-child { margin-top: 6px; line-height: 1.5; }
+.conversation-thread .answer-card { padding: 24px; }
+.conversation-thread .answer-card h3 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 1.3rem; font-weight: 500; }
+
+@media (max-width: 760px) {
+  .ask-workspace { grid-template-columns: 1fr; }
+  .conversation-list { max-height: 280px; overflow-y: auto; }
+}

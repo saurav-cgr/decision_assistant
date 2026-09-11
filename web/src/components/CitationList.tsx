@@ -6,6 +6,7 @@ import { SourceViewer } from "./SourceViewer";
 
 type CitationListProps = {
   citations: SourceCitation[];
+  idPrefix?: string;
 };
 
 function locatorLabel(locator: SourceCitation["locator"]): string {
@@ -22,7 +23,7 @@ function locatorLabel(locator: SourceCitation["locator"]): string {
   return "source passage";
 }
 
-export function CitationList({ citations }: CitationListProps) {
+export function CitationList({ citations, idPrefix = "citation" }: CitationListProps) {
   const [sourceDocument, setSourceDocument] = useState<DocumentDetail | null>(
     null,
   );
@@ -42,17 +43,17 @@ export function CitationList({ citations }: CitationListProps) {
   };
 
   return (
-    <section className="citation-section" aria-labelledby="citations-title">
+    <section className="citation-section" aria-labelledby={`${idPrefix}-title`}>
       <div className="section-heading">
         <p className="eyebrow">Authoritative evidence</p>
-        <h2 id="citations-title">Citations</h2>
+        <h2 id={`${idPrefix}-title`}>Citations</h2>
       </div>
       <ol className="citation-list" aria-label="Citations">
         {citations.map((citation, index) => {
           const location = locatorLabel(citation.locator);
           const equivalentSources = citation.equivalent_sources ?? [];
           return (
-            <li id={`citation-${index + 1}`} key={`${citation.passage_id}-${index}`}>
+            <li id={`${idPrefix}-${index + 1}`} key={`${citation.passage_id}-${index}`}>
               <span className="citation-number" aria-hidden="true">
                 {index + 1}
               </span>

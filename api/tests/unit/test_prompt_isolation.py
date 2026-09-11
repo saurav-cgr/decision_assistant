@@ -5,6 +5,7 @@ from uuid import uuid4
 from decision_assistant.answering.schemas import (
     AnswerState,
     ConfidenceCategory,
+    ConversationContextTurn,
     EvidencePack,
     EvidencePassage,
     GeneratedAnswer,
@@ -14,7 +15,10 @@ from decision_assistant.answering.schemas import (
 )
 from decision_assistant.answering.diagnostics import CandidateEvaluation
 from decision_assistant.answering.repair import build_answer_repair_request
-from decision_assistant.answering.service import build_answer_request
+from decision_assistant.answering.service import (
+    build_answer_request,
+    build_retrieval_question,
+)
 from decision_assistant.config import Settings
 from decision_assistant.decisions.extractor import (
     _build_extraction_request,
@@ -41,6 +45,12 @@ def test_answer_request_keeps_policy_in_system_and_data_in_user() -> None:
     request = build_answer_request(
         "Why was authentication postponed?",
         EvidencePack(passages=[passage]),
+        [
+            ConversationContextTurn(
+                question="Who changed authentication?",
+                answer=INJECTION,
+            )
+        ],
     )
 
     system = request.system_instruction
@@ -63,6 +73,7 @@ def test_answer_request_keeps_policy_in_system_and_data_in_user() -> None:
     assert "<question>" in user and "Why was authentication postponed?" in user
     assert "<evidence>" in user
     assert INJECTION in user
+    assert "<conversation_context>" in user
     assert "untrusted data" not in user
 
 
@@ -79,6 +90,21 @@ def test_answer_schema_describes_verifier_contract() -> None:
     assert "Every supported facet requires" in claim["central"]["description"]
     assert "must also appear in citations" in claim["passage_ids"]["description"]
     assert "Exact contiguous substring" in citation["quote"]["description"]
+
+
+def test_retrieval_query_preserves_current_question_within_its_limit() -> None:
+    question = "q" * 2_000
+    query = build_retrieval_question(
+        question,
+        [
+            ConversationContextTurn(
+                question="Who changed authentication?",
+                answer="Priya changed authentication.",
+            )
+        ],
+    )
+
+    assert query == question
 
 
 def test_generation_prompt_version_defaults_are_synchronized() -> None:

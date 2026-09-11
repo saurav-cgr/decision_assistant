@@ -13,6 +13,9 @@ import type {
   EvaluationRunRequest,
   EvaluationRunSummary,
   QuestionResponse,
+  ConversationDetail,
+  ConversationMessage,
+  ConversationSummary,
   QuestionHistoryListResponse,
   RetrievalTraceResponse,
   RetryResponse,
@@ -241,6 +244,26 @@ export function answerQuestion(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ question, force_refresh: forceRefresh }),
+  });
+}
+
+export function createConversation(question: string): Promise<ConversationDetail> {
+  return apiRequest<ConversationDetail>(projectPath("/conversations"), {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }),
+  });
+}
+
+export function listConversations(): Promise<ConversationSummary[]> {
+  return apiRequest<ConversationSummary[]>(projectPath("/conversations"));
+}
+
+export function getConversation(id: string): Promise<ConversationDetail> {
+  return apiRequest<ConversationDetail>(projectPath(`/conversations/${encodeURIComponent(id)}`));
+}
+
+export function appendConversationMessage(conversationId: string, question: string): Promise<ConversationMessage> {
+  return apiRequest<ConversationMessage>(projectPath(`/conversations/${encodeURIComponent(conversationId)}/messages`), {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }),
   });
 }
 
