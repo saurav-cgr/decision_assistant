@@ -1,6 +1,7 @@
 from dataclasses import fields
 from inspect import Parameter, signature
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pypdf import PdfReader, PdfWriter
@@ -10,6 +11,7 @@ from decision_assistant.ingestion.parsers import (
     DocumentParseError,
     ParsedDocument,
     _SourceBlock,
+    _docling_source_blocks,
     _reconstruct_pdf_lines,
     parse_document,
 )
@@ -17,6 +19,25 @@ from decision_assistant.ingestion.parsers import (
 
 TEXT_PDF = Path("tests/fixtures/text.pdf")
 SCANNED_EMPTY_PDF = Path("tests/fixtures/scanned-empty.pdf")
+
+
+class _FakeDoclingDocument:
+    def __init__(self, *items: object) -> None:
+        self.items = items
+
+    def iterate_items(self):
+        return ((item, 0) for item in self.items)
+
+
+class _FakeTable:
+    label = SimpleNamespace(value="table")
+
+    def __init__(self, text: str, page: int) -> None:
+        self.text = text
+        self.prov = [SimpleNamespace(page_no=page)]
+
+    def export_to_markdown(self, document: object) -> str:
+        return self.text
 
 
 def test_frozen_parser_and_chunker_contract() -> None:
@@ -90,6 +111,55 @@ def test_pdf_pages_are_page_blocks_with_hard_boundaries() -> None:
     assert [block.boundary_before for block in parsed.blocks] == ["none", "hard"]
     assert all(block.group_path == () for block in parsed.blocks)
     assert all(block.attributes == {} for block in parsed.blocks)
+
+
+def test_docling_maps_items_and_preserves_page_boundaries() -> None:
+    def item(label: str, text: str, page: int, **values: object) -> object:
+        return SimpleNamespace(
+            label=SimpleNamespace(value=label),
+            text=text,
+            prov=[SimpleNamespace(page_no=page)],
+            **values,
+        )
+
+    blocks = _docling_source_blocks(
+        _FakeDoclingDocument(
+            item("section_header", "Overview", 1, level=1),
+            item("text", "Paragraph", 1),
+            item("list_item", "First item", 1),
+            _FakeTable("| A |\n|---|\n| B |", 2),
+        )
+    )
+
+    assert [block.block_type for block in blocks] == [
+        "heading",
+        "paragraph",
+        "list_item",
+        "table_cell",
+    ]
+    assert [block.boundary_before for block in blocks] == [
+        "none",
+        "soft",
+        "soft",
+        "hard",
+    ]
+    assert blocks[0].attributes == {"level": 1}
+    assert all(block.group_path == ("heading-1:overview#1",) for block in blocks)
+
+
+def test_pdf_parser_dispatches_to_docling(monkeypatch: pytest.MonkeyPatch) -> None:
+    from decision_assistant import config
+    from decision_assistant.ingestion import parsers
+
+    sentinel = ParsedDocument(TEXT_PDF, "docling", ())
+    monkeypatch.setattr(
+        config,
+        "get_settings",
+        lambda: SimpleNamespace(pdf_parser="docling"),
+    )
+    monkeypatch.setattr(parsers, "_parse_docling_pdf_document", lambda path: sentinel)
+
+    assert parse_document(TEXT_PDF) is sentinel
 
 
 def test_pdf_without_embedded_text_requires_ocr() -> None:
