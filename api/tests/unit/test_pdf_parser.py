@@ -1,10 +1,15 @@
+from dataclasses import fields
+from inspect import Parameter, signature
 from pathlib import Path
 
 import pytest
 from pypdf import PdfReader, PdfWriter
 
+from decision_assistant.ingestion.chunking import chunk_document
 from decision_assistant.ingestion.parsers import (
     DocumentParseError,
+    ParsedDocument,
+    _SourceBlock,
     _reconstruct_pdf_lines,
     parse_document,
 )
@@ -12,6 +17,33 @@ from decision_assistant.ingestion.parsers import (
 
 TEXT_PDF = Path("tests/fixtures/text.pdf")
 SCANNED_EMPTY_PDF = Path("tests/fixtures/scanned-empty.pdf")
+
+
+def test_frozen_parser_and_chunker_contract() -> None:
+    assert [field.name for field in fields(ParsedDocument)] == [
+        "source_path",
+        "content",
+        "blocks",
+    ]
+    assert [field.name for field in fields(_SourceBlock)] == [
+        "text",
+        "block_type",
+        "group_path",
+        "boundary_before",
+        "attributes",
+        "locator",
+    ]
+    assert list(signature(parse_document).parameters) == ["path"]
+    assert [
+        (parameter.name, parameter.kind)
+        for parameter in signature(chunk_document).parameters.values()
+    ] == [
+        ("document", Parameter.POSITIONAL_OR_KEYWORD),
+        ("token_counter", Parameter.KEYWORD_ONLY),
+        ("target_tokens", Parameter.KEYWORD_ONLY),
+        ("max_tokens", Parameter.KEYWORD_ONLY),
+        ("overlap_tokens", Parameter.KEYWORD_ONLY),
+    ]
 
 
 def test_pdf_line_reconstruction_joins_wrapped_sentences() -> None:
@@ -32,7 +64,6 @@ def test_pdf_line_reconstruction_joins_wrapped_sentences() -> None:
     assert "Dana Wu owns setup documentation." in reconstructed
     # A heading (capitalized, short) must not be joined onto the prior line.
     assert "\nOffline model packaging\nDecision:" in reconstructed
-
 
 
 def test_pdf_parser_preserves_page_numbers_and_offsets() -> None:
