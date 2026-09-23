@@ -12,3 +12,7 @@ web/node_modules/
 web/dist/
 web/*.tsbuildinfo
 uploads/
+.agents/
+.specify/
+.vscode/
+.codex/
