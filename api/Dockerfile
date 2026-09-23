@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DOCLING_ARTIFACTS_PATH=/opt/docling-models
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+    && apt-get install --yes --no-install-recommends libgl1 tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/api

@@ -6,6 +6,7 @@ from decision_assistant.ingestion.profiles import (
     CHUNKING_PROFILE_PRESETS,
     CURRENT_CHUNKING_PROFILE,
     DEFAULT_CHUNKING_PROFILE_PRESET,
+    PDF_PARSER_PROFILES,
     RETRIEVAL_UNIT_STRATEGIES,
     resolve_corpus_profile,
     resolve_chunking_profile,
@@ -69,6 +70,17 @@ def test_corpus_profile_includes_and_validates_retrieval_strategy() -> None:
         resolve_corpus_profile("baseline", "unknown")
 
 
+def test_corpus_profile_includes_pdf_parser_contract() -> None:
+    assert resolve_corpus_profile("baseline", "passage_hybrid")["pdf_parser"] == (
+        PDF_PARSER_PROFILES["pypdf"]
+    )
+    assert resolve_corpus_profile("baseline", "passage_hybrid", "docling")[
+        "pdf_parser"
+    ] == PDF_PARSER_PROFILES["docling"]
+    with pytest.raises(ValueError):
+        resolve_corpus_profile("baseline", "passage_hybrid", "other")
+
+
 def test_settings_default_is_baseline() -> None:
     settings = Settings()
     assert settings.chunking_profile_preset == "baseline"
@@ -77,6 +89,7 @@ def test_settings_default_is_baseline() -> None:
         == "structural-token-v2"
     )
     assert settings.retrieval_unit_strategy == "passage_hybrid"
+    assert settings.pdf_parser == "pypdf"
 
 
 @pytest.mark.parametrize("preset", ["baseline", "compact", "expanded"])
@@ -93,3 +106,13 @@ def test_settings_rejects_invalid_retrieval_strategy() -> None:
     assert "parent_child_merged" in RETRIEVAL_UNIT_STRATEGIES
     with pytest.raises(ValidationError):
         Settings(retrieval_unit_strategy="unknown")
+
+
+@pytest.mark.parametrize("parser", ["pypdf", "docling"])
+def test_settings_accepts_valid_pdf_parser(parser: str) -> None:
+    assert Settings(pdf_parser=parser).pdf_parser == parser
+
+
+def test_settings_rejects_invalid_pdf_parser() -> None:
+    with pytest.raises(ValidationError):
+        Settings(pdf_parser="other")

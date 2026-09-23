@@ -220,6 +220,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 resolve_corpus_profile(
                     resolved_settings.chunking_profile_preset,
                     resolved_settings.retrieval_unit_strategy,
+                    resolved_settings.pdf_parser,
                 ),
             )
         except (

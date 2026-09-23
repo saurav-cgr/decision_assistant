@@ -71,6 +71,7 @@ class LocalIngestionDispatcher:
                     chunking_profile=resolve_corpus_profile(
                         self._settings.chunking_profile_preset,
                         self._settings.retrieval_unit_strategy,
+                        self._settings.pdf_parser,
                     ),
                     retrieval_unit_strategy=self._settings.retrieval_unit_strategy,
                 )

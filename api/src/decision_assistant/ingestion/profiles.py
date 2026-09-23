@@ -46,6 +46,21 @@ DEFAULT_CHUNKING_PROFILE_PRESET = "baseline"
 RETRIEVAL_UNIT_STRATEGIES = frozenset(
     {"passage_hybrid", "sentence_expanded", "parent_child_merged"}
 )
+PDF_PARSER_PROFILES: dict[str, dict[str, str]] = {
+    "pypdf": {
+        "name": "pypdf",
+        "version": "5.9.0",
+        "ocr": "disabled",
+        "layout": "text-order-v1",
+    },
+    "docling": {
+        "name": "docling",
+        "version": "2.130.0",
+        "ocr": "tesseract-eng",
+        "layout": "docling-layout-v1",
+    },
+}
+
 
 def resolve_chunking_profile(preset: str) -> dict[str, object]:
     """Return the complete chunking profile for a named preset.
@@ -64,6 +79,7 @@ def resolve_chunking_profile(preset: str) -> dict[str, object]:
 def resolve_corpus_profile(
     preset: str,
     retrieval_unit_strategy: str,
+    pdf_parser: str = "pypdf",
 ) -> dict[str, object]:
     """Return the complete incompatible corpus representation contract."""
     if retrieval_unit_strategy not in RETRIEVAL_UNIT_STRATEGIES:
@@ -71,9 +87,14 @@ def resolve_corpus_profile(
             f"Unknown retrieval unit strategy {retrieval_unit_strategy!r}; "
             f"expected one of {sorted(RETRIEVAL_UNIT_STRATEGIES)}"
         )
+    if pdf_parser not in PDF_PARSER_PROFILES:
+        raise ValueError(
+            f"Unknown PDF parser {pdf_parser!r}; expected one of {sorted(PDF_PARSER_PROFILES)}"
+        )
     return {
         **resolve_chunking_profile(preset),
         "retrieval_unit_strategy": retrieval_unit_strategy,
+        "pdf_parser": PDF_PARSER_PROFILES[pdf_parser].copy(),
     }
 
 
