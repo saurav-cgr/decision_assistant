@@ -1,6 +1,8 @@
 import hashlib
 from pathlib import Path
+from uuid import uuid4
 
+from decision_assistant.answering.schemas import SourceCitation
 from decision_assistant.ingestion.chunking import chunk_document
 from decision_assistant.ingestion.parsers import (
     ParsedBlock,
@@ -11,6 +13,7 @@ from decision_assistant.ingestion.tokenization import (
     TiktokenCounter,
     get_token_counter,
 )
+from decision_assistant.retrieval.provenance import _source_kind
 
 FIXTURE = Path("tests/fixtures/meeting.md")
 COUNTER = TiktokenCounter()
@@ -163,6 +166,55 @@ def test_chunking_preserves_pdf_page_locator_kind() -> None:
     assert chunks
     assert all(chunk.locator["kind"] == "pdf_page" for chunk in chunks)
     assert all("page" in chunk.locator for chunk in chunks)
+
+
+def test_pdf_region_flows_from_chunk_to_citation_schema() -> None:
+    content = "Heading\n\nSupporting detail"
+    document = ParsedDocument(
+        source_path=Path("regions.pdf"),
+        content=content,
+        blocks=(
+            ParsedBlock(
+                "Heading",
+                "heading",
+                (),
+                "none",
+                {},
+                {"kind": "pdf_region", "page": 2, "bbox": [0.1, 0.2, 0.4, 0.3]},
+                0,
+                7,
+            ),
+            ParsedBlock(
+                "Supporting detail",
+                "paragraph",
+                (),
+                "soft",
+                {},
+                {"kind": "pdf_region", "page": 2, "bbox": [0.2, 0.4, 0.8, 0.6]},
+                9,
+                len(content),
+            ),
+        ),
+    )
+
+    locator = chunk_document(document, token_counter=COUNTER)[0].locator
+    citation = SourceCitation(
+        passage_id=uuid4(),
+        quote="Heading",
+        start_offset=0,
+        end_offset=7,
+        content_hash="0" * 64,
+        document_id=uuid4(),
+        document_name="regions.pdf",
+        locator=locator,
+    )
+
+    assert citation.locator == {
+        "kind": "pdf_region",
+        "page": 2,
+        "bbox": [0.1, 0.2, 0.8, 0.6],
+    }
+    assert _source_kind(citation.locator) == "pdf"
 
 
 def test_chunking_preserves_docx_paragraph_locator_kind() -> None:

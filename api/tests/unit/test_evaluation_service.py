@@ -56,6 +56,21 @@ def test_locator_span_ignores_pdf_page() -> None:
     assert EvaluationService._locator_span({"kind": "lines", "start": 31, "end": 33}) == 2
 
 
+def test_pdf_region_matches_page_gold_and_covers_region_gold() -> None:
+    region = {"kind": "pdf_region", "page": 2, "bbox": [0.1, 0.2, 0.8, 0.9]}
+
+    assert EvaluationService._locator_covers(
+        region, {"kind": "pdf_page", "page": 2}
+    )
+    assert EvaluationService._locator_covers(
+        region, {"kind": "pdf_region", "page": 2, "bbox": [0.2, 0.3, 0.7, 0.8]}
+    )
+    assert not EvaluationService._locator_covers(
+        region, {"kind": "pdf_region", "page": 2, "bbox": [0.0, 0.3, 0.7, 0.8]}
+    )
+    assert EvaluationService._locator_span(region) == pytest.approx(0.49)
+
+
 def test_gold_identifier_falls_back_to_stable_document_reference() -> None:
     expected = {
         "expected_passages": [{"document_id": "document-1"}],

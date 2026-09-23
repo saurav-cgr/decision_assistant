@@ -125,7 +125,7 @@ def _source_kind(locator: dict[str, object]) -> str:
         kind == "message_range" and locator.get("source") == "teams"
     ):
         return "teams"
-    if kind == "pdf_page":
+    if kind in {"pdf_page", "pdf_region"}:
         return "pdf"
     if kind == "docx_paragraphs":
         return "docx"
