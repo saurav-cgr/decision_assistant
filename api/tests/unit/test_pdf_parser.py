@@ -24,6 +24,10 @@ SCANNED_EMPTY_PDF = Path("tests/fixtures/scanned-empty.pdf")
 class _FakeDoclingDocument:
     def __init__(self, *items: object) -> None:
         self.items = items
+        self.pages = {
+            1: SimpleNamespace(size=SimpleNamespace(width=200, height=400)),
+            2: SimpleNamespace(size=SimpleNamespace(width=200, height=400)),
+        }
 
     def iterate_items(self):
         return ((item, 0) for item in self.items)
@@ -34,10 +38,23 @@ class _FakeTable:
 
     def __init__(self, text: str, page: int) -> None:
         self.text = text
-        self.prov = [SimpleNamespace(page_no=page)]
+        self.prov = [_fake_provenance(page)]
 
     def export_to_markdown(self, document: object) -> str:
         return self.text
+
+
+def _fake_provenance(page: int) -> object:
+    return SimpleNamespace(
+        page_no=page,
+        bbox=SimpleNamespace(
+            l=20,
+            t=360,
+            r=180,
+            b=320,
+            coord_origin=SimpleNamespace(value="BOTTOMLEFT"),
+        ),
+    )
 
 
 def test_frozen_parser_and_chunker_contract() -> None:
@@ -118,7 +135,7 @@ def test_docling_maps_items_and_preserves_page_boundaries() -> None:
         return SimpleNamespace(
             label=SimpleNamespace(value=label),
             text=text,
-            prov=[SimpleNamespace(page_no=page)],
+            prov=[_fake_provenance(page)],
             **values,
         )
 
@@ -145,6 +162,14 @@ def test_docling_maps_items_and_preserves_page_boundaries() -> None:
     ]
     assert blocks[0].attributes == {"level": 1}
     assert all(block.group_path == ("heading-1:overview#1",) for block in blocks)
+    assert [block.locator for block in blocks] == [
+        {
+            "kind": "pdf_region",
+            "page": page,
+            "bbox": [0.1, 0.1, 0.9, 0.2],
+        }
+        for page in [1, 1, 1, 2]
+    ]
 
 
 def test_pdf_parser_dispatches_to_docling(monkeypatch: pytest.MonkeyPatch) -> None:

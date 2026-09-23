@@ -14,7 +14,7 @@ from decision_assistant.errors import ApplicationError
 
 Boundary = Literal["hard", "soft", "none"]
 AttributeValue = str | int | float | bool | None
-SourceLocator = dict[str, str | int | float | bool | list[str] | None]
+SourceLocator = dict[str, str | int | float | bool | list[str | float] | None]
 SUPPORTED_TEXT_SUFFIXES = {".md", ".txt"}
 PDF_SUFFIX = ".pdf"
 DOCX_SUFFIX = ".docx"
@@ -208,8 +208,8 @@ def _docling_source_blocks(document: object) -> list[_SourceBlock]:
         if not text:
             continue
 
-        provenance = getattr(item, "prov", ())
-        page = int(provenance[0].page_no) if provenance else 1
+        locator = _docling_locator(document, item)
+        page = int(locator["page"])
         boundary: Boundary = "none"
         if blocks:
             boundary = "hard" if page != previous_page or block_type == "heading" else "soft"
@@ -220,11 +220,34 @@ def _docling_source_blocks(document: object) -> list[_SourceBlock]:
                 group_path=tuple(key for _, key in heading_stack),
                 boundary_before=boundary,
                 attributes=attributes,
-                locator={"kind": "pdf_page", "page": page},
+                locator=locator,
             )
         )
         previous_page = page
     return blocks
+
+
+def _docling_locator(document: object, item: object) -> SourceLocator:
+    provenance = item.prov[0]
+    page = int(provenance.page_no)
+    size = document.pages[page].size
+    box = provenance.bbox
+    if str(box.coord_origin.value) == "BOTTOMLEFT":
+        top = size.height - box.t
+        bottom = size.height - box.b
+    else:
+        top = box.t
+        bottom = box.b
+    return {
+        "kind": "pdf_region",
+        "page": page,
+        "bbox": [
+            round(box.l / size.width, 6),
+            round(top / size.height, 6),
+            round(box.r / size.width, 6),
+            round(bottom / size.height, 6),
+        ],
+    }
 
 
 def _parse_docx_document(path: Path) -> ParsedDocument:
