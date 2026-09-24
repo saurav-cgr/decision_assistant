@@ -367,6 +367,9 @@ class DecisionEvidence(Base):
     support_state: Mapped[str] = mapped_column(String(30), default="supported")
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     content_hash: Mapped[str] = mapped_column(String(64))
+    citation_stale: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
