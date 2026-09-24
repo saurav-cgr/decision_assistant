@@ -13,6 +13,8 @@ RUN apt-get update \
 WORKDIR /workspace/api
 
 COPY pyproject.toml ./
+COPY alembic.ini ./
+COPY alembic ./alembic
 COPY src ./src
 
 RUN pip install --no-cache-dir '.' \
