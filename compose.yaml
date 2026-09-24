@@ -38,6 +38,7 @@ services:
   api:
     build:
       context: ./api
+      target: ${API_BUILD_TARGET:-base}
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://decision_assistant:decision_assistant@db:5432/decision_assistant}
       UPLOAD_DIRECTORY: ${UPLOAD_DIRECTORY:-/workspace/uploads}
