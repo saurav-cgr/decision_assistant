@@ -235,7 +235,7 @@ def _build_drafts(
         units = list(chunk)
         if index > 0:
             overlap = _trailing_units(chunks[index - 1], counter, overlap_tokens)
-            if overlap and units:
+            if overlap and units and units[0].boundary_before != "hard":
                 # Overlap must never cross a hard or group boundary.
                 first_group = units[0].group_path
                 overlap = [
@@ -244,6 +244,8 @@ def _build_drafts(
                     if unit.group_path == first_group
                     and unit.boundary_before != "hard"
                 ]
+            else:
+                overlap = []
             if overlap:
                 candidate = overlap + units
                 if _tokens(candidate, counter) <= max_tokens:

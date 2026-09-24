@@ -127,6 +127,49 @@ def test_hard_boundaries_are_never_crossed(tmp_path: Path) -> None:
     assert any("Beta" in chunk.content for chunk in chunks)
 
 
+def test_overlap_never_crosses_pdf_page_boundary() -> None:
+    first = "Page one detail."
+    second = "Page two detail."
+    content = f"{first}\n\n{second}"
+    document = ParsedDocument(
+        source_path=Path("pages.pdf"),
+        content=content,
+        blocks=(
+            ParsedBlock(
+                first,
+                "paragraph",
+                (),
+                "none",
+                {},
+                {"kind": "pdf_region", "page": 1, "bbox": [0.1, 0.1, 0.9, 0.2]},
+                0,
+                len(first),
+            ),
+            ParsedBlock(
+                second,
+                "paragraph",
+                (),
+                "hard",
+                {},
+                {"kind": "pdf_region", "page": 2, "bbox": [0.1, 0.1, 0.9, 0.2]},
+                len(first) + 2,
+                len(content),
+            ),
+        ),
+    )
+
+    chunks = chunk_document(
+        document,
+        token_counter=COUNTER,
+        target_tokens=100,
+        max_tokens=200,
+        overlap_tokens=50,
+    )
+
+    assert [chunk.content for chunk in chunks] == [first, second]
+    assert [chunk.locator["page"] for chunk in chunks] == [1, 2]
+
+
 def test_heading_stays_with_first_body_block(tmp_path: Path) -> None:
     content = "## Architecture\n\nThe team chose PostgreSQL.\n"
     chunks = chunk_document(
