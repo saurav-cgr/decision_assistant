@@ -42,7 +42,7 @@ BACKUP_DIR ?= backups
 
 backup:
 	mkdir -p $(BACKUP_DIR)
-	docker compose exec -T db pg_dump -U "$${POSTGRES_USER:-decision_assistant}" "$${POSTGRES_DB:-decision_assistant}" \
+	docker compose exec -T db pg_dump --clean --if-exists -U "$${POSTGRES_USER:-decision_assistant}" "$${POSTGRES_DB:-decision_assistant}" \
 		> "$(BACKUP_DIR)/backup-$$(date +%Y%m%d%H%M%S).sql"
 
 # Usage: make restore -- <backup-file>
@@ -53,5 +53,5 @@ endif
 
 restore:
 	@test -n "$(RESTORE_ARGS)" || (echo "Usage: make restore -- <backup-file>" && exit 1)
-	docker compose exec -T db psql -U "$${POSTGRES_USER:-decision_assistant}" -d "$${POSTGRES_DB:-decision_assistant}" \
+	docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$${POSTGRES_USER:-decision_assistant}" -d "$${POSTGRES_DB:-decision_assistant}" \
 		< "$(firstword $(filter-out --,$(RESTORE_ARGS)))"
