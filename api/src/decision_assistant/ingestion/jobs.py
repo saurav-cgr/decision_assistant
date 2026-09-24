@@ -3,7 +3,10 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.models import DocumentVersion, IngestionJob
+from decision_assistant.ingestion.models import (
+    DocumentVersion,
+    IngestionJob,
+)
 
 
 async def recover_stale_jobs(session: AsyncSession) -> int:

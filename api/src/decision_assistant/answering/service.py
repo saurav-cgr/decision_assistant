@@ -30,9 +30,11 @@ from decision_assistant.answering.schemas import (
     SourceCitation,
 )
 from decision_assistant.answering.verifier import AnswerVerifier
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     Passage,

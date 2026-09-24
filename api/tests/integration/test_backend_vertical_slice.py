@@ -20,12 +20,12 @@ from decision_assistant.documents.service import DocumentService
 from decision_assistant.ingestion.metadata import MetadataExtractor
 from decision_assistant.ingestion.service import IngestionService
 from decision_assistant.main import create_app
-from decision_assistant.models import (
+from decision_assistant.ingestion.models import (
     IngestionJob,
     Passage,
-    RetrievalTrace,
-    Workspace,
 )
+from decision_assistant.retrieval.models import RetrievalTrace
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.providers.fakes import (
     FakeEmbeddingProvider,
     FakeGenerationProvider,

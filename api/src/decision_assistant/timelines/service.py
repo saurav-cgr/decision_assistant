@@ -6,10 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
     DecisionRelation,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     Passage,
