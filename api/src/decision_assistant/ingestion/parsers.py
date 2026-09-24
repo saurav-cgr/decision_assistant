@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -160,19 +161,29 @@ def _parse_docling_pdf_document(path: Path) -> ParsedDocument:
             }
         ).convert(path)
         if result.status is not ConversionStatus.SUCCESS:
-            raise DocumentParseError("pdf_parse_failed", "PDF could not be parsed")
+            raise DocumentParseError(
+                *_docling_failure(result.errors),
+            )
         source_blocks = _docling_source_blocks(result.document)
     except DocumentParseError:
         raise
     except Exception as exc:
         raise DocumentParseError(
-            "pdf_parse_failed",
-            "PDF could not be parsed",
+            *_docling_failure((exc,)),
         ) from exc
 
     if not source_blocks:
         raise DocumentParseError("pdf_parse_failed", "PDF could not be parsed")
     return _assemble_document(path, source_blocks)
+
+
+def _docling_failure(errors: Iterable[object]) -> tuple[str, str]:
+    details = " ".join(str(error).lower() for error in errors)
+    if "ocr" in details:
+        return "pdf_ocr_failed", "PDF OCR failed"
+    if "layout" in details or "pipeline" in details:
+        return "pdf_layout_failed", "PDF layout analysis failed"
+    return "pdf_parse_failed", "PDF could not be parsed"
 
 
 def _docling_source_blocks(document: object) -> list[_SourceBlock]:

@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -13,7 +14,11 @@ from decision_assistant.decisions.schemas import ExtractionPassage
 from decision_assistant.errors import ApplicationError
 from decision_assistant.ingestion.chunking import chunk_document
 from decision_assistant.ingestion.metadata import MetadataExtractor
-from decision_assistant.ingestion.parsers import parse_document
+from decision_assistant.ingestion.parsers import (
+    DocumentParseError,
+    ParsedDocument,
+    parse_document,
+)
 from decision_assistant.ingestion.retrieval_units import (
     RetrievalUnitStrategy,
     RetrievalUnitDraft,
@@ -33,6 +38,7 @@ from decision_assistant.models import (
 )
 from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
+from decision_assistant.config import get_settings
 from decision_assistant.workspace.embedding_profile import (
     CorpusResetRequired,
     acquire_workspace_embedding_lock,
@@ -58,6 +64,21 @@ class IngestionResult:
     version_id: UUID
     job_id: UUID
     skipped: bool
+
+
+async def _parse_for_ingestion(source_path: Path) -> ParsedDocument:
+    if get_settings().pdf_parser == "docling":
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(parse_document, source_path),
+                timeout=get_settings().model_timeout_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            raise DocumentParseError(
+                "pdf_parse_timeout",
+                "PDF parsing timed out",
+            ) from exc
+    return parse_document(source_path)
 
 
 class IngestionService:
@@ -225,7 +246,7 @@ class IngestionService:
     ) -> None:
         job.stage = "parsing"
         job.progress = 15
-        parsed = parse_document(stored_path)
+        parsed = await _parse_for_ingestion(stored_path)
         metadata = await self._metadata_extractor.extract(parsed)
         version.title = metadata.title
         version.document_date = metadata.document_date

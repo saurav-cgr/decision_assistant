@@ -1,5 +1,7 @@
 from dataclasses import fields
 from inspect import Parameter, signature
+import asyncio
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,6 +13,7 @@ from decision_assistant.ingestion.parsers import (
     DocumentParseError,
     ParsedDocument,
     _SourceBlock,
+    _docling_locator,
     _docling_source_blocks,
     _reconstruct_pdf_lines,
     parse_document,
@@ -172,6 +175,54 @@ def test_docling_maps_items_and_preserves_page_boundaries() -> None:
     ]
 
 
+def test_docling_preserves_reading_order() -> None:
+    def item(text: str, page: int) -> object:
+        return SimpleNamespace(
+            label=SimpleNamespace(value="text"),
+            text=text,
+            prov=[_fake_provenance(page)],
+        )
+
+    blocks = _docling_source_blocks(
+        _FakeDoclingDocument(
+            item("First column", 1),
+            item("Second column", 1),
+            item("Next page", 2),
+        )
+    )
+
+    assert [block.text for block in blocks] == [
+        "First column",
+        "Second column",
+        "Next page",
+    ]
+    assert [block.boundary_before for block in blocks] == ["none", "soft", "hard"]
+
+
+def test_docling_locator_normalizes_top_left_bbox() -> None:
+    document = _FakeDoclingDocument()
+    item = SimpleNamespace(
+        prov=[
+            SimpleNamespace(
+                page_no=1,
+                bbox=SimpleNamespace(
+                    l=20,
+                    t=40,
+                    r=180,
+                    b=120,
+                    coord_origin=SimpleNamespace(value="TOPLEFT"),
+                ),
+            )
+        ]
+    )
+
+    assert _docling_locator(document, item) == {
+        "kind": "pdf_region",
+        "page": 1,
+        "bbox": [0.1, 0.1, 0.9, 0.3],
+    }
+
+
 def test_pdf_parser_dispatches_to_docling(monkeypatch: pytest.MonkeyPatch) -> None:
     from decision_assistant import config
     from decision_assistant.ingestion import parsers
@@ -185,6 +236,91 @@ def test_pdf_parser_dispatches_to_docling(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(parsers, "_parse_docling_pdf_document", lambda path: sentinel)
 
     assert parse_document(TEXT_PDF) is sentinel
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "message"),
+    [
+        (
+            SimpleNamespace(error_message="OCR engine failed"),
+            "pdf_ocr_failed",
+            "PDF OCR failed",
+        ),
+        (
+            SimpleNamespace(module_name="layout pipeline"),
+            "pdf_layout_failed",
+            "PDF layout analysis failed",
+        ),
+        (
+            SimpleNamespace(error_message="unexpected failure"),
+            "pdf_parse_failed",
+            "PDF could not be parsed",
+        ),
+    ],
+)
+def test_docling_failures_are_sanitized(
+    error: object,
+    code: str,
+    message: str,
+) -> None:
+    from decision_assistant.ingestion.parsers import _docling_failure
+
+    assert _docling_failure((error,)) == (code, message)
+
+
+@pytest.mark.asyncio
+async def test_docling_parse_runs_in_worker_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from decision_assistant.ingestion import service
+
+    caller_thread = threading.get_ident()
+    worker_threads: list[int] = []
+    sentinel = object()
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(pdf_parser="docling", model_timeout_seconds=1),
+    )
+    monkeypatch.setattr(
+        service,
+        "parse_document",
+        lambda path: worker_threads.append(threading.get_ident()) or sentinel,
+    )
+
+    assert await service._parse_for_ingestion(TEXT_PDF) is sentinel
+    assert worker_threads and worker_threads[0] != caller_thread
+
+
+@pytest.mark.asyncio
+async def test_docling_parse_timeout_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from decision_assistant.ingestion import service
+
+    started = threading.Event()
+    release = threading.Event()
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(pdf_parser="docling", model_timeout_seconds=0.01),
+    )
+
+    def hang(path: Path) -> None:
+        started.set()
+        release.wait()
+
+    monkeypatch.setattr(service, "parse_document", hang)
+    task = asyncio.create_task(service._parse_for_ingestion(TEXT_PDF))
+    try:
+        assert await asyncio.to_thread(started.wait, 1)
+        with pytest.raises(DocumentParseError) as error:
+            await task
+    finally:
+        release.set()
+
+    assert error.value.code == "pdf_parse_timeout"
+    assert error.value.retryable is False
 
 
 def test_pdf_without_embedded_text_requires_ocr() -> None:
