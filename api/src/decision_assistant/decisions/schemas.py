@@ -188,6 +188,7 @@ class DecisionEvidenceResponse(StrictModel):
     content_hash: str
     support_state: SupportState
     is_primary: bool
+    citation_stale: bool
 
 
 class DecisionRevisionResponse(StrictModel):

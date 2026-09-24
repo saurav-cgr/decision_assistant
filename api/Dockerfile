@@ -31,4 +31,5 @@ CMD ["uvicorn", "decision_assistant.main:app", "--host", "0.0.0.0", "--port", "8
 
 FROM base AS test
 
+COPY tests ./tests
 RUN pip install --no-cache-dir '.[dev]'

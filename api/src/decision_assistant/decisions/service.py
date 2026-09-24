@@ -134,6 +134,7 @@ class DecisionService:
                     content_hash=evidence.content_hash,
                     support_state=evidence.support_state,
                     is_primary=evidence.is_primary,
+                    citation_stale=evidence.citation_stale,
                 )
                 for evidence, passage in evidence_rows
             ],
