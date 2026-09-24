@@ -15,7 +15,8 @@ from decision_assistant.answering.schemas import (
     QuestionRequest,
     QuestionResponse,
 )
-from decision_assistant.models import RetrievalTrace, Workspace
+from decision_assistant.retrieval.models import RetrievalTrace
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.workspace.revision import bump_knowledge_revision
 
 

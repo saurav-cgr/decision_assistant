@@ -32,15 +32,17 @@ from decision_assistant.evaluation.schemas import (
     EvaluationRunResponse,
     EvaluationRunSummaryResponse,
 )
-from decision_assistant.models import (
-    Document,
-    DocumentVersion,
+from decision_assistant.evaluation.models import (
     EvaluationQuestion,
     EvaluationResult,
     EvaluationRun,
-    Passage,
-    RetrievalTrace,
 )
+from decision_assistant.ingestion.models import (
+    Document,
+    DocumentVersion,
+    Passage,
+)
+from decision_assistant.retrieval.models import RetrievalTrace
 from decision_assistant.providers.base import (
     EmbeddingProvider,
     EmbeddingPurpose,

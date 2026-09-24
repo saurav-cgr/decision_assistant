@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from decision_assistant.auth.dependencies import get_current_user
 from decision_assistant.db import get_session
 from decision_assistant.main import create_app
-from decision_assistant.models import User, Workspace
+from decision_assistant.auth.models import User
+from decision_assistant.workspace.models import Workspace
 
 MISSING_UUID = "00000000-0000-0000-0000-000000000000"
 

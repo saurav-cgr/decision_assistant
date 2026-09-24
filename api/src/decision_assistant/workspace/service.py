@@ -4,7 +4,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import Document, Workspace
+from decision_assistant.ingestion.models import Document
+from decision_assistant.workspace.models import Workspace
 
 
 class WorkspaceConflict(ApplicationError):

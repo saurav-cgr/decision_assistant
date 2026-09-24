@@ -10,15 +10,15 @@ from decision_assistant.decisions.extractor import DecisionExtractor
 from decision_assistant.ingestion.metadata import MetadataExtractor
 from decision_assistant.ingestion import service as ingestion_service_module
 from decision_assistant.ingestion.service import IngestionService
-from decision_assistant.models import (
-    Decision,
+from decision_assistant.decisions.models import Decision
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     EmbeddingCache,
     IngestionJob,
     Passage,
-    Workspace,
 )
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.providers.base import EmbeddingPurpose, ProviderUnavailable
 from decision_assistant.providers.fakes import (
     FakeEmbeddingProvider,

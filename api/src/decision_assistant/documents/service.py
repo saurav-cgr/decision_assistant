@@ -27,8 +27,8 @@ from decision_assistant.documents.storage import (
     StoredObjectTooLarge,
 )
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import (
-    Decision,
+from decision_assistant.decisions.models import Decision
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     IngestionJob,

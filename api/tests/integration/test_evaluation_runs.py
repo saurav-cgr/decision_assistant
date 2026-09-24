@@ -11,16 +11,18 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from decision_assistant.main import create_app
-from decision_assistant.models import (
-    Document,
-    DocumentVersion,
+from decision_assistant.evaluation.models import (
     EvaluationQuestion,
     EvaluationResult,
     EvaluationRun,
-    Passage,
-    RetrievalTrace,
-    Workspace,
 )
+from decision_assistant.ingestion.models import (
+    Document,
+    DocumentVersion,
+    Passage,
+)
+from decision_assistant.retrieval.models import RetrievalTrace
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.config import Settings, get_settings
 from decision_assistant.providers.factory import ProviderBundle
 from decision_assistant.providers.fakes import FakeEmbeddingProvider, FakeGenerationProvider

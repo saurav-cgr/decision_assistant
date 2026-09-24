@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import Passage, RetrievalTrace
+from decision_assistant.ingestion.models import Passage
+from decision_assistant.retrieval.models import RetrievalTrace
 from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.ingestion.retrieval_units import RetrievalUnitStrategy

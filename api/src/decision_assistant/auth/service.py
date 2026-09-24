@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from decision_assistant.auth.passwords import PasswordManager
 from decision_assistant.auth.tokens import AccessTokenService
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import User
+from decision_assistant.auth.models import User
 
 
 class InvalidCredentials(ApplicationError):

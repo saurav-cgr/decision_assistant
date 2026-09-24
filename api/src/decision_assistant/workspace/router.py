@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.auth.dependencies import get_current_user
 from decision_assistant.db import get_session
-from decision_assistant.models import User
+from decision_assistant.auth.models import User
 from decision_assistant.workspace.schemas import (
     WorkspaceCreate,
     WorkspaceDetail,

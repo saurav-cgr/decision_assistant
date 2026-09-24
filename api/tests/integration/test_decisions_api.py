@@ -17,17 +17,19 @@ from decision_assistant.ingestion.metadata import MetadataExtractor
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.ingestion.service import IngestionService
 from decision_assistant.main import create_app
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
     DecisionRelation,
     DecisionRevision,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     EmbeddingCache,
     Passage,
-    Workspace,
 )
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.providers.fakes import (
     FakeEmbeddingProvider,
     FakeGenerationProvider,

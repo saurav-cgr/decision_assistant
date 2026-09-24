@@ -19,11 +19,13 @@ from decision_assistant.decisions.schemas import (
     EvidenceSelection,
 )
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
     DecisionRelation,
     DecisionRevision,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     Passage,

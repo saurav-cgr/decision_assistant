@@ -9,16 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.config import Settings
 from decision_assistant.main import create_app
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     EmbeddingCache,
     Passage,
-    RetrievalTrace,
-    Workspace,
 )
+from decision_assistant.retrieval.models import RetrievalTrace
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.providers.base import EmbeddingPurpose
 from decision_assistant.providers.fakes import FakeEmbeddingProvider
 from decision_assistant.retrieval.router import get_retrieval_service
