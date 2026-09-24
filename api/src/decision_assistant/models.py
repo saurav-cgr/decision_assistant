@@ -105,6 +105,9 @@ class Workspace(TimestampMixin, Base):
     knowledge_revision: Mapped[int] = mapped_column(
         Integer, default=1, server_default=text("1")
     )
+    disclosure_acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class Document(TimestampMixin, Base):
