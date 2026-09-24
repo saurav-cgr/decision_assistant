@@ -124,6 +124,25 @@ def test_pdf_parser_preserves_page_numbers_and_offsets() -> None:
     )
 
 
+def test_explicit_pypdf_selection_preserves_legacy_pdf_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from decision_assistant import config
+
+    monkeypatch.setattr(
+        config,
+        "get_settings",
+        lambda: SimpleNamespace(pdf_parser="pypdf"),
+    )
+
+    parsed = parse_document(TEXT_PDF)
+
+    assert [block.locator for block in parsed.blocks] == [
+        {"kind": "pdf_page", "page": 1},
+        {"kind": "pdf_page", "page": 2},
+    ]
+
+
 def test_pdf_pages_are_page_blocks_with_hard_boundaries() -> None:
     parsed = parse_document(TEXT_PDF)
 
