@@ -32,3 +32,4 @@ class WorkspaceListResponse(WorkspaceBase):
 
 class WorkspaceDetail(WorkspaceSummary):
     embedding_profile: dict[str, Any] | None
+    disclosure_acknowledged_at: datetime | None
