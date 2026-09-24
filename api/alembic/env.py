@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import decision_assistant.answering.history_models  # noqa: F401
 import decision_assistant.answering.conversation_models  # noqa: F401
+import decision_assistant.workspace.rebuild_models  # noqa: F401
 from decision_assistant.config import get_settings
 from decision_assistant.models import Base
 
