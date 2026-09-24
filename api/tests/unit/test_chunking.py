@@ -201,13 +201,13 @@ def test_oversized_block_is_preserved_through_offsets(tmp_path: Path) -> None:
     assert long_text.strip() in compacted
 
 
-def test_chunking_preserves_pdf_page_locator_kind() -> None:
+def test_chunking_preserves_pdf_region_locator_kind() -> None:
     pdf = parse_document(Path("tests/fixtures/text.pdf"))
 
     chunks = chunk_document(pdf, token_counter=COUNTER)
 
     assert chunks
-    assert all(chunk.locator["kind"] == "pdf_page" for chunk in chunks)
+    assert all(chunk.locator["kind"] == "pdf_region" for chunk in chunks)
     assert all("page" in chunk.locator for chunk in chunks)
 
 

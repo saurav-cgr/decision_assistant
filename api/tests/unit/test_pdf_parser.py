@@ -6,7 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from pypdf import PdfReader, PdfWriter
 
 from decision_assistant.ingestion.chunking import chunk_document
 from decision_assistant.ingestion.parsers import (
@@ -15,13 +14,11 @@ from decision_assistant.ingestion.parsers import (
     _SourceBlock,
     _docling_locator,
     _docling_source_blocks,
-    _reconstruct_pdf_lines,
     parse_document,
 )
 
 
 TEXT_PDF = Path("tests/fixtures/text.pdf")
-SCANNED_EMPTY_PDF = Path("tests/fixtures/scanned-empty.pdf")
 
 
 class _FakeDoclingDocument:
@@ -85,71 +82,6 @@ def test_frozen_parser_and_chunker_contract() -> None:
         ("max_tokens", Parameter.KEYWORD_ONLY),
         ("overlap_tokens", Parameter.KEYWORD_ONLY),
     ]
-
-
-def test_pdf_line_reconstruction_joins_wrapped_sentences() -> None:
-    wrapped = (
-        "Public authentication is active for Q3 and Marco Silva owns the rollout. Status:\n"
-        "active.\n"
-        "This statement conflicts with the approved July 8 decision memo, which limits access to an\n"
-        "employee-only beta and keeps the public rollout postponed.\n"
-        "Offline model packaging\n"
-        "Decision: Do not bundle Ollama model weights in the application images. Status: active. Dana Wu\n"
-        "owns setup documentation.\n"
-    )
-
-    reconstructed = _reconstruct_pdf_lines(wrapped)
-
-    assert "owns the rollout. Status: active." in reconstructed
-    assert "limits access to an employee-only beta" in reconstructed
-    assert "Dana Wu owns setup documentation." in reconstructed
-    # A heading (capitalized, short) must not be joined onto the prior line.
-    assert "\nOffline model packaging\nDecision:" in reconstructed
-
-
-def test_pdf_parser_preserves_page_numbers_and_offsets() -> None:
-    parsed = parse_document(TEXT_PDF)
-
-    assert [block.text for block in parsed.blocks] == [
-        "Authentication was postponed.",
-        "PostgreSQL with pgvector was accepted.",
-    ]
-    assert [block.locator for block in parsed.blocks] == [
-        {"kind": "pdf_page", "page": 1},
-        {"kind": "pdf_page", "page": 2},
-    ]
-    assert all(
-        parsed.content[block.start_offset : block.end_offset] == block.text
-        for block in parsed.blocks
-    )
-
-
-def test_explicit_pypdf_selection_preserves_legacy_pdf_pages(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from decision_assistant import config
-
-    monkeypatch.setattr(
-        config,
-        "get_settings",
-        lambda: SimpleNamespace(pdf_parser="pypdf"),
-    )
-
-    parsed = parse_document(TEXT_PDF)
-
-    assert [block.locator for block in parsed.blocks] == [
-        {"kind": "pdf_page", "page": 1},
-        {"kind": "pdf_page", "page": 2},
-    ]
-
-
-def test_pdf_pages_are_page_blocks_with_hard_boundaries() -> None:
-    parsed = parse_document(TEXT_PDF)
-
-    assert [block.block_type for block in parsed.blocks] == ["page", "page"]
-    assert [block.boundary_before for block in parsed.blocks] == ["none", "hard"]
-    assert all(block.group_path == () for block in parsed.blocks)
-    assert all(block.attributes == {} for block in parsed.blocks)
 
 
 def test_docling_maps_items_and_preserves_page_boundaries() -> None:
@@ -243,15 +175,9 @@ def test_docling_locator_normalizes_top_left_bbox() -> None:
 
 
 def test_pdf_parser_dispatches_to_docling(monkeypatch: pytest.MonkeyPatch) -> None:
-    from decision_assistant import config
     from decision_assistant.ingestion import parsers
 
     sentinel = ParsedDocument(TEXT_PDF, "docling", ())
-    monkeypatch.setattr(
-        config,
-        "get_settings",
-        lambda: SimpleNamespace(pdf_parser="docling"),
-    )
     monkeypatch.setattr(parsers, "_parse_docling_pdf_document", lambda path: sentinel)
 
     assert parse_document(TEXT_PDF) is sentinel
@@ -299,7 +225,7 @@ async def test_docling_parse_runs_in_worker_thread(
     monkeypatch.setattr(
         service,
         "get_settings",
-        lambda: SimpleNamespace(pdf_parser="docling", model_timeout_seconds=1),
+        lambda: SimpleNamespace(model_timeout_seconds=1),
     )
     monkeypatch.setattr(
         service,
@@ -322,7 +248,7 @@ async def test_docling_parse_timeout_is_sanitized(
     monkeypatch.setattr(
         service,
         "get_settings",
-        lambda: SimpleNamespace(pdf_parser="docling", model_timeout_seconds=0.01),
+        lambda: SimpleNamespace(model_timeout_seconds=0.01),
     )
 
     def hang(path: Path) -> None:
@@ -342,26 +268,84 @@ async def test_docling_parse_timeout_is_sanitized(
     assert error.value.retryable is False
 
 
-def test_pdf_without_embedded_text_requires_ocr() -> None:
+@pytest.mark.asyncio
+async def test_non_pdf_sources_skip_worker_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from decision_assistant.ingestion import service
+
+    caller_thread = threading.get_ident()
+    recorded_threads: list[int] = []
+    sentinel = object()
+    monkeypatch.setattr(
+        service,
+        "parse_document",
+        lambda path: recorded_threads.append(threading.get_ident()) or sentinel,
+    )
+
+    result = await service._parse_for_ingestion(Path("tests/fixtures/meeting.md"))
+
+    assert result is sentinel
+    assert recorded_threads == [caller_thread]
+
+
+def test_pdf_without_extractable_text_is_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from docling.datamodel.document import ConversionStatus
+
+    class _FakeConverter:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def convert(self, path: Path) -> SimpleNamespace:
+            return SimpleNamespace(
+                status=ConversionStatus.SUCCESS,
+                document=_FakeDoclingDocument(),
+                errors=(),
+            )
+
+    monkeypatch.setattr(
+        "docling.document_converter.DocumentConverter", _FakeConverter
+    )
+
     with pytest.raises(DocumentParseError) as error:
-        parse_document(SCANNED_EMPTY_PDF)
+        parse_document(TEXT_PDF)
 
-    assert error.value.code == "ocr_not_supported"
+    assert error.value.code == "pdf_no_extractable_text"
+    assert error.value.message == "PDF contains no extractable text"
+    assert "docling-parse" not in error.value.message
+    assert "PDFium" not in error.value.message
 
 
-def test_encrypted_pdf_returns_password_error(tmp_path: Path) -> None:
+def test_encrypted_pdf_returns_password_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import reportlab.lib.pdfencrypt
+    from reportlab.pdfgen import canvas
+
     encrypted = tmp_path / "encrypted.pdf"
-    reader = PdfReader(TEXT_PDF)
-    writer = PdfWriter()
-    writer.append_pages_from_reader(reader)
-    writer.encrypt("secret")
-    with encrypted.open("wb") as stream:
-        writer.write(stream)
+    encryption = reportlab.lib.pdfencrypt.StandardEncryption("secret", canPrint=0)
+    pdf = canvas.Canvas(str(encrypted), encrypt=encryption)
+    pdf.drawString(72, 720, "Confidential")
+    pdf.save()
+
+    def _fail_if_reached(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "Docling conversion should not run for an encrypted PDF"
+        )
+
+    monkeypatch.setattr(
+        "docling.document_converter.DocumentConverter", _fail_if_reached
+    )
 
     with pytest.raises(DocumentParseError) as error:
         parse_document(encrypted)
 
     assert error.value.code == "pdf_password_protected"
+    assert error.value.retryable is False
+    assert "docling-parse" not in error.value.message
+    assert "PDFium" not in error.value.message
 
 
 def test_corrupt_pdf_returns_parser_specific_error(tmp_path: Path) -> None:
@@ -372,3 +356,5 @@ def test_corrupt_pdf_returns_parser_specific_error(tmp_path: Path) -> None:
         parse_document(corrupt)
 
     assert error.value.code == "pdf_parse_failed"
+    assert "docling-parse" not in error.value.message
+    assert "PDFium" not in error.value.message

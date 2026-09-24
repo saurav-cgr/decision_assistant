@@ -8,8 +8,6 @@ from docx import Document as open_docx
 from docx.opc.exceptions import PackageNotFoundError
 from docx.table import Table
 from docx.text.paragraph import Paragraph
-from pypdf import PdfReader
-from pypdf.errors import PdfReadError
 
 from decision_assistant.errors import ApplicationError
 
@@ -83,54 +81,7 @@ def _parse_text_document(path: Path) -> ParsedDocument:
 
 
 def _parse_pdf_document(path: Path) -> ParsedDocument:
-    from decision_assistant.config import get_settings
-
-    if get_settings().pdf_parser == "docling":
-        return _parse_docling_pdf_document(path)
-    return _parse_pypdf_document(path)
-
-
-def _parse_pypdf_document(path: Path) -> ParsedDocument:
-    try:
-        reader = PdfReader(path)
-        if reader.is_encrypted:
-            raise DocumentParseError(
-                "pdf_password_protected",
-                "Password-protected PDF files are not supported",
-            )
-        source_blocks: list[_SourceBlock] = []
-        first = True
-        for page_number, page in enumerate(reader.pages, start=1):
-            text = _normalize_extracted_text(
-                _reconstruct_pdf_lines(page.extract_text() or "")
-            )
-            if not text:
-                continue
-            source_blocks.append(
-                _SourceBlock(
-                    text=text,
-                    block_type="page",
-                    group_path=(),
-                    boundary_before="none" if first else "hard",
-                    attributes={},
-                    locator={"kind": "pdf_page", "page": page_number},
-                )
-            )
-            first = False
-    except DocumentParseError:
-        raise
-    except (OSError, PdfReadError, TypeError, ValueError) as exc:
-        raise DocumentParseError(
-            "pdf_parse_failed",
-            "PDF could not be parsed",
-        ) from exc
-
-    if not source_blocks:
-        raise DocumentParseError(
-            "ocr_not_supported",
-            "PDF contains no embedded text; OCR is not supported",
-        )
-    return _assemble_document(path, source_blocks)
+    return _parse_docling_pdf_document(path)
 
 
 def _parse_docling_pdf_document(path: Path) -> ParsedDocument:
@@ -473,24 +424,3 @@ def _normalize_extracted_text(text: str) -> str:
     return "\n".join(lines)
 
 
-def _reconstruct_pdf_lines(text: str) -> str:
-    """Rejoin PDF line-wraps so sentences are not broken by hard newlines.
-
-    PDF text extraction inserts a newline wherever a line wraps. A wrapped
-    continuation almost always starts with a lowercase letter, while a new
-    heading, label, or sentence starts with a capital. Join a line onto the
-    previous one when the next line begins lowercase. Blank lines are kept as
-    paragraph separators.
-    """
-    joined: list[str] = []
-    for raw_line in text.splitlines():
-        stripped = raw_line.strip()
-        if not stripped:
-            if joined and joined[-1].strip():
-                joined.append("")
-            continue
-        if joined and joined[-1].strip() and stripped[0].islower():
-            joined[-1] = f"{joined[-1]} {stripped}"
-        else:
-            joined.append(raw_line)
-    return "\n".join(joined)

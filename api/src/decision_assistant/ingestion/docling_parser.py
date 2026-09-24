@@ -14,7 +14,32 @@ from decision_assistant.ingestion.parsers import (
 )
 
 
+def _preflight_pdf(path: Path) -> None:
+    import pypdfium2
+
+    try:
+        document = pypdfium2.PdfDocument(str(path))
+        document.close()
+    except pypdfium2.PdfiumError as exc:
+        if "password" in str(exc).lower():
+            raise DocumentParseError(
+                "pdf_password_protected",
+                "Password-protected PDF files are not supported",
+            ) from exc
+        raise DocumentParseError(
+            "pdf_parse_failed",
+            "PDF could not be parsed",
+        ) from exc
+    except OSError as exc:
+        raise DocumentParseError(
+            "pdf_parse_failed",
+            "PDF could not be parsed",
+        ) from exc
+
+
 def parse_docling_pdf(path: Path) -> ParsedDocument:
+    _preflight_pdf(path)
+
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.document import ConversionStatus
     from docling.datamodel.pipeline_options import (
@@ -44,7 +69,9 @@ def parse_docling_pdf(path: Path) -> ParsedDocument:
         raise DocumentParseError(*docling_failure((exc,))) from exc
 
     if not source_blocks:
-        raise DocumentParseError("pdf_parse_failed", "PDF could not be parsed")
+        raise DocumentParseError(
+            "pdf_no_extractable_text", "PDF contains no extractable text"
+        )
     return _assemble_document(path, source_blocks)
 
 

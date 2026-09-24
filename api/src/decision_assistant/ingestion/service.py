@@ -67,7 +67,7 @@ class IngestionResult:
 
 
 async def _parse_for_ingestion(source_path: Path) -> ParsedDocument:
-    if get_settings().pdf_parser == "docling":
+    if source_path.suffix.lower() == ".pdf":
         try:
             return await asyncio.wait_for(
                 asyncio.to_thread(parse_document, source_path),

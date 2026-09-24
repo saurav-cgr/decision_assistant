@@ -60,7 +60,7 @@ Decision Memory Assistant is local-data-first decision intelligence for project 
 
 | Capability | Implemented behavior |
 | --- | --- |
-| 📄 **Document ingestion** | Upload `.md`, `.txt`, `.pdf`, and `.docx`; preserve line, page, paragraph, and offset locators. Empty/scanned, encrypted, and corrupt PDFs receive explicit errors. |
+| 📄 **Document ingestion** | Upload `.md`, `.txt`, `.pdf`, and `.docx`. PDFs are parsed locally with Docling: layout-aware reading order, tables, and multi-column text; scanned English PDFs go through local OCR. New PDF passages carry page and region locators; other formats keep line, paragraph, and offset locators. Encrypted, corrupt, and blank PDFs receive explicit errors. |
 | 🧩 **Decision extraction** | Extract statement, date, owner, status, reasons, alternatives, topic, and candidate relationships, each tied to evidence. |
 | ✏️ **Human correction** | Edit structured decision fields without changing source text. Corrections create audit revisions with `supported`, `unsupported`, or `needs_review` labels. |
 | 🔎 **Hybrid retrieval** | Fuse vector, passage full-text, and decision-field search with RRF; store an inspectable trace for every query. |
@@ -156,6 +156,7 @@ All business endpoints use `/api/v1`. `/health`, `/ready`, `/docs`, and `/openap
 | Backend | Python 3.12, FastAPI, SQLAlchemy, Alembic |
 | Data | PostgreSQL 16, pgvector, PostgreSQL full-text search |
 | AI providers | Gemini by default; Ollama via optional Compose profile |
+| PDF parsing | Docling 2.130.0 with Tesseract English OCR; pypdfium2 for the PDF preflight |
 | Retrieval | Structural chunking, embeddings, RRF, optional schema-constrained reranking |
 | Local runtime | Docker Compose |
 | Testing | pytest, pytest-asyncio, Vitest, Testing Library |
@@ -197,6 +198,10 @@ docker compose up -d db --wait
 docker compose run --rm api alembic upgrade head
 docker compose up -d api web --wait
 ```
+
+The API image bundles Docling's layout and table models under `/opt/docling-models`
+at build time; PDF parsing never downloads models at runtime. These models add
+about 701 MB (API image about 2.6 GB).
 
 ### 3️⃣ Verify
 
@@ -316,7 +321,7 @@ Source files, DB records, embeddings, and traces persist in local Docker volumes
 
 Original binary files, local paths, DB credentials, API keys, unrelated answer-time passages, and application telemetry do not go to Gemini. Use fictional Atlas corpus for demos; do not ingest confidential material without accepting provider terms.
 
-Supported formats: Markdown, text, PDFs with embedded text, DOCX. Scanned PDFs need OCR and are rejected. Complex PDF layout, tables, multi-column text, encrypted files, macros, link following, password recovery out of scope. Source text stays untrusted evidence, never system instructions.
+Supported formats: Markdown, text, DOCX, and PDF (digital or scanned English). PDF parsing and OCR run locally. Encrypted and password-protected PDFs, macros, link following, and password recovery stay out of scope. PDF region locators are stored and returned but not visually highlighted. Source text stays untrusted evidence, never system instructions.
 
 ---
 
@@ -340,4 +345,4 @@ Supported formats: Markdown, text, PDFs with embedded text, DOCX. Scanned PDFs n
 - FastAPI background ingestion is in-process; API restart interrupts non-durable jobs.
 - RRF is transparent; reranking stays disabled until benchmark evidence proves benefit without abstention regression.
 - Gemini improves demo reliability but adds network, quota, vendor, and data-governance dependencies.
-- Source anchors exact for normalized text, not pixel-perfect PDF coordinates.
+- Docling adds image size and ingest CPU in exchange for layout, table, and OCR support; PDF region coordinates are stored but not yet highlighted in the UI.

@@ -88,13 +88,13 @@ Every active `DocumentVersion` must match `CURRENT_CHUNKING_PROFILE`; every pass
 - Mock external services only. Keep provider, prompt, citation, retrieval, and evaluation tests deterministic and offline.
 - New behavior needs focused coverage at its owning layer; cross-layer changes need an integration or UI regression.
 
-## Docling PDF parsing (pdf-improvement branch)
+## Docling PDF parsing
 
 - **No runtime downloads**: Docling layout/table artifacts must be predownloaded into `/opt/docling-models` at Docker build time. The runtime must never fetch models over the network. `TIKTOKEN_CACHE_DIR=/opt/tiktoken-cache` has the same rule; apply it to `DOCLING_ARTIFACTS_PATH` as well.
 - **Local-only Docling**: Docling must be configured with remote services disabled and English OCR only. No cloud calls, no remote model pulls.
-- **Parser contract is reset-required**: Changing `pdf_parser` between `pypdf` and `docling` invalidates the corpus. `resolve_corpus_profile` must include parser name/version and OCR/layout options, and any change must raise `corpus_reset_required`. Do not attempt in-place migration. Default remains `pypdf` during comparison.
+- **Parser contract is reset-required**: Docling is the only PDF parser. `resolve_corpus_profile` embeds its name, version, and OCR/layout options; changing any of them invalidates the corpus and requires reset and reingest. Do not attempt in-place migration.
 - **Unchanged core types**: `parse_document`, `ParsedDocument`, `_SourceBlock`, and the structural chunker signatures are frozen. Docling dispatch happens only inside `_parse_pdf_document`.
-- **Locator kinds**: `pypdf` emits `pdf_page`; `docling` emits `pdf_region` (page + normalized bounding box). Page-level gold locators match either kind. Region checks add page-and-bounding-box coverage. Chunk locator aggregation, provenance, API schemas, citation labels, and evaluation matching must all be extended for `pdf_region`.
+- **Locator kinds**: New ingestion emits only `pdf_region` (page + normalized bounding box). `pdf_page` stays a supported read and gold-locator kind, and matches region passages by page. Chunk locator aggregation, provenance, API schemas, citation labels, and evaluation matching all support `pdf_region`.
 - **Error mapping**: Docling conversion timeout, OCR failure, and layout failure map to sanitized, non-retryable parse errors. Never surface raw Docling exceptions to API consumers. Docling conversion runs in a worker thread inside the existing ingestion task.
 - **PDF UI scope**: The source UI remains an extracted-text viewer in this release. `pdf_region` is stored and returned but not visually highlighted; true visual PDF highlighting is a later feature.
 - **Schema migration**: No migration for the parser contract change. It requires explicit PostgreSQL reset and complete reingestion. Ask first before executing the reset.
@@ -120,12 +120,11 @@ Before handing an increment to the checker, the maker must run and record output
 
 Failures are maker-fixable and must be resolved before the increment is handed off. Do not hand a red increment to the checker; that burns review budget on free errors.
 
-## Parser comparison evaluation
+## PDF quality gate
 
-- Run parser comparisons in **separate reset-and-reingest corpora**, one per parser. Never compare under a shared corpus.
-- Record results in a versioned artifact at `evaluation/parser_comparison.md` so the decision to promote Docling to default is auditable.
-- Compare: retrieval quality, citation validity, abstention and conflict rates, ingest duration, and model/image size. Use `evaluation/questions.json` as the benchmark.
-- Docling does not become default until the comparison artifact shows it is at least parity on citation validity and abstention/conflict rates.
+- `evaluation/parser_comparison.md` is the audit record for Docling PDF quality. It keeps the historical parser comparison and records the 2026-09-24 decision to make Docling the only parser.
+- Open follow-up gate (spec SC-006): abstention accuracy ≥ 0.90 and conflict rate ≤ 0.05 on the Atlas benchmark (`evaluation/questions.json`), after a full reset and reingestion.
+- A Docling upgrade or option change (model version, OCR engine, layout model) requires a reset-and-reingest benchmark run, recorded in `evaluation/parser_comparison.md`.
 
 ## Common gotchas
 

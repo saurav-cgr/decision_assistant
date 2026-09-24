@@ -59,7 +59,6 @@ def get_retrieval_service(
         chunking_profile=resolve_corpus_profile(
             settings.chunking_profile_preset,
             settings.retrieval_unit_strategy,
-            settings.pdf_parser,
         ),
     )
 

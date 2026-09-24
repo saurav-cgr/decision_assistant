@@ -7,7 +7,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from decision_assistant.ingestion.profiles import (
     CHUNKING_PROFILE_PRESETS,
     DEFAULT_CHUNKING_PROFILE_PRESET,
-    PDF_PARSER_PROFILES,
     RETRIEVAL_UNIT_STRATEGIES,
 )
 
@@ -52,7 +51,6 @@ class Settings(BaseSettings):
     rerank_final_limit: int = 5
     chunking_profile_preset: str = DEFAULT_CHUNKING_PROFILE_PRESET
     retrieval_unit_strategy: str = "passage_hybrid"
-    pdf_parser: str = "pypdf"
     evaluation_dataset_path: Path = Path("/workspace/evaluation/questions.json")
 
     @field_validator("chunking_profile_preset")
@@ -72,15 +70,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"Unknown retrieval unit strategy {value!r}; "
                 f"expected one of {sorted(RETRIEVAL_UNIT_STRATEGIES)}"
-            )
-        return value
-
-    @field_validator("pdf_parser")
-    @classmethod
-    def _validate_pdf_parser(cls, value: str) -> str:
-        if value not in PDF_PARSER_PROFILES:
-            raise ValueError(
-                f"Unknown PDF parser {value!r}; expected one of {sorted(PDF_PARSER_PROFILES)}"
             )
         return value
 

@@ -1,7 +1,7 @@
 import type { DocumentListItem } from "../api/types";
 
 const parserErrors: Record<string, string> = {
-  ocr_not_supported: "This scanned PDF requires OCR, which is not supported.",
+  pdf_no_extractable_text: "This PDF contains no readable text.",
   pdf_password_protected: "This password-protected PDF cannot be indexed.",
   pdf_parse_failed: "This PDF file is corrupt or could not be read.",
   docx_parse_failed: "This DOCX file is corrupt or could not be read.",

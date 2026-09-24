@@ -57,17 +57,57 @@ The JSON records below are the machine-readable runner outputs. `run_id`, provid
 
 ## Reproduction
 
-Run from the repository root. Keep the database reset between parser runs; never compare both parsers in one corpus.
+pypdf and `scripts/compare_pdf_parsers.py` were removed on 2026-09-24; Docling is
+now the only supported PDF parser, and there is nothing left to compare between
+parsers. The historical pypdf run recorded above can be reproduced only by
+checking out git history before this change.
 
-```bash
-docker compose stop api web
-docker compose exec -T db sh -lc \
-  'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
-docker compose run --rm api alembic upgrade head
-PDF_PARSER=pypdf docker compose up -d api --wait
-docker compose run --rm --no-deps api python /workspace/scripts/compare_pdf_parsers.py \
-  --parser pypdf --source-directory /workspace/sample_data/atlas \
-  --api-origin http://api:8000 --timeout 1800
-```
+## Decision (2026-09-24)
 
-Repeat the reset, migration, and API start with `PDF_PARSER=docling`, then run the same command with `--parser docling`.
+Docling is the only PDF parser. The former parity gate was waived by the
+project owner: Docling leads on citation correctness (1.00 vs 0.9655) but
+trails on abstention accuracy (0.85 vs 0.90) and conflict rate (0.10 vs 0.05).
+
+Open follow-up gate (spec SC-006): abstention accuracy ≥ 0.90 and conflict
+rate ≤ 0.05 on the Atlas benchmark, measured after a full Docling reset and
+reingestion.
+
+## D12 reset-and-reingest benchmark (2026-09-24)
+
+Full PostgreSQL reset (`dropdb`/`createdb`, `alembic upgrade head`), complete
+Atlas reingestion under the Docling-only profile, live Gemini generation and
+embedding, reranking disabled, `passage_hybrid` strategy. `run_id`
+`d319e454-1d8f-48cb-9ce2-4785eeebf70c`. Corpus: 6 documents, 28 passages, all
+active `DocumentVersion.chunking_profile` rows confirmed matching
+`CURRENT_CHUNKING_PROFILE` (queried directly in Postgres; the evaluation run's
+own `corpus_snapshot` confirms the same).
+
+| Metric | Result | SC target | Met |
+|---|---:|---:|---|
+| Top-five retrieval | 1.00 | ≥ 1.00 (SC-003, blocking) | yes |
+| Citation correctness | 0.9643 | ≥ 1.00 (SC-003, blocking) | **no** |
+| Abstention accuracy | 0.80 | ≥ 0.90 (SC-006, non-blocking) | no |
+| Conflict rate | 0.05 | ≤ 0.05 (SC-006, non-blocking) | yes |
+
+The single citation miss is on `atlas-001`, a Markdown source (`01-product-plan.md`),
+not a PDF: the judge model marked one claim as unsupported because the source
+passage confirms the postponement reason but does not restate the month
+("May"), a date-attribution nuance in the judge's grading, not a retrieval or
+citation-plumbing defect. It is not attributable to the Docling parser change.
+The historical pypdf baseline above also missed this same SC-003 bar
+(0.9655, not 1.00), so a sub-1.00 citation-correctness score already existed
+before this change and is not a regression introduced by Docling.
+
+A first run of this benchmark (before the run above) hit a transient
+`Model provider unavailable` failure on one question (`atlas-010`) and was
+discarded rather than counted; the run recorded here is the clean rerun.
+
+SC-003's literal ≥ 1.00 bar is not met on this run. This is reported as-is,
+without a retry-until-passing loop, since repeated resampling against a
+judge-model threshold this tight would not be a meaningful signal.
+
+**Waived by the project owner (2026-09-24)**, same basis as the earlier
+SC-006 waiver: the single miss is on a non-PDF (Markdown) source, is a
+judge date-attribution nuance rather than a retrieval or citation-plumbing
+defect, and the pre-Docling pypdf baseline missed this same bar too
+(0.9655). D12 is treated as met.
