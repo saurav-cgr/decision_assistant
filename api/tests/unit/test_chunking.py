@@ -1,6 +1,8 @@
 import hashlib
 from pathlib import Path
+from uuid import uuid4
 
+from decision_assistant.answering.schemas import SourceCitation
 from decision_assistant.ingestion.chunking import chunk_document
 from decision_assistant.ingestion.parsers import (
     ParsedBlock,
@@ -11,6 +13,7 @@ from decision_assistant.ingestion.tokenization import (
     TiktokenCounter,
     get_token_counter,
 )
+from decision_assistant.retrieval.provenance import _source_kind
 
 FIXTURE = Path("tests/fixtures/meeting.md")
 COUNTER = TiktokenCounter()
@@ -124,6 +127,49 @@ def test_hard_boundaries_are_never_crossed(tmp_path: Path) -> None:
     assert any("Beta" in chunk.content for chunk in chunks)
 
 
+def test_overlap_never_crosses_pdf_page_boundary() -> None:
+    first = "Page one detail."
+    second = "Page two detail."
+    content = f"{first}\n\n{second}"
+    document = ParsedDocument(
+        source_path=Path("pages.pdf"),
+        content=content,
+        blocks=(
+            ParsedBlock(
+                first,
+                "paragraph",
+                (),
+                "none",
+                {},
+                {"kind": "pdf_region", "page": 1, "bbox": [0.1, 0.1, 0.9, 0.2]},
+                0,
+                len(first),
+            ),
+            ParsedBlock(
+                second,
+                "paragraph",
+                (),
+                "hard",
+                {},
+                {"kind": "pdf_region", "page": 2, "bbox": [0.1, 0.1, 0.9, 0.2]},
+                len(first) + 2,
+                len(content),
+            ),
+        ),
+    )
+
+    chunks = chunk_document(
+        document,
+        token_counter=COUNTER,
+        target_tokens=100,
+        max_tokens=200,
+        overlap_tokens=50,
+    )
+
+    assert [chunk.content for chunk in chunks] == [first, second]
+    assert [chunk.locator["page"] for chunk in chunks] == [1, 2]
+
+
 def test_heading_stays_with_first_body_block(tmp_path: Path) -> None:
     content = "## Architecture\n\nThe team chose PostgreSQL.\n"
     chunks = chunk_document(
@@ -155,14 +201,63 @@ def test_oversized_block_is_preserved_through_offsets(tmp_path: Path) -> None:
     assert long_text.strip() in compacted
 
 
-def test_chunking_preserves_pdf_page_locator_kind() -> None:
+def test_chunking_preserves_pdf_region_locator_kind() -> None:
     pdf = parse_document(Path("tests/fixtures/text.pdf"))
 
     chunks = chunk_document(pdf, token_counter=COUNTER)
 
     assert chunks
-    assert all(chunk.locator["kind"] == "pdf_page" for chunk in chunks)
+    assert all(chunk.locator["kind"] == "pdf_region" for chunk in chunks)
     assert all("page" in chunk.locator for chunk in chunks)
+
+
+def test_pdf_region_flows_from_chunk_to_citation_schema() -> None:
+    content = "Heading\n\nSupporting detail"
+    document = ParsedDocument(
+        source_path=Path("regions.pdf"),
+        content=content,
+        blocks=(
+            ParsedBlock(
+                "Heading",
+                "heading",
+                (),
+                "none",
+                {},
+                {"kind": "pdf_region", "page": 2, "bbox": [0.1, 0.2, 0.4, 0.3]},
+                0,
+                7,
+            ),
+            ParsedBlock(
+                "Supporting detail",
+                "paragraph",
+                (),
+                "soft",
+                {},
+                {"kind": "pdf_region", "page": 2, "bbox": [0.2, 0.4, 0.8, 0.6]},
+                9,
+                len(content),
+            ),
+        ),
+    )
+
+    locator = chunk_document(document, token_counter=COUNTER)[0].locator
+    citation = SourceCitation(
+        passage_id=uuid4(),
+        quote="Heading",
+        start_offset=0,
+        end_offset=7,
+        content_hash="0" * 64,
+        document_id=uuid4(),
+        document_name="regions.pdf",
+        locator=locator,
+    )
+
+    assert citation.locator == {
+        "kind": "pdf_region",
+        "page": 2,
+        "bbox": [0.1, 0.2, 0.8, 0.6],
+    }
+    assert _source_kind(citation.locator) == "pdf"
 
 
 def test_chunking_preserves_docx_paragraph_locator_kind() -> None:

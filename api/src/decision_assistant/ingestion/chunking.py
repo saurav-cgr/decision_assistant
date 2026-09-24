@@ -235,7 +235,7 @@ def _build_drafts(
         units = list(chunk)
         if index > 0:
             overlap = _trailing_units(chunks[index - 1], counter, overlap_tokens)
-            if overlap and units:
+            if overlap and units and units[0].boundary_before != "hard":
                 # Overlap must never cross a hard or group boundary.
                 first_group = units[0].group_path
                 overlap = [
@@ -244,6 +244,8 @@ def _build_drafts(
                     if unit.group_path == first_group
                     and unit.boundary_before != "hard"
                 ]
+            else:
+                overlap = []
             if overlap:
                 candidate = overlap + units
                 if _tokens(candidate, counter) <= max_tokens:
@@ -320,6 +322,23 @@ def _locator_for_units(units: list[_Unit]) -> SourceLocator:
         }
     if "pdf_page" in kinds:
         return {"kind": "pdf_page", "page": int(blocks[0].locator["page"])}
+    if "pdf_region" in kinds:
+        regions = [
+            block.locator
+            for block in blocks
+            if block.locator.get("kind") == "pdf_region"
+        ]
+        boxes = [region["bbox"] for region in regions]
+        return {
+            "kind": "pdf_region",
+            "page": int(regions[0]["page"]),
+            "bbox": [
+                min(float(box[0]) for box in boxes),
+                min(float(box[1]) for box in boxes),
+                max(float(box[2]) for box in boxes),
+                max(float(box[3]) for box in boxes),
+            ],
+        }
     if "docx_paragraphs" in kinds:
         return {
             "kind": "docx_paragraphs",

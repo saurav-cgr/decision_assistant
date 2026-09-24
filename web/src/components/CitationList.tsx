@@ -15,7 +15,9 @@ function locatorLabel(locator: SourceCitation["locator"]): string {
     const end = locator.end;
     return start === end ? `line ${start}` : `lines ${start}–${end}`;
   }
-  if (locator.kind === "pdf_page") return `page ${locator.page}`;
+  if (locator.kind === "pdf_page" || locator.kind === "pdf_region") {
+    return `page ${locator.page}`;
+  }
   if (locator.kind === "docx_paragraph") return `paragraph ${locator.paragraph}`;
   if (locator.kind === "docx_table") {
     return `table ${locator.table}, row ${locator.row}`;

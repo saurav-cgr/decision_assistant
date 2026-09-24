@@ -177,10 +177,10 @@ describe("Workspace", () => {
       items: [
         {
           ...completedDocument,
-          id: "ocr-pdf",
+          id: "empty-pdf",
           display_name: "scan.pdf",
           status: "failed",
-          error: { code: "ocr_not_supported", retryable: false },
+          error: { code: "pdf_no_extractable_text", retryable: false },
         },
         {
           ...completedDocument,
@@ -203,7 +203,7 @@ describe("Workspace", () => {
 
     await renderWorkspace();
 
-    expect(await screen.findByText(/scanned PDF requires OCR/i)).toBeVisible();
+    expect(await screen.findByText(/contains no readable text/i)).toBeVisible();
     expect(
       screen.getByText(/^This password-protected PDF cannot be indexed\.$/i),
     ).toBeVisible();

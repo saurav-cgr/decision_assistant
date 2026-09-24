@@ -4,22 +4,33 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+import shutil
 
 from docx import Document
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
+from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.pdfgen.canvas import Canvas
+from reportlab.platypus import (
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from PIL import Image, ImageDraw, ImageFont
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIRECTORY = PROJECT_ROOT / "sample_data" / "atlas"
 DOCX_PATH = OUTPUT_DIRECTORY / "03-auth-rollout.docx"
 PDF_PATH = OUTPUT_DIRECTORY / "04-q3-planning.pdf"
+PDF_FIXTURE_DIRECTORY = PROJECT_ROOT / "api" / "tests" / "fixtures" / "pdf"
 
 INK = RGBColor(31, 41, 55)
 BLUE = RGBColor(46, 116, 181)
@@ -309,10 +320,72 @@ def build_pdf() -> None:
     document.build(story)
 
 
+def _build_pdf_fixtures() -> None:
+    PDF_FIXTURE_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(PDF_PATH, PDF_FIXTURE_DIRECTORY / "digital-english.pdf")
+
+    multicolumn = PDF_FIXTURE_DIRECTORY / "multi-column-english.pdf"
+    canvas = Canvas(str(multicolumn), pagesize=LETTER)
+    canvas.setFont("Helvetica-Bold", 18)
+    canvas.drawString(72, 720, "Multi-column English report")
+    canvas.setFont("Helvetica", 11)
+    for x, lines in (
+        (72, ["Left column heading", "Left column evidence", "Left column owner"]),
+        (306, ["Right column heading", "Right column evidence", "Right column owner"]),
+    ):
+        for row, line in enumerate(lines):
+            canvas.drawString(x, 660 - row * 28, line)
+    canvas.save()
+
+    table_heavy = PDF_FIXTURE_DIRECTORY / "table-heavy-english.pdf"
+    body = ParagraphStyle("FixtureBody", fontName="Helvetica", fontSize=10, leading=14)
+    document = SimpleDocTemplate(str(table_heavy), pagesize=LETTER)
+    table = Table(
+        [
+            ["Decision", "Owner", "Status"],
+            ["Authentication beta", "Priya Nair", "Active"],
+            ["Audit replay", "Jonah Reed", "Pending"],
+            ["Public rollout", "Elena Park", "Postponed"],
+        ],
+        colWidths=[2.8 * inch, 1.8 * inch, 1.4 * inch],
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), HexColor("#D3D3D3")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    document.build(
+        [
+            Paragraph("Table-heavy English report", body),
+            table,
+            Paragraph("The table records the current decision state.", body),
+        ]
+    )
+
+    image_path = PDF_FIXTURE_DIRECTORY / "scanned-english.png"
+    image = Image.new("RGB", (1600, 1000), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 52)
+    draw.text((110, 120), "SCANNED ENGLISH DECISION", fill="black", font=font)
+    draw.text((110, 240), "The employee beta starts July 22.", fill="black", font=font)
+    image.save(image_path)
+
+    scanned = PDF_FIXTURE_DIRECTORY / "scanned-english.pdf"
+    canvas = Canvas(str(scanned), pagesize=LETTER)
+    canvas.drawImage(str(image_path), 36, 36, width=540, height=720)
+    canvas.save()
+    image_path.unlink()
+
+
 def main() -> None:
     OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
     build_docx()
     build_pdf()
+    _build_pdf_fixtures()
     print(f"Generated {DOCX_PATH.relative_to(PROJECT_ROOT)}")
     print(f"Generated {PDF_PATH.relative_to(PROJECT_ROOT)}")
 

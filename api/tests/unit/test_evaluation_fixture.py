@@ -91,6 +91,16 @@ def test_gold_questions_include_claims_sources_locators_and_statuses(
     assert {"active", "proposed", "rejected", "superseded"} <= observed_statuses
 
 
+def _locator_matches(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
+    """Page-level gold locators match either PDF locator kind (AGENTS.md)."""
+    if expected.get("kind") == "pdf_page":
+        return (
+            actual.get("kind") in {"pdf_page", "pdf_region"}
+            and actual.get("page") == expected.get("page")
+        )
+    return actual == expected
+
+
 def test_every_gold_quote_and_locator_resolves_in_real_sample_files(
     questions: list[dict[str, Any]],
 ) -> None:
@@ -105,7 +115,7 @@ def test_every_gold_quote_and_locator_resolves_in_real_sample_files(
                 block
                 for block in parsed[expected["document"]].blocks
                 if expected["quote"] in block.text
-                and block.locator == expected["locator"]
+                and _locator_matches(block.locator, expected["locator"])
             ]
             assert len(matches) == 1, (
                 f'{question["id"]}: quote/locator did not uniquely resolve in '

@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -7,14 +8,12 @@ from docx import Document as open_docx
 from docx.opc.exceptions import PackageNotFoundError
 from docx.table import Table
 from docx.text.paragraph import Paragraph
-from pypdf import PdfReader
-from pypdf.errors import PdfReadError
 
 from decision_assistant.errors import ApplicationError
 
 Boundary = Literal["hard", "soft", "none"]
 AttributeValue = str | int | float | bool | None
-SourceLocator = dict[str, str | int | float | bool | list[str] | None]
+SourceLocator = dict[str, str | int | float | bool | list[str | float] | None]
 SUPPORTED_TEXT_SUFFIXES = {".md", ".txt"}
 PDF_SUFFIX = ".pdf"
 DOCX_SUFFIX = ".docx"
@@ -32,13 +31,7 @@ class DocumentParseError(ApplicationError):
 
 @dataclass(frozen=True, slots=True)
 class ParsedBlock:
-    """A source-neutral normalized block.
-
-    ``group_path`` is an ordered tuple of namespaced stable keys from broad to
-    narrow (e.g. ``("heading-1:architecture#1", "heading-2:storage#1")`` or
-    ``("channel:C123", "thread:171234")``). ``boundary_before`` records whether
-    this block may combine with the preceding block.
-    """
+    """A source-neutral block with stable grouping and boundary metadata."""
 
     text: str
     block_type: str
@@ -88,46 +81,31 @@ def _parse_text_document(path: Path) -> ParsedDocument:
 
 
 def _parse_pdf_document(path: Path) -> ParsedDocument:
-    try:
-        reader = PdfReader(path)
-        if reader.is_encrypted:
-            raise DocumentParseError(
-                "pdf_password_protected",
-                "Password-protected PDF files are not supported",
-            )
-        source_blocks: list[_SourceBlock] = []
-        first = True
-        for page_number, page in enumerate(reader.pages, start=1):
-            text = _normalize_extracted_text(
-                _reconstruct_pdf_lines(page.extract_text() or "")
-            )
-            if not text:
-                continue
-            source_blocks.append(
-                _SourceBlock(
-                    text=text,
-                    block_type="page",
-                    group_path=(),
-                    boundary_before="none" if first else "hard",
-                    attributes={},
-                    locator={"kind": "pdf_page", "page": page_number},
-                )
-            )
-            first = False
-    except DocumentParseError:
-        raise
-    except (OSError, PdfReadError, TypeError, ValueError) as exc:
-        raise DocumentParseError(
-            "pdf_parse_failed",
-            "PDF could not be parsed",
-        ) from exc
+    return _parse_docling_pdf_document(path)
 
-    if not source_blocks:
-        raise DocumentParseError(
-            "ocr_not_supported",
-            "PDF contains no embedded text; OCR is not supported",
-        )
-    return _assemble_document(path, source_blocks)
+
+def _parse_docling_pdf_document(path: Path) -> ParsedDocument:
+    from decision_assistant.ingestion.docling_parser import parse_docling_pdf
+
+    return parse_docling_pdf(path)
+
+
+def _docling_failure(errors: Iterable[object]) -> tuple[str, str]:
+    from decision_assistant.ingestion.docling_parser import docling_failure
+
+    return docling_failure(errors)
+
+
+def _docling_source_blocks(document: object) -> list[_SourceBlock]:
+    from decision_assistant.ingestion.docling_parser import docling_source_blocks
+
+    return docling_source_blocks(document)
+
+
+def _docling_locator(document: object, item: object) -> SourceLocator:
+    from decision_assistant.ingestion.docling_parser import docling_locator
+
+    return docling_locator(document, item)
 
 
 def _parse_docx_document(path: Path) -> ParsedDocument:
@@ -446,24 +424,3 @@ def _normalize_extracted_text(text: str) -> str:
     return "\n".join(lines)
 
 
-def _reconstruct_pdf_lines(text: str) -> str:
-    """Rejoin PDF line-wraps so sentences are not broken by hard newlines.
-
-    PDF text extraction inserts a newline wherever a line wraps. A wrapped
-    continuation almost always starts with a lowercase letter, while a new
-    heading, label, or sentence starts with a capital. Join a line onto the
-    previous one when the next line begins lowercase. Blank lines are kept as
-    paragraph separators.
-    """
-    joined: list[str] = []
-    for raw_line in text.splitlines():
-        stripped = raw_line.strip()
-        if not stripped:
-            if joined and joined[-1].strip():
-                joined.append("")
-            continue
-        if joined and joined[-1].strip() and stripped[0].islower():
-            joined[-1] = f"{joined[-1]} {stripped}"
-        else:
-            joined.append(raw_line)
-    return "\n".join(joined)

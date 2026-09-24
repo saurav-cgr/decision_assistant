@@ -6,6 +6,7 @@ from decision_assistant.ingestion.profiles import (
     CHUNKING_PROFILE_PRESETS,
     CURRENT_CHUNKING_PROFILE,
     DEFAULT_CHUNKING_PROFILE_PRESET,
+    PDF_PARSER_PROFILE,
     RETRIEVAL_UNIT_STRATEGIES,
     resolve_corpus_profile,
     resolve_chunking_profile,
@@ -69,6 +70,14 @@ def test_corpus_profile_includes_and_validates_retrieval_strategy() -> None:
         resolve_corpus_profile("baseline", "unknown")
 
 
+def test_corpus_profile_includes_pdf_parser_contract() -> None:
+    assert (
+        resolve_corpus_profile("baseline", "passage_hybrid")["pdf_parser"]
+        == PDF_PARSER_PROFILE
+    )
+    assert PDF_PARSER_PROFILE["name"] == "docling"
+
+
 def test_settings_default_is_baseline() -> None:
     settings = Settings()
     assert settings.chunking_profile_preset == "baseline"
@@ -77,6 +86,8 @@ def test_settings_default_is_baseline() -> None:
         == "structural-token-v2"
     )
     assert settings.retrieval_unit_strategy == "passage_hybrid"
+    assert not hasattr(settings, "pdf_parser")
+    assert CURRENT_CHUNKING_PROFILE["pdf_parser"]["name"] == "docling"
 
 
 @pytest.mark.parametrize("preset", ["baseline", "compact", "expanded"])

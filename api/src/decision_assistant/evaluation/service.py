@@ -69,6 +69,20 @@ from decision_assistant.workspace.service import WorkspaceService
 CLAIM_JUDGE_PROMPT_VERSION = "claim-support-v3"
 
 
+def _pdf_bbox(locator: Mapping[str, Any]) -> list[float] | None:
+    box = locator.get("bbox")
+    if (
+        not isinstance(box, list)
+        or len(box) != 4
+        or not all(
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+            for value in box
+        )
+    ):
+        return None
+    return [float(value) for value in box]
+
+
 class EvaluationApiError(ApplicationError):
     def __init__(self, code: str, message: str, status_code: int = 400) -> None:
         super().__init__(
@@ -691,10 +705,28 @@ class EvaluationService:
         passage_locator: Mapping[str, Any],
         gold_locator: Mapping[str, Any],
     ) -> bool:
-        if passage_locator.get("kind") != gold_locator.get("kind"):
+        passage_kind = passage_locator.get("kind")
+        gold_kind = gold_locator.get("kind")
+        if gold_kind == "pdf_page":
+            return (
+                passage_kind in {"pdf_page", "pdf_region"}
+                and passage_locator.get("page") == gold_locator.get("page")
+            )
+        if gold_kind == "pdf_region":
+            passage_box = _pdf_bbox(passage_locator)
+            gold_box = _pdf_bbox(gold_locator)
+            return (
+                passage_kind == "pdf_region"
+                and passage_locator.get("page") == gold_locator.get("page")
+                and passage_box is not None
+                and gold_box is not None
+                and passage_box[0] <= gold_box[0]
+                and passage_box[1] <= gold_box[1]
+                and passage_box[2] >= gold_box[2]
+                and passage_box[3] >= gold_box[3]
+            )
+        if passage_kind != gold_kind:
             return False
-        if gold_locator.get("kind") == "pdf_page":
-            return passage_locator.get("page") == gold_locator.get("page")
         passage_start = passage_locator.get("start")
         passage_end = passage_locator.get("end")
         gold_start = gold_locator.get("start")
@@ -709,13 +741,19 @@ class EvaluationService:
         )
 
     @staticmethod
-    def _locator_span(passage_locator: Mapping[str, Any]) -> int:
+    def _locator_span(passage_locator: Mapping[str, Any]) -> float:
         """Return the span of a passage locator (smaller = more specific).
 
-        pdf_page locators match on page identity, so every candidate is equally
-        specific; return 0 so page-based resolution is unchanged.
+        Page locators are equally specific. Region locators use normalized area
+        so overlapping matches prefer the tightest covering chunk.
         """
-        if passage_locator.get("kind") == "pdf_page":
+        kind = passage_locator.get("kind")
+        if kind == "pdf_page":
+            return 0
+        if kind == "pdf_region":
+            box = _pdf_bbox(passage_locator)
+            if box is not None:
+                return float(box[2] - box[0]) * float(box[3] - box[1])
             return 0
         start = passage_locator.get("start")
         end = passage_locator.get("end")

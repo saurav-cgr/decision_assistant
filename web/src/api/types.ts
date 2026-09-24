@@ -318,7 +318,7 @@ export type TimelineEvidence = {
   start_offset: number;
   end_offset: number;
   content_hash: string;
-  locator: Record<string, string | number>;
+  locator: Record<string, unknown>;
 };
 
 export type TimelineRelationship = {

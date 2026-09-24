@@ -46,6 +46,13 @@ DEFAULT_CHUNKING_PROFILE_PRESET = "baseline"
 RETRIEVAL_UNIT_STRATEGIES = frozenset(
     {"passage_hybrid", "sentence_expanded", "parent_child_merged"}
 )
+PDF_PARSER_PROFILE: dict[str, str] = {
+    "name": "docling",
+    "version": "2.130.0",
+    "ocr": "tesseract-eng",
+    "layout": "docling-layout-v1",
+}
+
 
 def resolve_chunking_profile(preset: str) -> dict[str, object]:
     """Return the complete chunking profile for a named preset.
@@ -74,6 +81,7 @@ def resolve_corpus_profile(
     return {
         **resolve_chunking_profile(preset),
         "retrieval_unit_strategy": retrieval_unit_strategy,
+        "pdf_parser": PDF_PARSER_PROFILE.copy(),
     }
 
 
