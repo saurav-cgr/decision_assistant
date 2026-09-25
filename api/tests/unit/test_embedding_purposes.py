@@ -3,8 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from decision_assistant.evaluation import service as evaluation_service_module
-from decision_assistant.evaluation.service import SemanticRetrievalService
+from decision_assistant.evaluation import semantic_retrieval as semantic_retrieval_module
+from decision_assistant.evaluation.semantic_retrieval import SemanticRetrievalService
 from decision_assistant.providers.base import EmbeddingPurpose
 from decision_assistant.providers.fakes import FakeEmbeddingProvider
 from decision_assistant.retrieval.schemas import RetrievalSearchRequest
@@ -52,7 +52,7 @@ async def test_runtime_and_semantic_evaluation_retrieval_embed_queries(
         current_profile,
     )
     monkeypatch.setattr(
-        evaluation_service_module,
+        semantic_retrieval_module,
         "require_current_corpus_profiles",
         current_profile,
     )
