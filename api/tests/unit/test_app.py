@@ -8,6 +8,7 @@ from decision_assistant.config import Settings
 from decision_assistant.db import get_session
 from decision_assistant.documents.router import get_document_service
 from decision_assistant.main import create_app
+from decision_assistant.version import get_app_version
 from decision_assistant.workspace.embedding_profile import CorpusResetRequired
 
 
@@ -24,7 +25,7 @@ def test_health_reports_ready() -> None:
     response = TestClient(app).get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "version": get_app_version()}
     session.execute.assert_awaited_once()
 
 

@@ -34,6 +34,7 @@ from decision_assistant.providers.factory import (
     validate_selected_provider_configuration,
 )
 from decision_assistant.timelines.router import router as timelines_router
+from decision_assistant.version import get_app_version
 from decision_assistant.workspace.embedding_profile import (
     CorpusResetRequired,
     require_current_corpus_profiles,
@@ -212,7 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await session.execute(text("SELECT 1"))
         except SQLAlchemyError:
             raise ServiceNotReady() from None
-        return {"status": "ok"}
+        return {"status": "ok", "version": get_app_version()}
 
     @app.get("/ready")
     async def ready(
