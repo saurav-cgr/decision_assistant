@@ -8,6 +8,24 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends libgl1 tesseract-ocr tesseract-ocr-eng \
+       curl gnupg ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# pg_dump must match compose.yaml's pinned `pgvector/pgvector:pg16` server exactly: Debian's own
+# repo only offers the latest default major version (v17 on trixie), and a v17 dump embeds syntax
+# (e.g. `SET transaction_timeout = 0;`) a v16 server's psql rejects on restore. PGDG is the
+# official PostgreSQL apt repository (same publisher as the pgvector image already pulled),
+# fetched at build time only, never at runtime.
+RUN install -d /usr/share/postgresql-common/pgdg \
+    && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
+       https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+       https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list' \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends postgresql-client-16 \
+    && apt-get purge --yes curl gnupg \
+    && apt-get autoremove --yes \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/api

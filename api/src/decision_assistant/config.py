@@ -23,6 +23,8 @@ class Settings(BaseSettings):
         "@db:5432/decision_assistant"
     )
     upload_directory: Path = Path("/workspace/uploads")
+    backup_directory: Path = Path("/workspace/backups")
+    pre_migration_backup_retention: int = 5
     generation_provider: str = "gemini"
     embedding_provider: str = "gemini"
     gemini_api_key: SecretStr | None = None

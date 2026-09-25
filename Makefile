@@ -64,10 +64,10 @@ stop:
 
 BACKUP_DIR ?= backups
 
+# Delegates to scripts/backup.sh (T035): a decision-assistant-backup-<UTC timestamp>.tar.gz
+# containing both database.sql (pg_dump) and uploads.tar (uploads_data contents).
 backup:
-	mkdir -p $(BACKUP_DIR)
-	docker compose exec -T db pg_dump --clean --if-exists -U "$${POSTGRES_USER:-decision_assistant}" "$${POSTGRES_DB:-decision_assistant}" \
-		> "$(BACKUP_DIR)/backup-$$(date +%Y%m%d%H%M%S).sql"
+	scripts/backup.sh "$(BACKUP_DIR)"
 
 # Usage: make restore -- <backup-file>
 ifeq (restore,$(firstword $(MAKECMDGOALS)))
@@ -75,7 +75,7 @@ ifeq (restore,$(firstword $(MAKECMDGOALS)))
   $(eval $(RESTORE_ARGS):;@:)
 endif
 
+# Delegates to scripts/restore.sh (T036), the counterpart to scripts/backup.sh above.
 restore:
 	@test -n "$(RESTORE_ARGS)" || (echo "Usage: make restore -- <backup-file>" && exit 1)
-	docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$${POSTGRES_USER:-decision_assistant}" -d "$${POSTGRES_DB:-decision_assistant}" \
-		< "$(firstword $(filter-out --,$(RESTORE_ARGS)))"
+	scripts/restore.sh "$(firstword $(filter-out --,$(RESTORE_ARGS)))"

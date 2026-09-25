@@ -42,6 +42,8 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://decision_assistant:decision_assistant@db:5432/decision_assistant}
       UPLOAD_DIRECTORY: ${UPLOAD_DIRECTORY:-/workspace/uploads}
+      BACKUP_DIRECTORY: ${BACKUP_DIRECTORY:-/workspace/backups}
+      PRE_MIGRATION_BACKUP_RETENTION: ${PRE_MIGRATION_BACKUP_RETENTION:-5}
       GENERATION_PROVIDER: ${GENERATION_PROVIDER:-gemini}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -87,6 +89,7 @@ services:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
       - uploads_data:/workspace/uploads
+      - ${BACKUP_DIR:-./backups}:/workspace/backups
     depends_on:
       db:
         condition: service_healthy
