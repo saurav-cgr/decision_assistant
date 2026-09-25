@@ -3,9 +3,14 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 
-# api/alembic.ini, resolved from this file's location so it works regardless
-# of the process's current working directory.
-_ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
+# api/alembic.ini. Resolved from the process's current working directory, not
+# from this file's own location (checker V46): both the Dockerfile (`WORKDIR
+# /workspace/api`) and compose.yaml (`working_dir: /workspace/api`) pin the
+# api service's cwd there, but a `pip install .` (non-editable, T001's
+# production install) copies this file into site-packages, so a `__file__`-
+# relative path would resolve to the wrong location outside an editable
+# install.
+_ALEMBIC_INI = Path.cwd() / "alembic.ini"
 
 
 def upgrade_to_head() -> None:
@@ -19,5 +24,12 @@ def upgrade_to_head() -> None:
     callers running inside an existing event loop must invoke this via a
     worker thread (e.g. `asyncio.to_thread`), not call it directly.
     """
+    if not _ALEMBIC_INI.is_file():
+        raise FileNotFoundError(
+            f"alembic.ini not found at {_ALEMBIC_INI} (cwd={Path.cwd()}). "
+            "upgrade_to_head() expects the process's working directory to be "
+            "api/ (both the Dockerfile and compose.yaml pin this for the api "
+            "service)."
+        )
     config = Config(str(_ALEMBIC_INI))
     command.upgrade(config, "head")
