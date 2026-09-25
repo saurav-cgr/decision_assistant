@@ -14,8 +14,8 @@ logs:
 
 test-api:
 	docker compose up -d db --wait
-	API_BUILD_TARGET=test docker compose build api
-	API_BUILD_TARGET=test docker compose run --rm api pytest
+	API_BUILD_TARGET=test docker compose -f compose.yaml -f compose.test.yml build api
+	API_BUILD_TARGET=test docker compose -f compose.yaml -f compose.test.yml run --rm api pytest
 
 test-web:
 	docker compose run --rm web npm test -- --run
