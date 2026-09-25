@@ -1,7 +1,17 @@
-.PHONY: build up down logs test-api test-web migrate smoke install start stop backup restore
+.PHONY: build up down logs test-api test-web migrate smoke install start stop backup restore config
 
 build:
 	docker compose build
+
+# Redacted `docker compose config`: the plain form prints resolved secret
+# values (GEMINI_API_KEY, AUTH_JWT_SECRET, AUTH_BOOTSTRAP_PASSWORD,
+# POSTGRES_PASSWORD, and any embedded connection-string password) straight to
+# stdout. Use this target instead when sharing output in a terminal, ticket,
+# CI log, or screen-share.
+config:
+	@docker compose config | sed -E \
+		-e 's/^([[:space:]]*[A-Z0-9_]*(SECRET|PASSWORD|API_KEY|TOKEN)[A-Z0-9_]*:)[[:space:]].*/\1 REDACTED/I' \
+		-e 's#(://[^:[:space:]]+:)[^@[:space:]]+(@)#\1REDACTED\2#g'
 
 up:
 	docker compose up -d --wait
