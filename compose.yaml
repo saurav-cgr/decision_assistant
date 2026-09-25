@@ -104,6 +104,7 @@ services:
   web:
     build:
       context: ./web
+      target: ${WEB_BUILD_TARGET:-runtime}
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
     ports:

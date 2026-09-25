@@ -1,5 +1,12 @@
 .PHONY: build up down logs test-api test-web migrate smoke install start stop backup restore config test-config-redaction
 
+# compose.yaml pins `name: decision-assistant`, which overrides Compose's
+# normal directory-based project naming. Every test target below must pass
+# an explicit -p override to this isolated project name, or it silently
+# builds/runs against (and overwrites the image tags of) the user's real,
+# already-deployed decision-assistant-* containers/images (see DB21).
+TEST_PROJECT := decision-assistant-test
+
 build:
 	docker compose build
 
@@ -28,12 +35,14 @@ logs:
 	docker compose logs -f
 
 test-api:
-	docker compose up -d db --wait
-	API_BUILD_TARGET=test docker compose -f compose.yaml -f compose.test.yml build api
-	API_BUILD_TARGET=test docker compose -f compose.yaml -f compose.test.yml run --rm api pytest
+	docker compose -p $(TEST_PROJECT) up -d db --wait
+	API_BUILD_TARGET=test docker compose -p $(TEST_PROJECT) -f compose.yaml -f compose.test.yml build api
+	API_BUILD_TARGET=test docker compose -p $(TEST_PROJECT) -f compose.yaml -f compose.test.yml run --rm api pytest
+	docker compose -p $(TEST_PROJECT) down -v
 
 test-web:
-	docker compose run --rm web npm test -- --run
+	WEB_BUILD_TARGET=build docker compose -p $(TEST_PROJECT) build web
+	WEB_BUILD_TARGET=build docker compose -p $(TEST_PROJECT) run --rm --no-deps web npm test -- --run
 
 migrate:
 	docker compose run --rm api alembic upgrade head
