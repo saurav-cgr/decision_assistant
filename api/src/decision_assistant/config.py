@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     chunking_profile_preset: str = DEFAULT_CHUNKING_PROFILE_PRESET
     retrieval_unit_strategy: str = "passage_hybrid"
     evaluation_dataset_path: Path = Path("/workspace/evaluation/questions.json")
+    max_ingestion_attempts: int = Field(default=3, gt=0)
+    max_evaluation_attempts: int = Field(default=3, gt=0)
 
     @field_validator("chunking_profile_preset")
     @classmethod
@@ -77,3 +79,40 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+class ConfigurationError(RuntimeError):
+    """Raised when required startup configuration is missing or a known placeholder."""
+
+
+# Matches Settings.database_url's own default and compose.yaml's fallback
+# (`${POSTGRES_PASSWORD:-decision_assistant}`) — the shared credential this
+# validation exists to catch (see loop debt DB8).
+_PLACEHOLDER_DATABASE_URL = (
+    "postgresql+asyncpg://decision_assistant:decision_assistant"
+    "@db:5432/decision_assistant"
+)
+
+
+def validate_startup_config(settings: Settings) -> None:
+    """Reject a missing/placeholder AUTH_JWT_SECRET or a placeholder DB credential.
+
+    Kept as an explicit function rather than a Settings model_validator so
+    existing unit tests can still construct a bare `Settings()` for behavior
+    unrelated to auth; T045 (US5) is the task that wires this into the real
+    application startup path once first-run secret generation (T041) exists
+    to supply real values by default.
+    """
+    jwt_secret = settings.auth_jwt_secret
+    if jwt_secret is None or not jwt_secret.get_secret_value().strip():
+        raise ConfigurationError(
+            "AUTH_JWT_SECRET is not configured. Set AUTH_JWT_SECRET in .env to a "
+            "random secret value before starting outside of first-run setup."
+        )
+    if settings.database_url == _PLACEHOLDER_DATABASE_URL:
+        raise ConfigurationError(
+            "DATABASE_URL is using the shared placeholder credential "
+            "(decision_assistant:decision_assistant). Set a real POSTGRES_PASSWORD "
+            "and DATABASE_URL in .env before starting outside of a throwaway "
+            "local experiment."
+        )
