@@ -1,0 +1,33 @@
+services:
+  api:
+    environment:
+      # V38: multi-line YAML block-scalar secret; continuation lines must be
+      # skipped too, not just the key's own line.
+      AUTH_JWT_SECRET: |-
+        FAKEBLOCK-LINE-ONE
+        FAKEBLOCK-LINE-TWO
+      NEXT_KEY_AFTER_BLOCK: not-a-secret-value
+      # V38: password containing a literal "@".
+      LEGACY_URL: postgresql://u:FAKE@PASS@host:5432/db
+      # V40: empty username.
+      EMPTY_USER_URL: redis://:FAKEEMPTYUSER@host:6379
+      # V40: username itself containing "@".
+      AT_IN_USER_URL: mongodb://user@corp:FAKEATUSER@host:27017
+      # V40: hyphen/dot-shaped secret key.
+      DB-PASSWORD: FAKEDASHKEY
+      DB.PASSWORD: FAKEDOTKEY
+      # V41/V42: password containing "/" or a space, with and without a
+      # path after the host.
+      SLASH_VALUE_WITH_PATH_URL: postgresql+asyncpg://u:FAKELEAK+/9xQ==@db:5432/x
+      SLASH_VALUE_NO_PATH_URL: redis://:FAKELEAK+/9xQ==@redis:6379
+      SPACE_VALUE_URL: "http://u:FAKE LEAKSP@ollama:11434"
+      # IPv6 host.
+      IPV6_URL: redis://:FAKEIPV6@[::1]:6379
+      # V42: deliberately accepted over-redaction. A path containing "@" is
+      # textually indistinguishable from a "/"-containing password, so this
+      # is redacted too even though it carries no real secret.
+      PATH_AT_NO_USERINFO: http://host/path@x
+      # Plain, non-URL, non-secret-key lines must pass through unchanged.
+      PLAIN_KEY: plain-value
+      POSTGRES_DB: decision_assistant
+      GEMINI_API_KEY: FAKEPLAINAPIKEY

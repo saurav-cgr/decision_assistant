@@ -1,4 +1,4 @@
-.PHONY: build up down logs test-api test-web migrate smoke install start stop backup restore config
+.PHONY: build up down logs test-api test-web migrate smoke install start stop backup restore config test-config-redaction
 
 build:
 	docker compose build
@@ -11,6 +11,12 @@ build:
 # multi-line block-scalar secrets and passwords containing a literal "@".
 config:
 	@docker compose config | awk -f scripts/redact_config.awk
+
+# Regression fixture for scripts/redact_config.awk (fake secrets only). Run
+# this before editing the redaction script to confirm you haven't regressed
+# a case a checker previously found (see scripts/fixtures/redact_config/).
+test-config-redaction:
+	@scripts/test_redact_config.sh
 
 up:
 	docker compose up -d --wait
