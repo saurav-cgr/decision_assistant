@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
@@ -24,6 +25,7 @@ from decision_assistant.documents.router import router as documents_router
 from decision_assistant.errors import ApplicationError, ErrorResponse
 from decision_assistant.evaluation.router import router as evaluation_router
 from decision_assistant.ingestion.profiles import resolve_corpus_profile
+from decision_assistant.migrations import upgrade_to_head
 from decision_assistant.retrieval.router import router as retrieval_router
 from decision_assistant.providers.base import ProviderConfigurationInvalid
 from decision_assistant.providers.factory import (
@@ -99,6 +101,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(application: FastAPI):
         bootstrap_engine = None
         try:
+            # See loop debt DB16: T014 also wants a pre-step backup call
+            # reusing scripts/backup.sh, which does not exist yet (T035/T037,
+            # not yet implemented). Schema upgrade only, for now.
+            await asyncio.to_thread(upgrade_to_head)
             bootstrap_engine = create_engine(resolved_settings)
             bootstrap_session_factory = create_session_factory(bootstrap_engine)
             async with bootstrap_session_factory() as session:
