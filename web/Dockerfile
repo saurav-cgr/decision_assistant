@@ -1,5 +1,8 @@
 FROM node:24-bookworm-slim AS build
 
+ARG VITE_API_URL=http://localhost:8000
+ENV VITE_API_URL=$VITE_API_URL
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./

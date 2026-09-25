@@ -104,8 +104,8 @@ services:
   web:
     build:
       context: ./web
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
     ports:
       - "127.0.0.1:${WEB_PORT:-5173}:80"
     depends_on:
