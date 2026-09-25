@@ -1,0 +1,31 @@
+services:
+  api:
+    environment:
+      # V38: multi-line YAML block-scalar secret; continuation lines must be
+      # skipped too, not just the key's own line.
+      AUTH_JWT_SECRET: REDACTED
+      NEXT_KEY_AFTER_BLOCK: not-a-secret-value
+      # V38: password containing a literal "@".
+      LEGACY_URL: postgresql://REDACTED@host:5432/db
+      # V40: empty username.
+      EMPTY_USER_URL: redis://REDACTED@host:6379
+      # V40: username itself containing "@".
+      AT_IN_USER_URL: mongodb://REDACTED@host:27017
+      # V40: hyphen/dot-shaped secret key.
+      DB-PASSWORD: REDACTED
+      DB.PASSWORD: REDACTED
+      # V41/V42: password containing "/" or a space, with and without a
+      # path after the host.
+      SLASH_VALUE_WITH_PATH_URL: postgresql+asyncpg://REDACTED@db:5432/x
+      SLASH_VALUE_NO_PATH_URL: redis://REDACTED@redis:6379
+      SPACE_VALUE_URL: "http://REDACTED@ollama:11434"
+      # IPv6 host.
+      IPV6_URL: redis://REDACTED@[::1]:6379
+      # V42: deliberately accepted over-redaction. A path containing "@" is
+      # textually indistinguishable from a "/"-containing password, so this
+      # is redacted too even though it carries no real secret.
+      PATH_AT_NO_USERINFO: http://REDACTED@x
+      # Plain, non-URL, non-secret-key lines must pass through unchanged.
+      PLAIN_KEY: plain-value
+      POSTGRES_DB: decision_assistant
+      GEMINI_API_KEY: REDACTED
