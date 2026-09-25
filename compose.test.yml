@@ -1,0 +1,10 @@
+services:
+  api:
+    volumes:
+      - ./scripts:/workspace/scripts:ro
+      - ./evaluation:/workspace/evaluation:ro
+      - ./sample_data:/workspace/sample_data:ro
+      - ./.env.example:/workspace/.env.example:ro
+      - ./compose.yaml:/workspace/compose.yaml:ro
+      - ./compose.smoke.yaml:/workspace/compose.smoke.yaml:ro
+      - ./compose.isolated.yaml:/workspace/compose.isolated.yaml:ro
