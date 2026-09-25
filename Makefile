@@ -7,11 +7,10 @@ build:
 # values (GEMINI_API_KEY, AUTH_JWT_SECRET, AUTH_BOOTSTRAP_PASSWORD,
 # POSTGRES_PASSWORD, and any embedded connection-string password) straight to
 # stdout. Use this target instead when sharing output in a terminal, ticket,
-# CI log, or screen-share.
+# CI log, or screen-share. See scripts/redact_config.awk: it also redacts
+# multi-line block-scalar secrets and passwords containing a literal "@".
 config:
-	@docker compose config | sed -E \
-		-e 's/^([[:space:]]*[A-Z0-9_]*(SECRET|PASSWORD|API_KEY|TOKEN)[A-Z0-9_]*:)[[:space:]].*/\1 REDACTED/I' \
-		-e 's#(://[^:[:space:]]+:)[^@[:space:]]+(@)#\1REDACTED\2#g'
+	@docker compose config | awk -f scripts/redact_config.awk
 
 up:
 	docker compose up -d --wait
