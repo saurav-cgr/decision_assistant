@@ -30,17 +30,23 @@ RUN install -d /usr/share/postgresql-common/pgdg \
 
 WORKDIR /workspace/api
 
+# Dependencies, tokenizer cache, and Docling models are keyed on pyproject.toml alone so that
+# source-only edits reuse this layer instead of reinstalling everything and redownloading models.
 COPY pyproject.toml ./
-COPY alembic.ini ./
-COPY alembic ./alembic
-COPY src ./src
-
-RUN pip install --no-cache-dir '.' \
+RUN python -c "import tomllib; print('\\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']))" \
+       > /tmp/requirements.txt \
+    && pip install --no-cache-dir --requirement /tmp/requirements.txt \
+    && rm /tmp/requirements.txt \
     && python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" \
     && docling-tools models download layout tableformer --output-dir "$DOCLING_ARTIFACTS_PATH" \
     && tesseract --list-langs | grep --line-regexp eng \
     && test -d "$DOCLING_ARTIFACTS_PATH/docling-project--docling-layout-heron" \
     && test -d "$DOCLING_ARTIFACTS_PATH/docling-project--docling-models"
+
+COPY alembic.ini ./
+COPY alembic ./alembic
+COPY src ./src
+RUN pip install --no-cache-dir --no-deps '.'
 
 ENV HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1
@@ -49,5 +55,5 @@ CMD ["uvicorn", "decision_assistant.main:app", "--host", "0.0.0.0", "--port", "8
 
 FROM base AS test
 
-COPY tests ./tests
 RUN pip install --no-cache-dir '.[dev]'
+COPY tests ./tests
