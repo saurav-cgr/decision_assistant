@@ -21,7 +21,7 @@ from decision_assistant.auth.schemas import (
 from decision_assistant.auth.service import AuthenticationResult, AuthenticationService
 from decision_assistant.auth.tokens import AccessTokenService
 from decision_assistant.db import get_session
-from decision_assistant.models import User
+from decision_assistant.auth.models import User
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 

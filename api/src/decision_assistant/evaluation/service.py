@@ -1,18 +1,15 @@
 import json
 from collections.abc import Mapping
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Protocol, Sequence
+from typing import Any, Sequence
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.answering.schemas import AnswerState, QuestionRequest
-from decision_assistant.answering.service import AnswerService
-from decision_assistant.errors import ApplicationError
+from decision_assistant.evaluation.errors import EvaluationApiError, FatalEvaluationError
 from decision_assistant.evaluation.metrics import (
     answer_abstention_accuracy,
     citation_rates,
@@ -23,8 +20,8 @@ from decision_assistant.evaluation.metrics import (
     mean_reciprocal_rank,
     top_five_hit_rate,
 )
+from decision_assistant.evaluation.protocols import ClaimSupportJudge, EvaluationExecutor
 from decision_assistant.evaluation.schemas import (
-    ClaimJudgeOutput,
     EvaluationDataset,
     EvaluationDatasetQuestion,
     EvaluationResultResponse,
@@ -32,95 +29,22 @@ from decision_assistant.evaluation.schemas import (
     EvaluationRunResponse,
     EvaluationRunSummaryResponse,
 )
-from decision_assistant.models import (
-    Document,
-    DocumentVersion,
+from decision_assistant.evaluation.models import (
     EvaluationQuestion,
     EvaluationResult,
     EvaluationRun,
+)
+from decision_assistant.evaluation.support import _pdf_bbox, _source_kind_from_media_type
+from decision_assistant.ingestion.models import (
+    Document,
+    DocumentVersion,
     Passage,
-    RetrievalTrace,
 )
-from decision_assistant.providers.base import (
-    EmbeddingProvider,
-    EmbeddingPurpose,
-    GenerationProvider,
-    GenerationRequest,
-)
-from decision_assistant.providers.orchestration import generate_with_repair
-from decision_assistant.retrieval.repository import RetrievalRepository
-from decision_assistant.retrieval.reranking import GenerationReranker
-from decision_assistant.retrieval.schemas import (
-    RetrievalResult,
-    RetrievalSearchRequest,
-    RetrievalSearchResponse,
-)
-from decision_assistant.retrieval.service import (
-    HybridRetrievalService,
-    RetrievalConfig,
-)
-from decision_assistant.workspace.embedding_profile import (
-    require_current_corpus_profiles,
-)
-from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
-from decision_assistant.ingestion.retrieval_units import RetrievalUnitStrategy
+from decision_assistant.providers.base import GenerationRequest
 from decision_assistant.workspace.service import WorkspaceService
 
+
 CLAIM_JUDGE_PROMPT_VERSION = "claim-support-v3"
-
-
-def _pdf_bbox(locator: Mapping[str, Any]) -> list[float] | None:
-    box = locator.get("bbox")
-    if (
-        not isinstance(box, list)
-        or len(box) != 4
-        or not all(
-            isinstance(value, (int, float)) and not isinstance(value, bool)
-            for value in box
-        )
-    ):
-        return None
-    return [float(value) for value in box]
-
-
-class EvaluationApiError(ApplicationError):
-    def __init__(self, code: str, message: str, status_code: int = 400) -> None:
-        super().__init__(
-            code=code,
-            message=message,
-            status_code=status_code,
-            retryable=False,
-        )
-
-
-class FatalEvaluationError(ApplicationError):
-    def __init__(self, *, code: str, message: str) -> None:
-        super().__init__(
-            code=code,
-            message=message,
-            status_code=503,
-            retryable=False,
-        )
-
-
-class EvaluationExecutor(Protocol):
-    async def execute(
-        self,
-        question: EvaluationQuestion,
-        *,
-        run_id: UUID,
-        strategy: str,
-        configuration: dict[str, Any],
-    ) -> dict[str, Any]: ...
-
-
-class ClaimSupportJudge(Protocol):
-    async def judge(
-        self,
-        request: GenerationRequest,
-        *,
-        profile: dict[str, Any],
-    ) -> dict[str, Any]: ...
 
 
 class EvaluationService:
@@ -974,290 +898,3 @@ class EvaluationService:
         if expected & set(passage_ids):
             return passage_ids
         return document_ids if document_ids else passage_ids
-
-
-class GenerationClaimJudge:
-    def __init__(self, provider: GenerationProvider) -> None:
-        self._provider = provider
-
-    @property
-    def profile(self) -> dict[str, Any]:
-        return asdict(self._provider.profile)
-
-    async def judge(
-        self,
-        request: GenerationRequest,
-        *,
-        profile: dict[str, Any],
-    ) -> dict[str, Any]:
-        del profile
-        result = await generate_with_repair(
-            self._provider,
-            request,
-            ClaimJudgeOutput,
-        )
-        return result.model_dump(mode="json")
-
-
-def _source_kind_from_media_type(media_type: str | None) -> str:
-    media_type = (media_type or "").lower()
-    if media_type == "text/markdown":
-        return "markdown"
-    if media_type == "text/plain":
-        return "text"
-    if media_type == "application/pdf":
-        return "pdf"
-    if "wordprocessingml" in media_type:
-        return "docx"
-    return "text"
-
-
-class RuntimeEvaluationExecutor:
-    def __init__(
-        self,
-        *,
-        session: AsyncSession,
-        embedding_provider: EmbeddingProvider,
-        generation_provider: GenerationProvider,
-        chunking_profile: dict[str, object] | None = None,
-        retrieval_unit_strategy: RetrievalUnitStrategy = "passage_hybrid",
-    ) -> None:
-        self._session = session
-        self._embedding_provider = embedding_provider
-        self._generation_provider = generation_provider
-        self._chunking_profile = (
-            chunking_profile if chunking_profile is not None else CURRENT_CHUNKING_PROFILE
-        )
-        self._retrieval_unit_strategy = retrieval_unit_strategy
-
-    @property
-    def embedding_profile(self) -> dict[str, Any]:
-        return asdict(self._embedding_provider.profile)
-
-    @property
-    def generation_profile(self) -> dict[str, Any]:
-        return asdict(self._generation_provider.profile)
-
-    async def execute(
-        self,
-        question: EvaluationQuestion,
-        *,
-        run_id: UUID,
-        strategy: str,
-        configuration: dict[str, Any],
-        workspace_id: UUID,
-    ) -> dict[str, Any]:
-        started = perf_counter()
-        top_k = int(configuration.get("top_k", 5))
-        retrieval_service: Any
-        if strategy == "semantic":
-            retrieval_service = SemanticRetrievalService(
-                session=self._session,
-                embedding_provider=self._embedding_provider,
-                top_k=top_k,
-                chunking_profile=self._chunking_profile,
-                retrieval_unit_strategy=self._retrieval_unit_strategy,
-            )
-        else:
-            rerank_enabled = bool(configuration.get("rerank_enabled", False))
-            reranker = (
-                GenerationReranker(self._generation_provider)
-                if rerank_enabled
-                else None
-            )
-            retrieval_service = HybridRetrievalService(
-                session=self._session,
-                embedding_provider=self._embedding_provider,
-                config=RetrievalConfig(
-                    top_k=top_k,
-                    rerank_enabled=rerank_enabled,
-                    rerank_candidate_limit=int(
-                        configuration.get("rerank_candidate_limit", 12)
-                    ),
-                    rerank_min_candidates=int(
-                        configuration.get("rerank_min_candidates", 6)
-                    ),
-                    rerank_final_limit=int(
-                        configuration.get("rerank_final_limit", 5)
-                    ),
-                    strategy=configuration.get(
-                        "strategy", self._retrieval_unit_strategy
-                    ),
-                ),
-                reranker=reranker,
-                chunking_profile=self._chunking_profile,
-            )
-        answer_service = AnswerService(
-            session=self._session,
-            retrieval_service=retrieval_service,
-            generation_provider=self._generation_provider,
-        )
-        answer_execution = await answer_service.answer_with_diagnostics(
-            QuestionRequest(question=question.question),
-            request_id=f"evaluation:{run_id}:{question.external_id}",
-            workspace_id=workspace_id,
-        )
-        answer = answer_execution.response
-        trace = await self._session.get(RetrievalTrace, answer.trace_id)
-        retrieved_ids = trace.selected_passage_ids if trace is not None else []
-        retrieved_document_ids = await self._document_ids(retrieved_ids)
-        expected_passage_ids = {
-            str(item["passage_id"])
-            for item in question.expected_passages
-            if item.get("passage_id") is not None
-        }
-        expected_document_ids = {
-            str(item["document_id"])
-            for item in question.expected_documents
-            if item.get("document_id") is not None
-        }
-        checks = [
-            {
-                "passage_id": str(citation.passage_id),
-                "document_name": citation.document_name,
-                "structurally_valid": True,
-                "matches_gold_evidence": (
-                    str(citation.passage_id) in expected_passage_ids
-                    or str(citation.document_id) in expected_document_ids
-                ),
-            }
-            for citation in answer.citations
-        ]
-        actual_expectation = (
-            "abstain"
-            if answer.state == AnswerState.ABSTAINED
-            else "partial"
-            if answer.state == AnswerState.PARTIAL
-            else "answer"
-        )
-        return {
-            "retrieval_trace_id": answer.trace_id,
-            "retrieved_ids": retrieved_ids,
-            "retrieved_document_ids": list(
-                dict.fromkeys(retrieved_document_ids.values())
-            ),
-            "generated_output": answer.model_dump(mode="json"),
-            "answer_diagnostics": answer_execution.diagnostics.model_dump(
-                mode="json"
-            ),
-            "citation_checks": checks,
-            "actual_values": {"expectation": actual_expectation},
-            "latency_ms": round((perf_counter() - started) * 1_000, 3),
-        }
-
-    async def _document_ids(self, passage_ids: list[str]) -> dict[str, str]:
-        if not passage_ids:
-            return {}
-        rows = (
-            await self._session.execute(
-                select(Passage.id, Document.id)
-                .join(
-                    DocumentVersion,
-                    DocumentVersion.id == Passage.document_version_id,
-                )
-                .join(Document, Document.id == DocumentVersion.document_id)
-                .where(Passage.id.in_([UUID(item) for item in passage_ids]))
-            )
-        ).all()
-        return {str(passage_id): str(document_id) for passage_id, document_id in rows}
-
-
-class SemanticRetrievalService:
-    def __init__(
-        self,
-        *,
-        session: AsyncSession,
-        embedding_provider: EmbeddingProvider,
-        top_k: int,
-        chunking_profile: dict[str, object] | None = None,
-        retrieval_unit_strategy: RetrievalUnitStrategy = "passage_hybrid",
-    ) -> None:
-        self._session = session
-        self._embedding_provider = embedding_provider
-        self._top_k = top_k
-        self._repository = RetrievalRepository(session)
-        self._chunking_profile = (
-            chunking_profile if chunking_profile is not None else CURRENT_CHUNKING_PROFILE
-        )
-        self._retrieval_unit_strategy = retrieval_unit_strategy
-
-    async def search(
-        self,
-        request: RetrievalSearchRequest,
-        *,
-        request_id: str,
-        workspace_id: UUID | None = None,
-    ) -> RetrievalSearchResponse:
-        started = perf_counter()
-        if workspace_id is None:
-            workspace_id = (
-                await WorkspaceService(self._session).get_or_create_active()
-            ).id
-        normalized = request.question.lower()
-        await require_current_corpus_profiles(
-            self._session,
-            self._embedding_provider.profile,
-            self._chunking_profile,
-            workspace_id=workspace_id,
-        )
-        embedding = (
-            await self._embedding_provider.embed(
-                [normalized],
-                purpose=EmbeddingPurpose.QUERY,
-            )
-        )[0]
-        ranked = await self._repository.semantic_search(
-            embedding,
-            request.filters,
-            embedding_profile=self._embedding_provider.profile.as_dict(),
-            limit=self._top_k,
-            workspace_id=workspace_id,
-            retrieval_unit_kind=(
-                "passage"
-                if self._retrieval_unit_strategy == "passage_hybrid"
-                else "sentence"
-            ),
-        )
-        elapsed_ms = round((perf_counter() - started) * 1_000, 3)
-        trace = RetrievalTrace(
-            workspace_id=workspace_id,
-            request_id=request_id,
-            normalized_question=normalized,
-            filters=request.filters.model_dump(mode="json", exclude_none=True),
-            semantic_candidates=[
-                {
-                    "passage_id": str(item.passage.id),
-                    "rank": rank,
-                    "raw_score": item.raw_score,
-                }
-                for rank, item in enumerate(ranked, start=1)
-            ],
-            keyword_candidates=[],
-            decision_candidates=[],
-            fused_results=[
-                {
-                    "passage_id": str(item.passage.id),
-                    "score": item.raw_score,
-                    "source_ranks": {"semantic": rank},
-                }
-                for rank, item in enumerate(ranked, start=1)
-            ],
-            selected_passage_ids=[str(item.passage.id) for item in ranked],
-            timings={"semantic_ms": elapsed_ms, "total_ms": elapsed_ms},
-            configuration={"strategy": "semantic", "top_k": self._top_k},
-        )
-        self._session.add(trace)
-        await self._session.flush()
-        return RetrievalSearchResponse(
-            trace_id=trace.id,
-            results=[
-                RetrievalResult(
-                    passage_id=item.passage.id,
-                    content=item.passage.content,
-                    locator=item.passage.locator,
-                    fused_score=item.raw_score,
-                    source_ranks={"semantic": rank},
-                )
-                for rank, item in enumerate(ranked, start=1)
-            ],
-        )

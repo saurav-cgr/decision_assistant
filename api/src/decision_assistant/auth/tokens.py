@@ -6,7 +6,7 @@ import jwt
 from jwt.exceptions import InvalidTokenError
 
 from decision_assistant.config import Settings
-from decision_assistant.models import User
+from decision_assistant.auth.models import User
 
 JWT_ALGORITHM = "HS256"
 JWT_ISSUER = "decision-assistant"

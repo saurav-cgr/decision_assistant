@@ -25,17 +25,19 @@ from decision_assistant.ingestion.retrieval_units import (
     build_retrieval_units,
     canonical_decision_unit_kind,
 )
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
     DecisionRelation,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     EmbeddingCache,
     IngestionJob,
     Passage,
-    Workspace,
 )
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.config import get_settings

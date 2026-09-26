@@ -83,6 +83,23 @@ export class ApiClientError extends Error {
   }
 }
 
+export type HealthResponse = {
+  status: string;
+  version: string;
+};
+
+export async function getHealth(): Promise<HealthResponse> {
+  // Unlike apiRequest, this is unauthenticated and lives outside /api/v1
+  // (see api/src/decision_assistant/main.py's /health route).
+  const response = await fetch(`${configuredOrigin.replace(/\/$/, "")}/health`, {
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new ApiClientError(response.status, await parseApiError(response));
+  }
+  return (await response.json()) as HealthResponse;
+}
+
 export async function apiRequest<T>(
   path: `/${string}`,
   init: RequestInit = {},

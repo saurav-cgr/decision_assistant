@@ -11,15 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.db import get_session
 from decision_assistant.main import create_app
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
     DecisionRelation,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     Passage,
-    Workspace,
 )
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.workspace.context import WorkspaceContext, get_workspace_context
 
 WORKSPACE_ID = UUID("55555555-5555-5555-5555-555555555555")

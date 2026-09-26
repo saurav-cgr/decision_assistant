@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
@@ -14,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.auth.bootstrap import BootstrapCredentials, BootstrapService
+from decision_assistant.backup import create_pre_migration_backup
 from decision_assistant.auth.passwords import PasswordManager
 from decision_assistant.auth.router import router as authentication_router
 from decision_assistant.answering.router import router as answering_router
@@ -24,6 +26,7 @@ from decision_assistant.documents.router import router as documents_router
 from decision_assistant.errors import ApplicationError, ErrorResponse
 from decision_assistant.evaluation.router import router as evaluation_router
 from decision_assistant.ingestion.profiles import resolve_corpus_profile
+from decision_assistant.migrations import is_upgrade_pending, upgrade_to_head
 from decision_assistant.retrieval.router import router as retrieval_router
 from decision_assistant.providers.base import ProviderConfigurationInvalid
 from decision_assistant.providers.factory import (
@@ -32,6 +35,7 @@ from decision_assistant.providers.factory import (
     validate_selected_provider_configuration,
 )
 from decision_assistant.timelines.router import router as timelines_router
+from decision_assistant.version import get_app_version
 from decision_assistant.workspace.embedding_profile import (
     CorpusResetRequired,
     require_current_corpus_profiles,
@@ -99,6 +103,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(application: FastAPI):
         bootstrap_engine = None
         try:
+            # T014's pre-migration backup (FR-005). Distinct from `make backup`/
+            # scripts/backup.sh (FR-008, DB22): that script shells out to `docker compose
+            # exec`, a HOST-side tool this in-container lifespan hook can't reach, so
+            # create_pre_migration_backup does its own pg_dump/tar directly against the
+            # mounted uploads volume and DATABASE_URL (human-approved dependency addition,
+            # see loop debt DB22, resolved iteration 37). Gated on is_upgrade_pending: a
+            # backup taken on every no-op restart rotates out before a real migration ever
+            # needs it (checker V63). Must run, and must succeed, before the schema upgrade
+            # below when pending — a failed backup should block migration, not be silently
+            # skipped.
+            if await asyncio.to_thread(is_upgrade_pending, resolved_settings):
+                await asyncio.to_thread(create_pre_migration_backup, resolved_settings)
+            await asyncio.to_thread(upgrade_to_head)
             bootstrap_engine = create_engine(resolved_settings)
             bootstrap_session_factory = create_session_factory(bootstrap_engine)
             async with bootstrap_session_factory() as session:
@@ -206,7 +223,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await session.execute(text("SELECT 1"))
         except SQLAlchemyError:
             raise ServiceNotReady() from None
-        return {"status": "ok"}
+        return {"status": "ok", "version": get_app_version()}
 
     @app.get("/ready")
     async def ready(

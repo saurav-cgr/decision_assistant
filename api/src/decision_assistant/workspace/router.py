@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.auth.dependencies import get_current_user
 from decision_assistant.db import get_session
-from decision_assistant.models import User
+from decision_assistant.auth.models import User
 from decision_assistant.workspace.schemas import (
     WorkspaceCreate,
     WorkspaceDetail,
@@ -59,6 +59,7 @@ async def create_workspace(
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
+        disclosure_acknowledged_at=workspace.disclosure_acknowledged_at,
     )
 
 
@@ -72,6 +73,7 @@ async def get_workspace(
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
+        disclosure_acknowledged_at=workspace.disclosure_acknowledged_at,
     )
 
 
@@ -90,6 +92,7 @@ async def rename_workspace(
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
+        disclosure_acknowledged_at=workspace.disclosure_acknowledged_at,
     )
 
 
@@ -103,6 +106,7 @@ async def activate_workspace(
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
+        disclosure_acknowledged_at=workspace.disclosure_acknowledged_at,
     )
 
 
@@ -116,6 +120,7 @@ async def archive_workspace(
     return WorkspaceDetail(
         **_summary_fields(await _summarize(service, workspace)),
         embedding_profile=workspace.embedding_profile,
+        disclosure_acknowledged_at=workspace.disclosure_acknowledged_at,
     )
 
 

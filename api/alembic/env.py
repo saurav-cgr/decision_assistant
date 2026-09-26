@@ -7,13 +7,25 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import decision_assistant.answering.history_models  # noqa: F401
 import decision_assistant.answering.conversation_models  # noqa: F401
+import decision_assistant.auth.models  # noqa: F401
+import decision_assistant.workspace.models  # noqa: F401
+import decision_assistant.workspace.rebuild_models  # noqa: F401
+import decision_assistant.ingestion.models  # noqa: F401
+import decision_assistant.decisions.models  # noqa: F401
+import decision_assistant.retrieval.models  # noqa: F401
+import decision_assistant.evaluation.models  # noqa: F401
 from decision_assistant.config import get_settings
 from decision_assistant.models import Base
 
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False (the fileConfig default is True): this
+    # module is imported at runtime by main.py's lifespan (T014, auto-migrate
+    # on boot), inside the live uvicorn process. The default would silently
+    # disable the already-configured `uvicorn.error`/`uvicorn.access` loggers
+    # for the rest of the process's life (checker V46).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
 target_metadata = Base.metadata

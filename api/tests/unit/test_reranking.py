@@ -7,13 +7,13 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.models import (
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     EmbeddingCache,
     Passage,
-    Workspace,
 )
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.providers.base import EmbeddingPurpose
 from decision_assistant.providers.fakes import FakeEmbeddingProvider, FakeGenerationProvider
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE

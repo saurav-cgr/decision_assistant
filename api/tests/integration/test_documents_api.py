@@ -17,14 +17,14 @@ from decision_assistant.documents.router import (
 )
 from decision_assistant.documents.service import DocumentService
 from decision_assistant.main import create_app
-from decision_assistant.models import (
-    Decision,
+from decision_assistant.decisions.models import Decision
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     IngestionJob,
     Passage,
-    Workspace,
 )
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.providers.base import ProviderConfigurationInvalid
 from decision_assistant.workspace.context import (
     WorkspaceContext,
@@ -105,7 +105,7 @@ async def test_provider_creation_failure_marks_queued_job_and_version_failed(
 
 
 async def _workspace_id(session: AsyncSession) -> UUID:
-    from decision_assistant.models import Workspace
+    from decision_assistant.workspace.models import Workspace
 
     workspace = Workspace(name="failure-workspace", embedding_profile=None)
     session.add(workspace)

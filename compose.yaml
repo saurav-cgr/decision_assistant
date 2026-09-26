@@ -7,8 +7,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-decision_assistant}
       POSTGRES_USER: ${POSTGRES_USER:-decision_assistant}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-decision_assistant}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,14 +18,14 @@ services:
       retries: 10
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.5.7
     profiles: ["ollama"]
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
       OLLAMA_GENERATION_MODEL: ${OLLAMA_GENERATION_MODEL:-qwen3:8b}
       OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-embeddinggemma}
     ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -40,9 +38,12 @@ services:
   api:
     build:
       context: ./api
+      target: ${API_BUILD_TARGET:-base}
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://decision_assistant:decision_assistant@db:5432/decision_assistant}
       UPLOAD_DIRECTORY: ${UPLOAD_DIRECTORY:-/workspace/uploads}
+      BACKUP_DIRECTORY: ${BACKUP_DIRECTORY:-/workspace/backups}
+      PRE_MIGRATION_BACKUP_RETENTION: ${PRE_MIGRATION_BACKUP_RETENTION:-5}
       GENERATION_PROVIDER: ${GENERATION_PROVIDER:-gemini}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -64,7 +65,6 @@ services:
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-26214400}
       MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-120}
-      PDF_PARSER: ${PDF_PARSER:-pypdf}
       MODEL_RETRY_COUNT: ${MODEL_RETRY_COUNT:-2}
       RERANK_ENABLED: ${RERANK_ENABLED:-false}
       RERANK_CANDIDATE_LIMIT: ${RERANK_CANDIDATE_LIMIT:-12}
@@ -86,10 +86,10 @@ services:
       - "1"
     working_dir: /workspace/api
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
-      - .:/workspace
       - uploads_data:/workspace/uploads
+      - ${BACKUP_DIR:-./backups}:/workspace/backups
     depends_on:
       db:
         condition: service_healthy
@@ -107,24 +107,22 @@ services:
   web:
     build:
       context: ./web
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
-    working_dir: /app
+      target: ${WEB_BUILD_TARGET:-runtime}
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
     ports:
-      - "${WEB_PORT:-5173}:5173"
-    volumes:
-      - ./web:/app
-      - web_node_modules:/app/node_modules
+      - "127.0.0.1:${WEB_PORT:-5173}:80"
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
       test:
         - CMD
-        - node
-        - -e
-        - "fetch('http://localhost:5173').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
+        - wget
+        - --quiet
+        - --tries=1
+        - --spider
+        - "http://127.0.0.1:80/"
       interval: 5s
       timeout: 5s
       retries: 20
@@ -134,4 +132,3 @@ volumes:
   postgres_data:
   ollama_data:
   uploads_data:
-  web_node_modules:

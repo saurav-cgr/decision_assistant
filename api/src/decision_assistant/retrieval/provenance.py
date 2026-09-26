@@ -4,7 +4,11 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.models import Document, DocumentVersion, Passage
+from decision_assistant.ingestion.models import (
+    Document,
+    DocumentVersion,
+    Passage,
+)
 from decision_assistant.retrieval.schemas import EquivalentSource
 
 

@@ -5,7 +5,8 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.auth.passwords import PasswordManager
-from decision_assistant.models import User, Workspace
+from decision_assistant.auth.models import User
+from decision_assistant.workspace.models import Workspace
 
 
 @dataclass(frozen=True, slots=True)

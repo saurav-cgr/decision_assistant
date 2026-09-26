@@ -19,11 +19,13 @@ from decision_assistant.decisions.schemas import (
     EvidenceSelection,
 )
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
     DecisionRelation,
     DecisionRevision,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     Passage,
@@ -134,6 +136,7 @@ class DecisionService:
                     content_hash=evidence.content_hash,
                     support_state=evidence.support_state,
                     is_primary=evidence.is_primary,
+                    citation_stale=evidence.citation_stale,
                 )
                 for evidence, passage in evidence_rows
             ],
