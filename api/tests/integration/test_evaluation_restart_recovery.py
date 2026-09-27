@@ -121,9 +121,13 @@ async def test_startup_sweep_drives_interrupted_evaluation_run_to_terminal_state
 
         async with _loop_local_evaluation_runner(monkeypatch):
             async with app.router.lifespan_context(app):
-                tasks = app.state.startup_redispatch_tasks
-                assert len(tasks) == 1
-                await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
+                # DB75: the set holds only *in-flight* tasks (a done-callback prunes each one), so a
+                # redispatch that already finished during startup is legitimately absent and counting
+                # it races. Await whatever is still running; the row assertions below prove the
+                # redispatch happened and reached a terminal state.
+                await asyncio.wait_for(
+                    asyncio.gather(*app.state.startup_redispatch_tasks), timeout=5
+                )
 
         await db_session.refresh(run)
         assert run.status == "completed"
@@ -170,9 +174,13 @@ async def test_startup_sweep_also_recovers_evaluation_run_left_pending_before_di
 
         async with _loop_local_evaluation_runner(monkeypatch):
             async with app.router.lifespan_context(app):
-                tasks = app.state.startup_redispatch_tasks
-                assert len(tasks) == 1
-                await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
+                # DB75: the set holds only *in-flight* tasks (a done-callback prunes each one), so a
+                # redispatch that already finished during startup is legitimately absent and counting
+                # it races. Await whatever is still running; the row assertions below prove the
+                # redispatch happened and reached a terminal state.
+                await asyncio.wait_for(
+                    asyncio.gather(*app.state.startup_redispatch_tasks), timeout=5
+                )
 
         await db_session.refresh(run)
         assert run.status == "completed"
