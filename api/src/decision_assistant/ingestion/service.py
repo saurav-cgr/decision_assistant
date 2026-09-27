@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -6,14 +7,23 @@ from pathlib import Path
 from shutil import copyfile
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.decisions.extractor import DecisionExtractor
-from decision_assistant.decisions.schemas import ExtractionPassage
 from decision_assistant.errors import ApplicationError
 from decision_assistant.ingestion.chunking import chunk_document
+from decision_assistant.ingestion.decision_records import (
+    persist_extracted_decisions,
+    retire_previous_decisions,
+)
+from decision_assistant.ingestion.embedding_cache import resolve_embedding_cache
+from decision_assistant.ingestion.errors import IngestionError
 from decision_assistant.ingestion.metadata import MetadataExtractor
+from decision_assistant.ingestion.parse_runner import (
+    ParseTimeoutError,
+    run_parse_in_subprocess,
+)
 from decision_assistant.ingestion.parsers import (
     DocumentParseError,
     ParsedDocument,
@@ -21,43 +31,27 @@ from decision_assistant.ingestion.parsers import (
 )
 from decision_assistant.ingestion.retrieval_units import (
     RetrievalUnitStrategy,
-    RetrievalUnitDraft,
     build_retrieval_units,
-    canonical_decision_unit_kind,
 )
-from decision_assistant.decisions.models import (
-    Decision,
-    DecisionEvidence,
-    DecisionRelation,
-)
+from decision_assistant.ingestion.validation import validate_document_content
 from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
-    EmbeddingCache,
     IngestionJob,
     Passage,
 )
 from decision_assistant.workspace.models import Workspace
-from decision_assistant.providers.base import EmbeddingProvider, EmbeddingPurpose
+from decision_assistant.providers.base import EmbeddingProvider
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
 from decision_assistant.config import get_settings
 from decision_assistant.workspace.embedding_profile import (
     CorpusResetRequired,
     acquire_workspace_embedding_lock,
-    embedding_profile_fingerprint,
     get_corpus_state,
 )
 from decision_assistant.workspace.revision import bump_knowledge_revision
 
-
-class IngestionError(ApplicationError):
-    def __init__(self, message: str, *, code: str = "ingestion_failed") -> None:
-        super().__init__(
-            code=code,
-            message=message,
-            status_code=422,
-            retryable=False,
-        )
+_logger = logging.getLogger("decision_assistant.ingestion")
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,13 +63,24 @@ class IngestionResult:
 
 
 async def _parse_for_ingestion(source_path: Path) -> ParsedDocument:
+    settings = get_settings()
+    # T063/T064 (FR-020/FR-021): the content-level checks run immediately before the parser, so a
+    # mislabelled or over-long file fails with its own sanitized code instead of a Docling error.
+    validate_document_content(source_path, max_pdf_pages=settings.max_pdf_pages)
     if source_path.suffix.lower() == ".pdf":
+        # DB60 (checker V139): the PDF path runs in a child process the timeout can kill. The old
+        # `wait_for(to_thread(...))` marked the job failed while the Docling thread kept a core and
+        # gigabytes of RSS alive, so enough slow uploads OOM-killed the API and it stayed down until
+        # a manual restart — the opposite of SC-009/FR-022. Text and docx stay in-process: they are
+        # bounded by the upload size cap and produce no multi-gigabyte parser state.
         try:
-            return await asyncio.wait_for(
-                asyncio.to_thread(parse_document, source_path),
-                timeout=get_settings().model_timeout_seconds,
+            return await asyncio.to_thread(
+                run_parse_in_subprocess,
+                source_path,
+                timeout_seconds=settings.pdf_parse_timeout_seconds,
+                concurrency_limit=settings.pdf_parse_concurrency,
             )
-        except asyncio.TimeoutError as exc:
+        except ParseTimeoutError as exc:
             raise DocumentParseError(
                 "pdf_parse_timeout",
                 "PDF parsing timed out",
@@ -112,6 +117,7 @@ class IngestionService:
         *,
         request_id: str,
         job_id: UUID | None = None,
+        extract_decisions: bool = True,
     ) -> IngestionResult:
         document = await self._session.get(Document, document_id)
         if document is None:
@@ -197,6 +203,11 @@ class IngestionService:
             job.document_version_id = version.id
             await self._session.flush()
 
+        # Captured before the savepoint so the failure log below can name the version: rolling the
+        # savepoint back expires these instances, and reading an expired attribute would attempt IO
+        # outside the greenlet (MissingGreenlet) and mask the original error.
+        version_id = version.id
+
         try:
             async with self._session.begin_nested():
                 await self._process_and_activate(
@@ -205,9 +216,20 @@ class IngestionService:
                     version=version,
                     job=job,
                     stored_path=stored_path,
+                    extract_decisions=extract_decisions,
                 )
         except Exception as exc:
             error_code = exc.code if isinstance(exc, ApplicationError) else "ingestion_failed"
+            # DB61: nothing used to be logged here, so the diagnostics bundle carried almost no
+            # ingestion signal. Only the code, the ids and the exception *type* go in: an exception
+            # message can quote document text, and the bundle is a file users attach to bug reports.
+            _logger.warning(
+                "ingestion failed: document=%s version=%s code=%s error=%s",
+                document_id,
+                version_id,
+                error_code,
+                type(exc).__name__,
+            )
             version.state = "failed"
             version.error = {"code": error_code}
             job.stage = "failed"
@@ -245,6 +267,7 @@ class IngestionService:
         version: DocumentVersion,
         job: IngestionJob,
         stored_path: Path,
+        extract_decisions: bool = True,
     ) -> None:
         job.stage = "parsing"
         job.progress = 15
@@ -270,9 +293,11 @@ class IngestionService:
             strategy=self._retrieval_unit_strategy,
         )
         await acquire_workspace_embedding_lock(self._session, document.workspace_id)
-        embedding_cache = await self._resolve_embedding_cache(
-            document.workspace_id,
-            unit_drafts,
+        embedding_cache = await resolve_embedding_cache(
+            self._session,
+            embedding_provider=self._embedding_provider,
+            workspace_id=document.workspace_id,
+            unit_drafts=unit_drafts,
         )
         parent_rows: dict[int, Passage] = {}
         passage_rows: list[Passage] = []
@@ -319,72 +344,17 @@ class IngestionService:
         self._session.add_all(sentence_rows)
         await self._session.flush()
 
-        job.stage = "extracting_decisions"
-        job.progress = 70
-        extracted_decisions = await self._decision_extractor.extract(
-            [
-                ExtractionPassage(
-                    passage_id=passage.id,
-                    content=passage.content,
-                    content_hash=passage.content_hash,
-                )
-                for passage in passage_rows
-                if passage.retrieval_unit_kind
-                == canonical_decision_unit_kind(self._retrieval_unit_strategy)
-            ]
-        )
-        passage_by_id = {passage.id: passage for passage in passage_rows}
-        decisions_with_relations: list[tuple[Decision, object | None]] = []
-        for extracted in extracted_decisions:
-            decision = Decision(
+        if extract_decisions:
+            job.stage = "extracting_decisions"
+            job.progress = 70
+            await persist_extracted_decisions(
+                self._session,
+                workspace_id=document.workspace_id,
                 document_version_id=version.id,
-                statement=extracted.statement,
-                effective_date=extracted.effective_date,
-                owner=extracted.owner,
-                status=extracted.status.value,
-                reasons=extracted.reasons,
-                alternatives=extracted.alternatives,
-                project=extracted.project,
-                topic=extracted.topic,
-                extraction_confidence=extracted.extraction_confidence,
-                provenance="extracted",
-                review_state="supported",
-                user_edited=False,
-                retired=False,
+                passages=passage_rows,
+                decision_extractor=self._decision_extractor,
+                retrieval_unit_strategy=self._retrieval_unit_strategy,
             )
-            self._session.add(decision)
-            await self._session.flush()
-            evidence = extracted.evidence
-            passage = passage_by_id[evidence.passage_id]
-            self._session.add(
-                DecisionEvidence(
-                    decision_id=decision.id,
-                    passage_id=passage.id,
-                    field_name=None,
-                    start_offset=evidence.start_offset,
-                    end_offset=evidence.end_offset,
-                    support_state="supported",
-                    is_primary=True,
-                    content_hash=evidence.content_hash,
-                )
-            )
-            decisions_with_relations.append((decision, extracted.relation))
-
-        for decision, relation in decisions_with_relations:
-            if relation is None:
-                continue
-            target = await self._session.get(Decision, relation.target_decision_id)
-            if target is not None:
-                self._session.add(
-                    DecisionRelation(
-                        source_decision_id=decision.id,
-                        target_decision_id=target.id,
-                        relation_type=relation.relation_type.value,
-                        authority="model_inferred",
-                        confidence=relation.confidence.value,
-                        rationale=relation.rationale,
-                    )
-                )
 
         job.stage = "activating"
         job.progress = 90
@@ -404,7 +374,7 @@ class IngestionService:
         if previous_version is not None:
             previous_version.state = "retired"
             await self._session.flush([previous_version])
-            await self._retire_previous_decisions(previous_version.id)
+            await retire_previous_decisions(self._session, previous_version.id)
 
         version.state = "active"
         version.activated_at = datetime.now(timezone.utc)
@@ -416,65 +386,4 @@ class IngestionService:
         job.finished_at = datetime.now(timezone.utc)
         await self._session.flush()
 
-    async def _resolve_embedding_cache(
-        self,
-        workspace_id: UUID,
-        unit_drafts: list[RetrievalUnitDraft],
-    ) -> dict[str, EmbeddingCache]:
-        profile = self._embedding_provider.profile
-        fingerprint = embedding_profile_fingerprint(profile)
-        content_hashes = list(dict.fromkeys(unit.draft.content_hash for unit in unit_drafts))
-        existing = list(
-            await self._session.scalars(
-                select(EmbeddingCache).where(
-                    EmbeddingCache.workspace_id == workspace_id,
-                    EmbeddingCache.embedding_profile_fingerprint == fingerprint,
-                    EmbeddingCache.content_hash.in_(content_hashes),
-                )
-            )
-        )
-        by_hash = {entry.content_hash: entry for entry in existing}
-        missing = [
-            unit.draft
-            for unit in unit_drafts
-            if unit.draft.content_hash not in by_hash
-        ]
-        missing = list({draft.content_hash: draft for draft in missing}.values())
-        if missing:
-            vectors = await self._embedding_provider.embed(
-                [draft.content for draft in missing],
-                purpose=EmbeddingPurpose.DOCUMENT,
-            )
-            if len(vectors) != len(missing):
-                raise IngestionError(
-                    "Embedding provider returned wrong result count",
-                    code="embedding_count_mismatch",
-                )
-            for draft, vector in zip(missing, vectors, strict=True):
-                entry = EmbeddingCache(
-                    workspace_id=workspace_id,
-                    content_hash=draft.content_hash,
-                    embedding_profile_fingerprint=fingerprint,
-                    embedding_profile=profile.as_dict(),
-                    embedding=vector,
-                )
-                self._session.add(entry)
-                by_hash[draft.content_hash] = entry
-            await self._session.flush()
-        return by_hash
 
-    async def _retire_previous_decisions(self, version_id: UUID) -> None:
-        corrected = or_(
-            Decision.user_edited.is_(True),
-            Decision.provenance == "user_corrected",
-        )
-        await self._session.execute(
-            update(Decision)
-            .where(Decision.document_version_id == version_id, corrected)
-            .values(review_state="needs_review")
-        )
-        await self._session.execute(
-            update(Decision)
-            .where(Decision.document_version_id == version_id, ~corrected)
-            .values(retired=True)
-        )

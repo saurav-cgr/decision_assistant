@@ -5,6 +5,11 @@ services:
       - ./evaluation:/workspace/evaluation:ro
       - ./sample_data:/workspace/sample_data:ro
       - ./.env.example:/workspace/.env.example:ro
+      # T068: the release-version check compares api/pyproject.toml with web/package.json and
+      # requires a matching entry in the changelog, so both live outside the api build context and
+      # are mounted read-only the same way scripts/ and evaluation/ are.
+      - ./web/package.json:/workspace/web/package.json:ro
+      - ./CHANGELOG.md:/workspace/CHANGELOG.md:ro
       - ./compose.yaml:/workspace/compose.yaml:ro
       - ./compose.smoke.yaml:/workspace/compose.smoke.yaml:ro
       - ./compose.isolated.yaml:/workspace/compose.isolated.yaml:ro

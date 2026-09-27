@@ -9,8 +9,10 @@ import {
   uploadDocuments,
 } from "../api/client";
 import type { DocumentDetail, DocumentListItem } from "../api/types";
+import { CorpusRebuildBanner } from "../components/CorpusRebuildBanner";
 import { DocumentTable } from "../components/DocumentTable";
 import { SourceViewer } from "../components/SourceViewer";
+import { ProviderDisclosureGate } from "./ProviderDisclosure";
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -34,6 +36,17 @@ export function Workspace() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("name");
   const inputRef = useRef<HTMLInputElement>(null);
+  // V97: `handleRetry` needs the document that is open *now*, not the one that
+  // was open when the retry started. Reading `sourceDocument` inside the
+  // handler captures a stale value, so a document closed (or swapped for
+  // another one) while the retry was in flight would still be re-fetched and
+  // reopened. A ref stays current across the await.
+  const openDocumentIdRef = useRef<string | null>(null);
+
+  const openSourceDocument = (detail: DocumentDetail | null) => {
+    openDocumentIdRef.current = detail?.id ?? null;
+    setSourceDocument(detail);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +109,18 @@ export function Workspace() {
     try {
       await retryDocument(documentId);
       setRefreshVersion((version) => version + 1);
+      // V94: the open detail view must reflect the new job's status right
+      // away — otherwise it keeps showing the stale `failed` state with an
+      // enabled Retry button, and a second click would attempt a second
+      // concurrent retry against the same document.
+      // V97: both checks read the ref, and the second one runs after the
+      // fetch so a document closed or replaced mid-retry is left alone.
+      if (openDocumentIdRef.current === documentId) {
+        const detail = await getDocument(documentId);
+        if (openDocumentIdRef.current === documentId) {
+          openSourceDocument(detail);
+        }
+      }
     } catch (error) {
       setLoadError(
         error instanceof Error ? error.message : "Ingestion retry failed.",
@@ -109,7 +134,7 @@ export function Workspace() {
     setSourceError(null);
     try {
       const detail = await getDocument(document.id);
-      setSourceDocument(detail);
+      openSourceDocument(detail);
     } catch (error) {
       setSourceError(
         error instanceof Error ? error.message : "Source could not be loaded.",
@@ -141,7 +166,11 @@ export function Workspace() {
       );
     });
 
+  // T051: the source library is the only surface that puts document text in a provider's hands, so
+  // the disclosure gate wraps exactly this page. Everything else in the shell keeps working while an
+  // operator reads it.
   return (
+    <ProviderDisclosureGate>
     <section className="workspace-page" aria-labelledby="workspace-title">
       <div className="workspace-header">
         <div>
@@ -173,6 +202,11 @@ export function Workspace() {
           cannot be indexed.
         </span>
       </aside>
+
+      {/* T032: a rebuild re-ingests every document in this workspace and can run
+          for minutes, so it is reported above the document list it is
+          rewriting. The banner renders nothing when no rebuild has run. */}
+      <CorpusRebuildBanner pollIntervalMs={POLL_INTERVAL_MS} />
 
       {uploadProgress !== null && (
         <p className="workspace-notice" role="status">
@@ -237,9 +271,12 @@ export function Workspace() {
       {sourceDocument && (
         <SourceViewer
           document={sourceDocument}
-          onClose={() => setSourceDocument(null)}
+          onClose={() => openSourceDocument(null)}
+          retryingId={retryingId}
+          onRetry={handleRetry}
         />
       )}
     </section>
+    </ProviderDisclosureGate>
   );
 }

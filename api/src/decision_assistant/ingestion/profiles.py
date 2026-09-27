@@ -16,6 +16,9 @@ mapping instead of importing a bare constant.
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _distribution_version
+
 # Named presets over the ``structural-token-v2`` algorithm. Every preset shares
 # the same tokenizer encoding; only the token budget changes between presets.
 CHUNKING_PROFILE_PRESETS: dict[str, dict[str, object]] = {
@@ -46,9 +49,29 @@ DEFAULT_CHUNKING_PROFILE_PRESET = "baseline"
 RETRIEVAL_UNIT_STRATEGIES = frozenset(
     {"passage_hybrid", "sentence_expanded", "parent_child_merged"}
 )
+
+
+def _resolved_core_version() -> str:
+    """Return the ``docling-core`` distribution version actually installed.
+
+    ``docling==2.130.0`` pins the distribution that exposes the public API but
+    leaves its own parsing core floating, so two builds of the same commit can
+    install different ``docling-core`` releases (observed: 2.98.1 -> 2.99.0).
+    Parse output depends on that core — block mapping, reading order, locator
+    boxes — so it belongs in the corpus contract: when it changes, stored
+    passages are no longer comparable and readiness must demand a reset rather
+    than silently serving re-chunked content.
+    """
+    try:
+        return _distribution_version("docling-core")
+    except PackageNotFoundError:  # pragma: no cover - docling is a hard dependency
+        return "unavailable"
+
+
 PDF_PARSER_PROFILE: dict[str, str] = {
     "name": "docling",
     "version": "2.130.0",
+    "core_version": _resolved_core_version(),
     "ocr": "tesseract-eng",
     "layout": "docling-layout-v1",
 }

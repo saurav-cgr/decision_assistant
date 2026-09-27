@@ -1,219 +1,44 @@
+"""Evaluation runs: the background runner, progress, failures and corpus snapshots.
+
+The HTTP-level runs live in `test_evaluation_runs_api.py`, and the shared dataset/executor/judge
+fakes in `tests/support/evaluation_run_fixtures.py` (DB53: AGENTS.md's 500-line cap).
+"""
+
 import json
-from collections.abc import AsyncIterator
 from importlib import import_module
 from pathlib import Path
-from typing import Any
 from uuid import UUID, uuid4
 
-import httpx
 import pytest
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
-from decision_assistant.main import create_app
+from decision_assistant.config import Settings, get_settings
 from decision_assistant.evaluation.models import (
     EvaluationQuestion,
     EvaluationResult,
     EvaluationRun,
 )
-from decision_assistant.ingestion.models import (
-    Document,
-    DocumentVersion,
-    Passage,
+from decision_assistant.ingestion.models import Document, DocumentVersion, Passage
+from decision_assistant.providers.factory import ProviderBundle
+from decision_assistant.providers.fakes import (
+    FakeEmbeddingProvider,
+    FakeGenerationProvider,
 )
 from decision_assistant.retrieval.models import RetrievalTrace
 from decision_assistant.workspace.models import Workspace
-from decision_assistant.config import Settings, get_settings
-from decision_assistant.providers.factory import ProviderBundle
-from decision_assistant.providers.fakes import FakeEmbeddingProvider, FakeGenerationProvider
-from decision_assistant.providers.base import GenerationRequest
-from decision_assistant.workspace.context import WorkspaceContext
-
-
-DATASET_VERSION = "decision-eval-v1"
-WORKSPACE_ID = UUID("66666666-6666-6666-6666-666666666666")
-RUN_CONFIGURATION = {
-    "top_k": 5,
-    "answer_prompt_version": "answer-v1",
-}
-GENERATION_PROFILE = {"provider": "fake", "model": "answer-model"}
-EMBEDDING_PROFILE = {
-    "provider": "fake",
-    "model": "embedding-model",
-    "dimension": 768,
-}
-JUDGE_PROFILE = {
-    "provider": "fake",
-    "model": "judge-model",
-    "temperature": 0.0,
-}
-
-
-def write_dataset(path: Path, *, version: str = DATASET_VERSION) -> Path:
-    dataset = {
-        "version": version,
-        "questions": [
-            {
-                "id": "q1",
-                "question": "Why was authentication postponed?",
-                "expected_answer_summary": "Imports were unstable.",
-                "expected_documents": [{"document_id": "doc-1"}],
-                "expected_passages": [{"passage_id": "gold-1"}],
-                "expected_status": "active",
-                "expectation": "answer",
-                "facets": {"reason": "answer"},
-                "tags": ["authentication"],
-            },
-            {
-                "id": "q2",
-                "question": "Who owns authentication?",
-                "expected_answer_summary": "Maya owns authentication.",
-                "expected_documents": [{"document_id": "doc-1"}],
-                "expected_passages": [{"passage_id": "gold-2"}],
-                "expected_status": "active",
-                "expectation": "answer",
-                "facets": {"owner": "answer"},
-                "tags": ["owner"],
-            },
-            {
-                "id": "q3",
-                "question": "Who owns the unsupported billing migration?",
-                "expected_answer_summary": None,
-                "expected_documents": [],
-                "expected_passages": [],
-                "expected_status": None,
-                "expectation": "abstain",
-                "facets": {"billing_owner": "abstain"},
-                "tags": ["abstention"],
-            },
-        ],
-    }
-    path.write_text(json.dumps(dataset), encoding="utf-8")
-    return path
-
-
-def run_request(schemas: Any, strategy: str) -> Any:
-    return schemas.EvaluationRunRequest(
-        strategy=strategy,
-        dataset_version=DATASET_VERSION,
-        configuration=RUN_CONFIGURATION,
-        generation_profile=GENERATION_PROFILE,
-        embedding_profile=EMBEDDING_PROFILE,
-        judge_profile=JUDGE_PROFILE,
-    )
-
-
-class RecordingExecutor:
-    def __init__(
-        self,
-        session: AsyncSession,
-        *,
-        isolated_failure_id: str | None = None,
-        fatal_error: Exception | None = None,
-    ) -> None:
-        self.session = session
-        self.isolated_failure_id = isolated_failure_id
-        self.fatal_error = fatal_error
-        self.observed_progress: list[tuple[str, int, int]] = []
-        self.embedding_profile = EMBEDDING_PROFILE
-        self.generation_profile = GENERATION_PROFILE
-
-    async def execute(
-        self,
-        question: EvaluationQuestion,
-        *,
-        run_id: UUID,
-        strategy: str,
-        configuration: dict[str, Any],
-        workspace_id: UUID,
-    ) -> dict[str, Any]:
-        run = await self.session.get(EvaluationRun, run_id)
-        assert run is not None
-        await self.session.refresh(run)
-        self.observed_progress.append(
-            (run.status, run.completed_questions, run.total_questions)
-        )
-        assert strategy in {
-            "semantic",
-            "hybrid",
-            "passage_hybrid",
-            "sentence_expanded",
-            "parent_child_merged",
-        }
-        assert configuration == RUN_CONFIGURATION
-        if self.fatal_error is not None:
-            raise self.fatal_error
-        if question.external_id == self.isolated_failure_id:
-            raise RuntimeError("question execution failed")
-
-        should_abstain = question.expectation == "abstain"
-        expected_passage_ids = [
-            item["passage_id"] for item in question.expected_passages
-        ]
-        return {
-            "retrieved_ids": expected_passage_ids or ["unrelated"],
-            "generated_output": {
-                "state": "abstained" if should_abstain else "answered",
-                "answer": (
-                    "Insufficient evidence."
-                    if should_abstain
-                    else question.expected_answer_summary
-                ),
-                "claims": []
-                if should_abstain
-                else [
-                    {
-                        "text": "Supported claim",
-                        "passage_ids": [expected_passage_ids[0]],
-                    }
-                ],
-                "citations": []
-                if should_abstain
-                else [{"passage_id": expected_passage_ids[0]}],
-            },
-            "citation_checks": []
-            if should_abstain
-            else [
-                {
-                    "passage_id": expected_passage_ids[0],
-                    "document_name": "gold.md",
-                    "structurally_valid": True,
-                    "matches_gold_evidence": True,
-                }
-            ],
-            "actual_values": {
-                "expectation": "abstain" if should_abstain else "answer"
-            },
-            "latency_ms": 25.0,
-        }
-
-
-class RecordingJudge:
-    def __init__(self) -> None:
-        self.calls: list[tuple[GenerationRequest, dict[str, Any]]] = []
-        self.profile = JUDGE_PROFILE
-
-    async def judge(
-        self,
-        request: GenerationRequest,
-        *,
-        profile: dict[str, Any],
-    ) -> dict[str, Any]:
-        self.calls.append((request, profile))
-        return {
-            "claims": [{"claim_index": 0, "supported": True}],
-            "citation_assessments": [
-                {
-                    "claim_index": 0,
-                    "passage_id": "gold-1",
-                    "supported": True,
-                    "reason": "The passage supports the claim.",
-                }
-            ],
-            "facet_outcomes": {"reason": "answer"},
-            "supported_claims": 1,
-            "total_claims": 1,
-        }
+from tests.support.evaluation_run_fixtures import (
+    JUDGE_PROFILE,
+    RUN_CONFIGURATION,
+    RecordingExecutor,
+    RecordingJudge,
+    run_request,
+    write_dataset,
+)
 
 
 @pytest.mark.asyncio
@@ -541,188 +366,3 @@ async def test_fatal_error_marks_run_failed_with_structured_error(
     }
     assert run.completed_at is not None
 
-
-@pytest.mark.asyncio
-async def test_semantic_and_hybrid_runs_keep_identical_snapshots(
-    db_session: AsyncSession,
-    tmp_path: Path,
-) -> None:
-    service_module = import_module("decision_assistant.evaluation.service")
-    schemas = import_module("decision_assistant.evaluation.schemas")
-    service = service_module.EvaluationService(
-        session=db_session,
-        dataset_path=write_dataset(tmp_path / "questions.json"),
-        executor=RecordingExecutor(db_session),
-        judge=RecordingJudge(),
-    )
-    spoofed = {
-        "generation_profile": {"provider": "client-spoof"},
-        "embedding_profile": {"provider": "client-spoof"},
-        "judge_profile": {"provider": "client-spoof"},
-    }
-    semantic = await service.create_run(
-        run_request(schemas, "semantic").model_copy(update=spoofed)
-    )
-    hybrid = await service.create_run(
-        run_request(schemas, "hybrid").model_copy(update=spoofed)
-    )
-
-    await service.execute_run(semantic.id)
-    await service.execute_run(hybrid.id)
-    await db_session.refresh(semantic)
-    await db_session.refresh(hybrid)
-
-    assert semantic.dataset_version == hybrid.dataset_version == DATASET_VERSION
-    assert semantic.configuration == hybrid.configuration == RUN_CONFIGURATION
-    assert semantic.generation_profile == hybrid.generation_profile == GENERATION_PROFILE
-    assert semantic.embedding_profile == hybrid.embedding_profile == EMBEDDING_PROFILE
-    assert semantic.judge_profile == hybrid.judge_profile == JUDGE_PROFILE
-
-    async def expected_snapshots(run_id: UUID) -> list[dict[str, Any]]:
-        return list(
-            await db_session.scalars(
-                select(EvaluationResult.expected_values)
-                .where(EvaluationResult.evaluation_run_id == run_id)
-                .order_by(EvaluationResult.evaluation_question_id)
-            )
-        )
-
-    assert await expected_snapshots(semantic.id) == await expected_snapshots(
-        hybrid.id
-    )
-
-
-@pytest.mark.asyncio
-async def test_evaluation_api_starts_run_and_returns_completed_detail(
-    db_session: AsyncSession,
-    tmp_path: Path,
-) -> None:
-    service_module = import_module("decision_assistant.evaluation.service")
-    router_module = import_module("decision_assistant.evaluation.router")
-    service = service_module.EvaluationService(
-        session=db_session,
-        dataset_path=write_dataset(tmp_path / "questions.json"),
-        executor=RecordingExecutor(db_session),
-        judge=RecordingJudge(),
-    )
-    db_session.add(
-        Workspace(
-            id=WORKSPACE_ID,
-            name=f"Evaluation workspace {WORKSPACE_ID}",
-            embedding_profile=None,
-        )
-    )
-    await db_session.flush()
-    app = create_app()
-    app.dependency_overrides[router_module.get_evaluation_service] = lambda: service
-    app.dependency_overrides[router_module.get_workspace_context] = (
-        lambda: WorkspaceContext(workspace_id=WORKSPACE_ID)
-    )
-
-    class TestRunner:
-        async def dispatch(self, run_id: UUID) -> None:
-            await service.execute_run(run_id)
-
-    app.dependency_overrides[
-        router_module.get_evaluation_background_runner
-    ] = TestRunner
-
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
-        base_url="http://test",
-    ) as client:
-        started = await client.post(
-            f"/api/v1/workspaces/{WORKSPACE_ID}/evaluations/runs",
-            json={
-                "strategy": "hybrid",
-                "dataset_version": DATASET_VERSION,
-                "configuration": RUN_CONFIGURATION,
-                "generation_profile": GENERATION_PROFILE,
-                "embedding_profile": EMBEDDING_PROFILE,
-                "judge_profile": JUDGE_PROFILE,
-            },
-        )
-
-        assert started.status_code == 202
-        run_id = started.json()["id"]
-        detail = await client.get(
-            f"/api/v1/workspaces/{WORKSPACE_ID}/evaluations/runs/{run_id}"
-        )
-
-    assert detail.status_code == 200
-    assert detail.json()["status"] == "completed"
-    assert detail.json()["completed_questions"] == 3
-    assert detail.json()["total_questions"] == 3
-    assert len(detail.json()["results"]) == 3
-
-
-@pytest.mark.asyncio
-async def test_run_snapshots_active_corpus_and_ignores_later_changes(
-    db_session: AsyncSession,
-    tmp_path: Path,
-) -> None:
-    from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
-
-    workspace = Workspace(name="Snapshot workspace", embedding_profile=None)
-    db_session.add(workspace)
-    await db_session.flush()
-    document = Document(
-        workspace_id=workspace.id,
-        display_name="snap.md",
-        media_type="text/markdown",
-    )
-    db_session.add(document)
-    await db_session.flush()
-    version = DocumentVersion(
-        document_id=document.id,
-        version_number=1,
-        checksum="a" * 64,
-        storage_path="snap.md",
-        normalized_content="Auth decision.",
-        chunking_profile=CURRENT_CHUNKING_PROFILE,
-        state="active",
-    )
-    db_session.add(version)
-    await db_session.flush()
-    document.active_version_id = version.id
-
-    dataset_path = tmp_path / "snap-questions.json"
-    write_dataset(dataset_path, version="snap-v1")
-    service_module = import_module("decision_assistant.evaluation.service")
-    schemas = import_module("decision_assistant.evaluation.schemas")
-    service = service_module.EvaluationService(
-        session=db_session,
-        dataset_path=dataset_path,
-        executor=RecordingExecutor(db_session),
-        judge=RecordingJudge(),
-    )
-
-    run_one = await service.create_run(
-        schemas.EvaluationRunRequest(
-            strategy="hybrid",
-            dataset_version="snap-v1",
-            judge_profile={"temperature": 0},
-        ),
-        workspace_id=workspace.id,
-    )
-    assert run_one.corpus_snapshot == [
-        {
-            "document_version_id": str(version.id),
-            "chunking_profile": CURRENT_CHUNKING_PROFILE,
-            "source_kind": "markdown",
-        }
-    ]
-
-    # Retire the active version; a later run must snapshot the empty corpus.
-    version.state = "retired"
-    document.active_version_id = None
-    await db_session.flush()
-    run_two = await service.create_run(
-        schemas.EvaluationRunRequest(
-            strategy="hybrid",
-            dataset_version="snap-v1",
-            judge_profile={"temperature": 0},
-        ),
-        workspace_id=workspace.id,
-    )
-    assert run_two.corpus_snapshot == []

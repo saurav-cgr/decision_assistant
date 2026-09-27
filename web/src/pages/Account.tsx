@@ -7,6 +7,8 @@ import {
   rotateRecoveryCode,
 } from "../api/client";
 import { useAuth } from "../app/AuthContext";
+import { DiagnosticsDownload } from "../components/DiagnosticsDownload";
+import { ProviderSettings } from "../components/ProviderSettings";
 import "../app/authentication.css";
 
 export function Account() {
@@ -105,6 +107,10 @@ export function Account() {
       <p className="account-version">
         {version ? `Version ${version}` : "Version unavailable"}
       </p>
+      {/* T052: a profile-changing switch re-ingests every document, so it asks for confirmation
+          before resubmitting with `confirm_rebuild: true`. */}
+      <ProviderSettings />
+      <DiagnosticsDownload />
     </section>
   );
 }

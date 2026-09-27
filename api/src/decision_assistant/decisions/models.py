@@ -41,8 +41,13 @@ class Decision(TimestampMixin, Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    document_version_id: Mapped[UUID] = mapped_column(
-        ForeignKey("document_versions.id", ondelete="CASCADE"),
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        index=True,
+    )
+    document_version_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("document_versions.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
     statement: Mapped[str] = mapped_column(Text)
@@ -95,8 +100,9 @@ class DecisionEvidence(Base):
         ForeignKey("decisions.id", ondelete="CASCADE"),
         index=True,
     )
-    passage_id: Mapped[UUID] = mapped_column(
-        ForeignKey("passages.id", ondelete="CASCADE"),
+    passage_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("passages.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
     field_name: Mapped[str | None] = mapped_column(String(100))
@@ -105,6 +111,13 @@ class DecisionEvidence(Base):
     support_state: Mapped[str] = mapped_column(String(30), default="supported")
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     content_hash: Mapped[str] = mapped_column(String(64))
+    # The exact extracted quote (DB40, revision 0016). Stored, not derived from
+    # `passages.content[start_offset:end_offset]`, so the quote survives a
+    # corpus rebuild that deletes and reshapes every passage, and so a rebuild
+    # can re-link this row to a new passage by finding the quote inside it.
+    # NULL only for a row an earlier rebuild already orphaned, or when the
+    # source text genuinely changed.
+    quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     citation_stale: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )

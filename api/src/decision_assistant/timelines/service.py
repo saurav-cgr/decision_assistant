@@ -258,7 +258,14 @@ class TimelineService:
             passage_id=passage.id,
             document_id=item.document_id,
             document_version_id=passage.document_version_id,
-            quote=passage.content[evidence.start_offset : evidence.end_offset],
+            # The stored quote (DB40, revision 0016) is authoritative after a
+            # rebuild re-linked this row to a reshaped passage; the slice is
+            # only a fallback for rows written before the column existed.
+            quote=(
+                evidence.quote
+                if evidence.quote is not None
+                else passage.content[evidence.start_offset : evidence.end_offset]
+            ),
             start_offset=evidence.start_offset,
             end_offset=evidence.end_offset,
             content_hash=evidence.content_hash,

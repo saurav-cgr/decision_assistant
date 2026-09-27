@@ -34,6 +34,12 @@ dev = [
   "pytest==8.4.1",
   "pytest-asyncio==1.1.0",
   "pytest-cov==6.2.1",
+  # The linter is a declared, pinned dependency of the `dev` extra (DB47 option
+  # (a)) rather than CI-only tooling, so a developer and CI cannot run
+  # different versions. The Dockerfile's `test` stage installs this extra, so
+  # `make lint-api` runs it in the same container as the tests, and the CI lint
+  # job reads the pin from this line instead of repeating it.
+  "ruff==0.13.2",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -47,3 +53,20 @@ markers = [
   "live_provider: opt-in contract tests that call a configured model provider",
   "ollama: contract tests requiring configured local Ollama models",
 ]
+
+# Lint configuration. The linter itself is the `ruff` pin in the `dev` extra
+# above (DB47 option (a)), so `make lint-api`, the CI lint job, and a developer
+# all run one version. See `.github/workflows/ci.yml`.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint.per-file-ignores]
+# A test module that re-exports a pytest fixture necessarily declares parameters
+# with that fixture's name, which F811 reads as a redefinition of the import.
+# `tests/support/document_fixtures.py`'s `documents_api` is the case in point:
+# the import is what makes the fixture visible to the module's tests, and the
+# parameters are how they request it. F401/F841 stay enabled for tests, since
+# those catch genuinely dead code.
+"tests/**" = ["F811"]
+

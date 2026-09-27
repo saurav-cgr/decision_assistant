@@ -72,8 +72,7 @@ metrics:
 Changing the chunking profile is **not migratable**: the corpus-profile guard
 returns `corpus_reset_required` for any mismatch. Each preset therefore needs a
 dedicated reset/reingestion cycle against PostgreSQL only (never
-`docker compose down -v`), preserving `uploads_data`, `ollama_data`, and
-`web_node_modules`.
+`docker compose down -v`), preserving `uploads_data` and `ollama_data`.
 
 1. Confirm the Atlas sources under `sample_data/atlas` are reproducible and the
    correct database is targeted.

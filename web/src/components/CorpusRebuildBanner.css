@@ -1,0 +1,43 @@
+.corpus-rebuild {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-subtle, #d7dbe0);
+  border-left: 4px solid var(--accent, #4a6cf7);
+  border-radius: 6px;
+  background: var(--surface-muted, #f4f6fb);
+  font-size: 0.9rem;
+}
+
+.corpus-rebuild--done {
+  border-left-color: var(--success, #2f855a);
+}
+
+.corpus-rebuild--error {
+  border-left-color: var(--danger, #c53030);
+  background: var(--surface-error, #fdf3f3);
+}
+
+.corpus-rebuild button {
+  margin-left: auto;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.corpus-rebuild button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.corpus-rebuild__detail {
+  flex-basis: 100%;
+  color: var(--text-muted, #5a6270);
+}

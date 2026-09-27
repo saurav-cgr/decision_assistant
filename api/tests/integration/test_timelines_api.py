@@ -69,6 +69,7 @@ async def add_decision_with_evidence(
         updated_at=created_at,
     )
     decision = Decision(
+        workspace_id=WORKSPACE_ID,
         document_version_id=version.id,
         statement=statement,
         effective_date=effective_date,

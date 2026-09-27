@@ -1,10 +1,8 @@
 import asyncio
-from datetime import date
 from hashlib import sha256
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.ingestion.models import (

@@ -56,6 +56,14 @@ export type DocumentDetail = {
   media_type: string;
   active_version: ActiveVersionDetail | null;
   passages: PassageDetail[];
+  status: "pending" | "running" | "completed" | "failed" | null;
+  stage: string | null;
+  progress: number | null;
+  error: {
+    code?: string;
+    message?: string;
+    retryable?: boolean;
+  } | null;
 };
 
 export type UploadBatchResponse = {
@@ -233,9 +241,9 @@ export type DecisionFieldName =
   | "topic";
 
 export type DecisionEvidence = {
-  passage_id: string;
+  passage_id: string | null;
   field_name: string | null;
-  quote: string;
+  quote: string | null;
   start_offset: number;
   end_offset: number;
   content_hash: string;
@@ -264,7 +272,7 @@ export type DecisionRelation = {
 
 export type DecisionSummary = {
   id: string;
-  document_version_id: string;
+  document_version_id: string | null;
   statement: string;
   effective_date: string | null;
   owner: string | null;
@@ -457,6 +465,16 @@ export type WorkspaceDetail = WorkspaceSummary & {
 
 export type WorkspaceListResponse = { items: WorkspaceSummary[] };
 
+export type CorpusRebuildStatus = {
+  status: "pending" | "running" | "completed" | "failed";
+  reason: string;
+  documents_total: number;
+  documents_completed: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error: Record<string, unknown> | null;
+};
+
 export type AuthenticatedUser = { id: string; username: string };
 
 export type AuthResponse = {
@@ -464,4 +482,11 @@ export type AuthResponse = {
   token_type: "bearer";
   user: AuthenticatedUser;
   recovery_code: string | null;
+};
+
+//: T044 (US5): install-wide first-run state, readable with no credentials. It reports *state*, not
+//: authority — a fresh install has no user, so `/setup/*` cannot require one (DB59).
+export type SetupStatus = {
+  needs_password_setup: boolean;
+  needs_provider_disclosure: boolean;
 };

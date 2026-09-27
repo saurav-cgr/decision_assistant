@@ -22,6 +22,22 @@ vi.mock("../app/AuthContext", () => ({
   }),
 }));
 
+// T052: the settings page now hosts the provider switch, which reads the active provider on mount.
+vi.mock("../api/provider", () => ({
+  getProviderDisclosure: vi.fn().mockResolvedValue({
+    provider: "ollama",
+    generation_provider: "ollama",
+    embedding_provider: "ollama",
+    generation_sends_document_text_remotely: false,
+    embedding_sends_document_text_remotely: false,
+    sends_document_text_remotely: false,
+    acknowledged_at: "2026-09-26T00:00:00Z",
+  }),
+  acknowledgeProviderDisclosure: vi.fn(),
+  switchProvider: vi.fn(),
+  providerSwitchPreview: vi.fn().mockReturnValue(null),
+}));
+
 afterEach(() => {
   vi.clearAllMocks();
 });

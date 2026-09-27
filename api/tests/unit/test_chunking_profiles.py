@@ -1,6 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
+from importlib.metadata import version
+
 from decision_assistant.config import Settings
 from decision_assistant.ingestion.profiles import (
     CHUNKING_PROFILE_PRESETS,
@@ -76,6 +78,15 @@ def test_corpus_profile_includes_pdf_parser_contract() -> None:
         == PDF_PARSER_PROFILE
     )
     assert PDF_PARSER_PROFILE["name"] == "docling"
+
+
+def test_pdf_parser_contract_tracks_the_installed_docling_core() -> None:
+    # DB36: `docling==2.130.0` leaves `docling-core` floating, and that core
+    # decides how a PDF is parsed. Reporting the resolved version inside the
+    # profile is what makes a transitive bump demand a corpus reset instead of
+    # silently changing chunk content under an unchanged contract.
+    assert PDF_PARSER_PROFILE["core_version"] == version("docling-core")
+    assert PDF_PARSER_PROFILE["core_version"] != "unavailable"
 
 
 def test_settings_default_is_baseline() -> None:

@@ -61,11 +61,11 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
       AUTH_ACCESS_TOKEN_TTL_MINUTES: ${AUTH_ACCESS_TOKEN_TTL_MINUTES:-1440}
-      AUTH_BOOTSTRAP_USERNAME: ${AUTH_BOOTSTRAP_USERNAME:-}
-      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-26214400}
       MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-120}
       MODEL_RETRY_COUNT: ${MODEL_RETRY_COUNT:-2}
+      PDF_PARSE_TIMEOUT_SECONDS: ${PDF_PARSE_TIMEOUT_SECONDS:-120}
+      PDF_PARSE_CONCURRENCY: ${PDF_PARSE_CONCURRENCY:-1}
       RERANK_ENABLED: ${RERANK_ENABLED:-false}
       RERANK_CANDIDATE_LIMIT: ${RERANK_CANDIDATE_LIMIT:-12}
       RERANK_MIN_CANDIDATES: ${RERANK_MIN_CANDIDATES:-6}
@@ -89,7 +89,13 @@ services:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
       - uploads_data:/workspace/uploads
+      # DB61: the log directory must outlive a container recreate, or an upgrade deletes exactly the
+      # history the diagnostics bundle exists to ship.
+      - api_logs:/workspace/logs
       - ${BACKUP_DIR:-./backups}:/workspace/backups
+    # DB60/V139 backstop: when a parse somehow still exhausts the container, the API comes back on
+    # its own instead of staying down until an operator runs `docker compose up` by hand.
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
@@ -132,3 +138,4 @@ volumes:
   postgres_data:
   ollama_data:
   uploads_data:
+  api_logs:

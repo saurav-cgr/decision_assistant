@@ -1,0 +1,53 @@
+/* T051: the provider-disclosure gate that stands in front of the source library. */
+.provider-disclosure__facts {
+  display: grid;
+  gap: 10px;
+  max-width: 620px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.provider-disclosure__facts li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.provider-disclosure__facts strong {
+  color: var(--ink, inherit);
+}
+
+.provider-disclosure__marker {
+  width: 10px;
+  height: 10px;
+  margin-top: 7px;
+  background: var(--accent);
+  border-radius: 3px;
+  transform: rotate(45deg);
+}
+
+.provider-disclosure__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-top: 36px;
+}
+
+.provider-disclosure__actions button {
+  padding: 12px 22px;
+  font-weight: 700;
+}
+
+.provider-disclosure__error {
+  max-width: 620px;
+  margin-top: 26px;
+  padding: 14px 16px;
+  color: var(--danger, #a4262c);
+  background: rgb(164 38 44 / 8%);
+  border-radius: 12px;
+}

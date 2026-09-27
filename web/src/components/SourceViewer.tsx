@@ -3,13 +3,21 @@ import { useEffect, useRef } from "react";
 import "./SourceViewer.css";
 
 import type { DocumentDetail } from "../api/types";
+import { canRetryDocument, IngestionStatus } from "./IngestionStatus";
 
 type SourceViewerProps = {
   document: DocumentDetail;
   onClose: () => void;
+  retryingId?: string | null;
+  onRetry?: (documentId: string) => void;
 };
 
-export function SourceViewer({ document, onClose }: SourceViewerProps) {
+export function SourceViewer({
+  document,
+  onClose,
+  retryingId = null,
+  onRetry,
+}: SourceViewerProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
 
@@ -72,6 +80,24 @@ export function SourceViewer({ document, onClose }: SourceViewerProps) {
             Close
           </button>
         </header>
+        <div className="source-viewer__status">
+          <IngestionStatus
+            status={document.status}
+            stage={document.stage}
+            progress={document.progress}
+            error={document.error}
+          />
+          {canRetryDocument(document) && onRetry && (
+            <button
+              type="button"
+              disabled={retryingId === document.id}
+              onClick={() => onRetry(document.id)}
+              aria-label={`Retry ${document.display_name}`}
+            >
+              {retryingId === document.id ? "Retrying…" : "Retry"}
+            </button>
+          )}
+        </div>
         <div className="source-viewer__body">
           {document.passages.length === 0 ? (
             <p className="source-viewer__empty">

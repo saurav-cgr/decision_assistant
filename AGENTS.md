@@ -5,7 +5,7 @@
 - **Secrets**: NEVER commit `.env`, local backups, API keys, credentials, or tokens. Use `.env.example` as the only configuration template. `.env.gemini.bak` is a local untracked backup, not a clean source of truth; never stage it. `GEMINI_API_KEY` must never be logged or returned.
 - **Corpus contract**: NEVER attempt an in-place corpus migration. Changing embedding or chunking profiles fails with `corpus_reset_required`. Reset PostgreSQL and reingest; this development project provides no legacy-corpus compatibility.
 - **Schema migrations**: `api/alembic/versions/0001_initial.py` is the immutable fresh-schema baseline with no `down_revision`. Create a new Alembic revision for every schema change; NEVER edit `0001` or rewrite migration history. Corpus changes use reset/reingestion, not legacy-row backfills.
-- **Reset safety**: A corpus reset drops only PostgreSQL and preserves `uploads_data`, `ollama_data`, and `web_node_modules`. NEVER use `docker compose down -v` for a corpus reset. A complete Compose purge is allowed only when the user explicitly requests it and acknowledges that all project volumes will be deleted.
+- **Reset safety**: A corpus reset drops only PostgreSQL and preserves `uploads_data`, `ollama_data`, and `api_logs`. NEVER use `docker compose down -v` for a corpus reset. A complete Compose purge is allowed only when the user explicitly requests it and acknowledges that all project volumes will be deleted.
 - **Git**: NEVER force push.
 - **SQL**: NEVER interpolate or trust user-controlled input. Use SQLAlchemy expressions or bound parameters.
 - **Escalation**: Ask before DB schema changes, new dependencies, authorization changes, rerank enablement, destructive database resets, or dropping columns.
@@ -21,16 +21,35 @@ Decision-memory assistant: ingest documents → token-budgeted structural chunks
 
 Everything runs through Docker Compose; no host Python, Node, npm, or PostgreSQL is required.
 
+**Never hand-type a `docker compose` command without `-p`.** `compose.yaml` pins
+`name: decision-assistant`, so a bare command targets the real dev stack: it will start its
+containers and let the app migrate its database (this happened once — debt DB46). Every *test or
+gate* command below therefore carries `-p decision-assistant-test`; only operator commands against
+the dev stack itself (`make start`, `make stop`, the corpus-reset sequence) are deliberately bare.
+
 ```bash
 # API tests
 make test-api
-docker compose run --rm api pytest tests/unit/test_<file>.py -q
 
-# Web tests and production build
+# Backend lint (the ruff pin in api/pyproject.toml's `dev` extra; T070/DB47)
+make lint-api
+
+# A single API test file: isolated project plus the test overlay, the shape `make
+# test-api` uses. Build first — the api image has no source bind-mount.
+docker compose -p decision-assistant-test up -d db --wait
+API_BUILD_TARGET=test docker compose -p decision-assistant-test -f compose.yaml -f compose.test.yml \
+  build api
+API_BUILD_TARGET=test docker compose -p decision-assistant-test -f compose.yaml -f compose.test.yml \
+  run --rm api pytest tests/unit/test_<file>.py -q
+docker compose -p decision-assistant-test down -v
+
+# Web tests, host-side backup/restore round trip, and the web production build
 make test-web
-docker compose run --rm web npm run build
+make test-backup
+WEB_BUILD_TARGET=build docker compose -p decision-assistant-test -f compose.yaml build web
+WEB_BUILD_TARGET=build docker compose -p decision-assistant-test run --rm --no-deps web npm run build
 
-# Migrations
+# Migrations against the dev stack (operator command, intentionally bare)
 docker compose run --rm api alembic upgrade head
 docker compose run --rm api alembic current
 
@@ -96,6 +115,7 @@ Every active `DocumentVersion` must match `CURRENT_CHUNKING_PROFILE`; every pass
 - **Unchanged core types**: `parse_document`, `ParsedDocument`, `_SourceBlock`, and the structural chunker signatures are frozen. Docling dispatch happens only inside `_parse_pdf_document`.
 - **Locator kinds**: New ingestion emits only `pdf_region` (page + normalized bounding box). `pdf_page` stays a supported read and gold-locator kind, and matches region passages by page. Chunk locator aggregation, provenance, API schemas, citation labels, and evaluation matching all support `pdf_region`.
 - **Error mapping**: Docling conversion timeout, OCR failure, and layout failure map to sanitized, non-retryable parse errors. Never surface raw Docling exceptions to API consumers. Docling conversion runs in a worker thread inside the existing ingestion task.
+- **Parse isolation (DB60)**: a PDF parse runs in a **child process** (`ingestion/parse_runner.py`, `spawn` + `kill()` on timeout), because a thread cannot be cancelled and a timed-out thread kept a core and gigabytes of RSS until it finished. Its budget is `PDF_PARSE_TIMEOUT_SECONDS` (not `MODEL_TIMEOUT_SECONDS`), and concurrent parses are capped process-wide by `PDF_PARSE_CONCURRENCY` (default 1, the memory bound). `api` runs with `restart: unless-stopped` as the backstop. Do not move the PDF parse back into a thread.
 - **PDF UI scope**: The source UI remains an extracted-text viewer in this release. `pdf_region` is stored and returned but not visually highlighted; true visual PDF highlighting is a later feature.
 - **Schema migration**: No migration for the parser contract change. It requires explicit PostgreSQL reset and complete reingestion. Ask first before executing the reset.
 
@@ -137,6 +157,7 @@ Failures are maker-fixable and must be resolved before the increment is handed o
 
 - Running API and web services use bind-mounted source. Restart the affected service after backend changes; rebuild images only for dependency or Dockerfile changes.
 - `tiktoken` assets must exist at `TIKTOKEN_CACHE_DIR=/opt/tiktoken-cache`; runtime must not fetch tokenizer assets.
+- Evaluation is **development only**: `evaluation/questions.json` is outside the `api` build context, so an installed image has no dataset and `POST /evaluations/runs` answers `503` `evaluation_unavailable`. Run the harness from a source checkout; do not "fix" this by adding a source bind-mount (it would break the no-source-bind-mount rule).
 - Rails, Sidekiq, PaperTrail, tenant `CLIENT_NAME`, and Clew-specific instructions do not apply to this repository.
 - If local behavior differs from CI, inspect Docker Compose defaults and `.env` override order without printing secret values.
 

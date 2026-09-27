@@ -1,8 +1,11 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { completedDocument } from "../test/documentFixtures";
 
 const api = vi.hoisted(() => ({
+  getCorpusRebuild: vi.fn(),
   getDocument: vi.fn(),
   listDocuments: vi.fn(),
   retryDocument: vi.fn(),
@@ -10,35 +13,51 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/client", () => ({
+  getCorpusRebuild: api.getCorpusRebuild,
   getDocument: api.getDocument,
   listDocuments: api.listDocuments,
   retryDocument: api.retryDocument,
   uploadDocuments: api.uploadDocuments,
 }));
 
-const completedDocument = {
-  id: "document-1",
-  display_name: "authentication-review.md",
-  media_type: "text/markdown",
-  active_version_id: "version-1",
-  status: "completed",
-  stage: "completed",
-  progress: 100,
-  error: null,
-  title: "Authentication Review",
-  document_date: "2026-07-15",
-  participants: ["Asha", "Mateo"],
-  source_type: "meeting_notes",
-  project: "Atlas",
-  modification_state: "modified",
-  decision_count: 3,
-};
+// T051: the source library is wrapped in the provider-disclosure gate, so these tests stand in for an
+// already-acknowledged workspace and keep asserting the page itself. The gate's own behaviour lives
+// in `ProviderDisclosure.test.tsx`.
+vi.mock("../api/provider", () => ({
+  getProviderDisclosure: vi.fn().mockResolvedValue({
+    provider: "ollama",
+    generation_provider: "ollama",
+    embedding_provider: "ollama",
+    generation_sends_document_text_remotely: false,
+    embedding_sends_document_text_remotely: false,
+    sends_document_text_remotely: false,
+    acknowledged_at: "2026-09-26T00:00:00Z",
+  }),
+  acknowledgeProviderDisclosure: vi.fn(),
+}));
 
 async function renderWorkspace() {
   const modulePath = "./Workspace";
   const { Workspace } = await import(/* @vite-ignore */ modulePath);
-  return render(<Workspace />);
+  const result = render(<Workspace />);
+  // T051: the page is wrapped in the provider-disclosure gate, which fetches the disclosure on
+  // mount. Flush that resolved promise so these tests exercise the page, not the gate's "checking"
+  // state. Deliberately not `findBy*`: the polling tests install fake timers before rendering, and
+  // RTL's `waitFor` then waits on a timer that never runs (the test hangs to its timeout).
+  await act(async () => {});
+  await act(async () => {});
+  return result;
 }
+
+beforeEach(() => {
+  // No rebuild has run for this workspace (404), which `CorpusRebuildBanner`
+  // renders as nothing. The banner's own behaviour is covered in
+  // `CorpusRebuildBanner.test.tsx`.
+  api.getCorpusRebuild.mockRejectedValue({
+    status: 404,
+    code: "corpus_rebuild_not_found",
+  });
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -222,6 +241,10 @@ describe("Workspace", () => {
       display_name: completedDocument.display_name,
       media_type: completedDocument.media_type,
       active_version: null,
+      status: "completed",
+      stage: "completed",
+      progress: 100,
+      error: null,
       passages: [
         {
           sequence_number: 0,
@@ -256,6 +279,10 @@ describe("Workspace", () => {
       display_name: completedDocument.display_name,
       media_type: completedDocument.media_type,
       active_version: null,
+      status: "completed",
+      stage: "completed",
+      progress: 100,
+      error: null,
       passages: [
         {
           sequence_number: 0,
@@ -279,5 +306,98 @@ describe("Workspace", () => {
       screen.getByRole("button", { name: /close source viewer/i }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("retries a failed document from the source viewer (T025)", async () => {
+    const failedDocument = {
+      ...completedDocument,
+      id: "broken-docx",
+      display_name: "broken.docx",
+      status: "failed",
+      error: { code: "docx_parse_failed", retryable: true },
+    };
+    api.listDocuments.mockResolvedValue({ items: [failedDocument] });
+    api.getDocument.mockResolvedValue({
+      id: failedDocument.id,
+      display_name: failedDocument.display_name,
+      media_type: failedDocument.media_type,
+      active_version: null,
+      status: "failed",
+      stage: "failed",
+      progress: 40,
+      error: { code: "docx_parse_failed", retryable: true },
+      passages: [],
+    });
+    api.retryDocument.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+
+    await renderWorkspace();
+
+    await user.click(
+      await screen.findByRole("button", { name: /view source: broken\.docx/i }),
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /retry broken\.docx/i }),
+    );
+
+    await waitFor(() =>
+      expect(api.retryDocument).toHaveBeenCalledWith("broken-docx"),
+    );
+  });
+
+  it("refreshes the open detail view after retry so a second retry cannot fire (V94)", async () => {
+    const failedDocument = {
+      ...completedDocument,
+      id: "broken-docx",
+      display_name: "broken.docx",
+      status: "failed",
+      error: { code: "docx_parse_failed", retryable: true },
+    };
+    api.listDocuments.mockResolvedValue({ items: [failedDocument] });
+    api.getDocument
+      .mockResolvedValueOnce({
+        id: failedDocument.id,
+        display_name: failedDocument.display_name,
+        media_type: failedDocument.media_type,
+        active_version: null,
+        status: "failed",
+        stage: "failed",
+        progress: 40,
+        error: { code: "docx_parse_failed", retryable: true },
+        passages: [],
+      })
+      .mockResolvedValueOnce({
+        id: failedDocument.id,
+        display_name: failedDocument.display_name,
+        media_type: failedDocument.media_type,
+        active_version: null,
+        status: "pending",
+        stage: "queued",
+        progress: 0,
+        error: null,
+        passages: [],
+      });
+    api.retryDocument.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+
+    await renderWorkspace();
+
+    await user.click(
+      await screen.findByRole("button", { name: /view source: broken\.docx/i }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    within(dialog).getByRole("button", { name: /retry broken\.docx/i });
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /retry broken\.docx/i }),
+    );
+
+    await waitFor(() => expect(api.getDocument).toHaveBeenCalledTimes(2));
+    expect(
+      within(dialog).queryByRole("button", { name: /retry broken\.docx/i }),
+    ).not.toBeInTheDocument();
+    expect(api.retryDocument).toHaveBeenCalledTimes(1);
   });
 });

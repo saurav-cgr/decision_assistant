@@ -4,11 +4,17 @@ import { appendConversationMessage, createConversation, getConversation, listCon
 import type { ConversationDetail, ConversationSummary } from "../api/types";
 import { ConversationList } from "../components/ConversationList";
 import { ConversationThread } from "../components/ConversationThread";
+import { providerFailureMessage } from "../components/providerFailure";
 import "./AskCore.css";
 import "./Ask.css";
 
 function message(error: unknown) {
-  return error instanceof Error ? error.message : "Conversation could not be loaded.";
+  // T067/FR-026: a provider failure (rejected key, unreachable provider, exhausted quota) gets its
+  // own actionable state rather than the generic "could not be loaded" text.
+  return (
+    providerFailureMessage(error) ??
+    (error instanceof Error ? error.message : "Conversation could not be loaded.")
+  );
 }
 
 export function Ask() {

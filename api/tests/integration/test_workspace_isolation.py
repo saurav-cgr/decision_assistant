@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.config import Settings
@@ -108,6 +107,7 @@ async def _seed_workspace(
     passage.embedding_cache_id = cache.id
 
     decision = Decision(
+        workspace_id=workspace.id,
         document_version_id=version.id,
         statement=f"{name} decision: postpone authentication.",
         effective_date=date(2026, 7, 15),

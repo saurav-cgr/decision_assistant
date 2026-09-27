@@ -18,6 +18,9 @@ class AnswerVerifier:
     ) -> VerificationResult:
         errors: list[VerificationError] = []
         valid_cited_ids: set[UUID] = set()
+        # The quotes that actually verified, per passage: the only text an
+        # explicit value may be grounded in (DB50).
+        verified_quotes: dict[UUID, list[str]] = {}
 
         for citation in answer.citations:
             passage = passages.get(citation.passage_id)
@@ -62,6 +65,9 @@ class AnswerVerifier:
                 )
                 continue
             valid_cited_ids.add(citation.passage_id)
+            verified_quotes.setdefault(citation.passage_id, []).append(
+                citation.quote
+            )
 
         for claim in answer.claims:
             if claim.central and not claim.passage_ids:
@@ -89,7 +95,7 @@ class AnswerVerifier:
             self._verify_explicit_values(
                 claim.explicit_entities + claim.explicit_dates,
                 claim.passage_ids,
-                passages,
+                verified_quotes,
                 errors,
             )
 
@@ -135,20 +141,31 @@ class AnswerVerifier:
     def _verify_explicit_values(
         values: list[str],
         passage_ids: list[UUID],
-        passages: Mapping[UUID, EvidencePassage],
+        verified_quotes: Mapping[UUID, list[str]],
         errors: list[VerificationError],
     ) -> None:
-        cited_content = "\n".join(
-            passages[passage_id].content
+        """Require explicit values to appear in the citations' *verified quotes*.
+
+        Matching against the whole passage (the pre-DB50 behaviour) let any text
+        sharing a passage with a real quote ground a fabricated date or entity,
+        including instruction-like text injected into the document. The quoted
+        span is the text the model actually asserted as evidence, so it is the
+        only text that may satisfy an explicit value (FR-023).
+        """
+        cited_quotes = "\n".join(
+            quote
             for passage_id in passage_ids
-            if passage_id in passages
+            for quote in verified_quotes.get(passage_id, ())
         ).casefold()
         for value in values:
-            if value.casefold() not in cited_content:
+            if value.casefold() not in cited_quotes:
                 errors.append(
                     VerificationError(
                         code="explicit_value_not_in_evidence",
-                        message=f"Claimed explicit value is absent from evidence: {value}",
+                        message=(
+                            "Claimed explicit value is absent from the cited "
+                            f"quotes: {value}"
+                        ),
                     )
                 )
 

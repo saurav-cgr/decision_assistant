@@ -54,6 +54,15 @@
   font-size: 0.78rem;
 }
 
+.source-viewer__status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
 .source-viewer__body {
   display: flex;
   flex-direction: column;

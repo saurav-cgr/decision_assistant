@@ -2,7 +2,6 @@ import json
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from time import perf_counter
 from typing import Any, Sequence
 from uuid import UUID
 
@@ -709,6 +708,15 @@ class EvaluationService:
         try:
             raw = json.loads(self._dataset_path.read_text(encoding="utf-8"))
             return EvaluationDataset.model_validate(raw)
+        except FileNotFoundError as exc:
+            # DB32: the benchmark file lives in the repo, outside the `api`
+            # image's build context, so an installed deployment has no dataset
+            # at all. Report that as its own condition — `dataset_invalid` would
+            # tell an operator to fix a file that is simply not shipped.
+            raise FatalEvaluationError(
+                code="evaluation_unavailable",
+                message="Evaluation dataset is not available in this deployment",
+            ) from exc
         except Exception as exc:
             raise FatalEvaluationError(
                 code="dataset_invalid",

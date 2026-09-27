@@ -9,6 +9,7 @@ import decision_assistant.answering.history_models  # noqa: F401
 import decision_assistant.answering.conversation_models  # noqa: F401
 import decision_assistant.auth.models  # noqa: F401
 import decision_assistant.workspace.models  # noqa: F401
+import decision_assistant.workspace.provider_config  # noqa: F401
 import decision_assistant.workspace.rebuild_models  # noqa: F401
 import decision_assistant.ingestion.models  # noqa: F401
 import decision_assistant.decisions.models  # noqa: F401

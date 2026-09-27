@@ -121,8 +121,10 @@ export function DecisionDetail() {
           <p className="eyebrow">Immutable record</p>
           <h2 id="source-evidence-title">Source evidence</h2>
         </div>
-        {decision.evidence.map((evidence) => (
-          <blockquote key={evidence.passage_id}>{evidence.quote}</blockquote>
+        {decision.evidence.map((evidence, index) => (
+          <blockquote key={evidence.passage_id ?? index}>
+            {evidence.quote ?? "Source passage no longer available after a corpus rebuild."}
+          </blockquote>
         ))}
       </section>
 

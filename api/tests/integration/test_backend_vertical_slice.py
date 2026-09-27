@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -74,6 +75,9 @@ async def test_upload_index_ask_abstain_and_inspect_trace(
             id=WORKSPACE_ID,
             name=f"Vertical slice workspace {WORKSPACE_ID}",
             embedding_profile=None,
+            # The FR-014 disclosure gate is covered by test_provider_disclosure.py (T046/T049); this
+            # test is the upload -> index -> ask path, so its workspace arrives pre-acknowledged.
+            disclosure_acknowledged_at=datetime.now(UTC),
         )
     )
     await db_session.flush()

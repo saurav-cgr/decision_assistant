@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -33,6 +35,86 @@ class WorkspaceStateError(ApplicationError):
         super().__init__(
             code="workspace_state_error",
             message=message,
+            status_code=409,
+            retryable=False,
+        )
+
+
+class CorpusRebuildNotFound(ApplicationError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="corpus_rebuild_not_found",
+            message="No corpus rebuild has run for this workspace",
+            status_code=404,
+            retryable=False,
+        )
+
+
+class CorpusRebuildNotRetryable(ApplicationError):
+    def __init__(self, current_status: str) -> None:
+        super().__init__(
+            code="corpus_rebuild_not_retryable",
+            message=(
+                "A corpus rebuild can only be retried while the latest one "
+                f"is failed (current status: {current_status})"
+            ),
+            status_code=409,
+            retryable=False,
+        )
+
+
+class ProviderSwitchRequiresRebuild(ApplicationError):
+    """FR-016: a profile-affecting provider change needs explicit confirmation.
+
+    The 409 body carries the preview the UI needs (both profiles and how many documents would be
+    re-ingested), not just a refusal.
+    """
+
+    def __init__(self, details: dict[str, Any]) -> None:
+        super().__init__(
+            code="provider_switch_requires_rebuild",
+            message=(
+                "Changing the embedding provider re-ingests every document in this workspace. "
+                "Resubmit with confirm_rebuild: true to proceed."
+            ),
+            status_code=409,
+            retryable=False,
+            details=details,
+        )
+
+
+class ProviderSwitchNotConfigured(ApplicationError):
+    """Refuses a switch to a provider the process could not actually call.
+
+    Without this, an operator could persist a configuration whose credentials are missing and only
+    discover it when the rebuild failed (DB43 aborts the whole rebuild), which is worse than a clear
+    409 at switch time.
+    """
+
+    def __init__(self, generation_provider: str, embedding_provider: str) -> None:
+        super().__init__(
+            code="provider_switch_not_configured",
+            message=(
+                "The requested provider configuration is incomplete; set its credentials "
+                "(for example GEMINI_API_KEY) before switching."
+            ),
+            status_code=409,
+            retryable=False,
+            details={
+                "generation_provider": generation_provider,
+                "embedding_provider": embedding_provider,
+            },
+        )
+
+
+class CorpusRebuildInProgress(ApplicationError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="corpus_rebuild_in_progress",
+            message=(
+                "A corpus rebuild is already pending or running for a workspace in this "
+                "installation; wait for it to finish before switching providers"
+            ),
             status_code=409,
             retryable=False,
         )
@@ -117,6 +199,20 @@ class WorkspaceService:
             return workspace
         return await self.create(owner_user_id=owner_user_id, name=name)
 
+    async def acknowledge_provider_disclosure(
+        self, workspace_id: UUID, *, owner_user_id: UUID
+    ) -> Workspace:
+        """Record the user's acknowledgement of the provider disclosure (T048, FR-014).
+
+        Idempotent, and the first timestamp is kept rather than refreshed: the column answers
+        "when did this user accept where their documents go?", which re-stamping on every call
+        would make unanswerable.
+        """
+        workspace = await self.get(workspace_id, owner_user_id=owner_user_id)
+        if workspace.disclosure_acknowledged_at is None:
+            workspace.disclosure_acknowledged_at = datetime.now(UTC)
+        return workspace
+
     async def rename(self, workspace_id: UUID, *, owner_user_id: UUID, name: str) -> Workspace:
         workspace = await self.get(workspace_id, owner_user_id=owner_user_id)
         duplicate = await self._session.scalar(
@@ -173,3 +269,33 @@ class WorkspaceService:
             )
         )
         return int(count or 0)
+
+    async def document_counts_by_workspace(
+        self, *, owner_user_id: UUID | None = None
+    ) -> "list[tuple[Workspace, int]]":
+        """Every workspace with its document count, in `list` order (DB57's switch preview).
+
+        One grouped query rather than one per workspace, so the preview stays cheap as workspaces
+        accumulate. The return annotation is quoted on purpose: `list` is also a method on this
+        class, and a class body evaluates later annotations in a namespace where that method has
+        already shadowed the builtin.
+        """
+        workspaces = await self.list(owner_user_id=owner_user_id)
+        rows = await self._session.execute(
+            select(Document.workspace_id, func.count(Document.id)).group_by(
+                Document.workspace_id
+            )
+        )
+        counts = {workspace_id: int(total) for workspace_id, total in rows}
+        return [(workspace, counts.get(workspace.id, 0)) for workspace in workspaces]
+
+    async def clear_provider_disclosure_acknowledgements(self) -> None:
+        """Drop every workspace's acknowledgement (DB65).
+
+        The provider choice is process-wide, so a switch that starts sending document text off the
+        machine invalidates every acknowledgement, not only the addressed workspace's. Uploads stay
+        blocked (`disclosure_not_acknowledged`) until each workspace is acknowledged again.
+        """
+        await self._session.execute(
+            update(Workspace).values(disclosure_acknowledged_at=None)
+        )

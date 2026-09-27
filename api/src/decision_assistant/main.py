@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
@@ -10,22 +11,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.auth.bootstrap import BootstrapCredentials, BootstrapService
 from decision_assistant.backup import create_pre_migration_backup
-from decision_assistant.auth.passwords import PasswordManager
 from decision_assistant.auth.router import router as authentication_router
+from decision_assistant.auth.router import setup_router
 from decision_assistant.answering.router import router as answering_router
-from decision_assistant.config import Settings, get_settings
+from decision_assistant.config import Settings, get_settings, validate_startup_config
 from decision_assistant.db import create_engine, create_session_factory, get_session
 from decision_assistant.decisions.router import router as decisions_router
+from decision_assistant.diagnostics.logging import configure_logging
+from decision_assistant.diagnostics.router import router as diagnostics_router
+from decision_assistant.documents.router import LocalIngestionDispatcher
 from decision_assistant.documents.router import router as documents_router
+from decision_assistant.documents.storage import LocalFileStorage
 from decision_assistant.errors import ApplicationError, ErrorResponse
+from decision_assistant.evaluation.models import EvaluationRun
+from decision_assistant.evaluation.router import EvaluationBackgroundRunner
 from decision_assistant.evaluation.router import router as evaluation_router
+from decision_assistant.ingestion.models import DocumentVersion, IngestionJob
 from decision_assistant.ingestion.profiles import resolve_corpus_profile
+from decision_assistant.jobs.recovery import recover_and_requeue
 from decision_assistant.migrations import is_upgrade_pending, upgrade_to_head
 from decision_assistant.retrieval.router import router as retrieval_router
 from decision_assistant.providers.base import ProviderConfigurationInvalid
@@ -38,11 +46,29 @@ from decision_assistant.timelines.router import router as timelines_router
 from decision_assistant.version import get_app_version
 from decision_assistant.workspace.embedding_profile import (
     CorpusResetRequired,
+    get_corpus_state,
     require_current_corpus_profiles,
+)
+from decision_assistant.workspace.models import Workspace
+from decision_assistant.workspace.provider_config import (
+    apply_stored_provider_config,
+    load_stored_provider_config,
+)
+from decision_assistant.workspace.rebuild.dispatch import (
+    dispatch_corpus_rebuild,
+    mark_interrupted_rebuilds,
 )
 from decision_assistant.workspace.router import router as workspaces_router
 
 RequestHandler = Callable[[Request], Awaitable[Response]]
+
+# quickstart.md Section 3 tells the operator to confirm recovery from the logs
+# (`docker compose logs api | grep -i "recover\|requeue"`). `configure_logging`
+# (T056) also writes a rotating file log, but startup recovery is emitted through
+# uvicorn's logger deliberately: `docker compose logs` reads the container's
+# stdout/stderr, and uvicorn gives `uvicorn.error` its own handler, so a record
+# sent here reaches both the console and the file.
+_startup_logger = logging.getLogger("uvicorn.error")
 
 
 class ServiceNotReady(ApplicationError):
@@ -53,21 +79,6 @@ class ServiceNotReady(ApplicationError):
             status_code=503,
             retryable=True,
         )
-
-
-def _bootstrap_credentials(settings: Settings) -> BootstrapCredentials:
-    username = settings.auth_bootstrap_username
-    password = settings.auth_bootstrap_password
-    jwt_secret = settings.auth_jwt_secret
-    if (
-        not username
-        or password is None
-        or not password.get_secret_value()
-        or jwt_secret is None
-        or not jwt_secret.get_secret_value()
-    ):
-        raise RuntimeError("Authentication bootstrap configuration is required")
-    return BootstrapCredentials(username=username, password=password.get_secret_value())
 
 
 def _request_id(request: Request) -> str:
@@ -98,11 +109,20 @@ def _error_response(
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
+    # T056 (US7/FR-017): rotating, secret-scrubbed file logging. Done here rather
+    # than inside `lifespan` so that a startup failure in `lifespan` is itself
+    # written to the log file, not only to the container's stderr.
+    configure_logging(resolved_settings)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         bootstrap_engine = None
         try:
+            # T045: fail fast on a missing AUTH_JWT_SECRET or a placeholder
+            # DATABASE_URL before touching the DB at all (DB8) — a
+            # ConfigurationError here aborts startup, so migrations/backups
+            # never run against a shared-default credential.
+            validate_startup_config(resolved_settings)
             # T014's pre-migration backup (FR-005). Distinct from `make backup`/
             # scripts/backup.sh (FR-008, DB22): that script shells out to `docker compose
             # exec`, a HOST-side tool this in-container lifespan hook can't reach, so
@@ -118,11 +138,194 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await asyncio.to_thread(upgrade_to_head)
             bootstrap_engine = create_engine(resolved_settings)
             bootstrap_session_factory = create_session_factory(bootstrap_engine)
+            # T050: a provider switch is stored in `app_settings` and applied over the environment
+            # defaults here, before anything resolves a provider or a corpus profile, so the whole
+            # process agrees on one effective configuration after a restart.
             async with bootstrap_session_factory() as session:
-                await BootstrapService(session, PasswordManager()).ensure_user(
-                    _bootstrap_credentials(resolved_settings)
+                stored_provider_config = await load_stored_provider_config(session)
+                if stored_provider_config is not None:
+                    apply_stored_provider_config(resolved_settings, stored_provider_config)
+            # T042 (US5): no user is created here any more. The old env bootstrap used
+            # AUTH_BOOTSTRAP_USERNAME/AUTH_BOOTSTRAP_PASSWORD to define "the" user at startup, which
+            # meant the app chose a credential from two more shared-default `.env` values. A fresh
+            # install now starts with no user and GET /api/v1/setup/status reports it; the operator
+            # sets the password through POST /api/v1/setup/password.
+            # T021: a job left `running` by a crash/restart is requeued (or marked
+            # terminal `failed` past max_ingestion_attempts) so it never sits stuck
+            # in `processing` forever (DB19/D1, quickstart.md Section 3). Resolve
+            # each requeued job's source file before commit, so re-dispatch below
+            # uses stable data even if a later step fails.
+            storage = LocalFileStorage(resolved_settings.upload_directory)
+            redispatches: list[tuple[Any, Any, str, Any]] = []
+            async with bootstrap_session_factory() as session:
+                # DB27: also sweep `pending` — a job whose fire-and-forget
+                # background dispatch (router.py's `upload_documents`) never
+                # started before a crash/restart is left `pending` forever
+                # otherwise, since it never reached `running` for the
+                # default-only sweep to find.
+                outcome = await recover_and_requeue(
+                    session,
+                    model=IngestionJob,
+                    max_attempts=resolved_settings.max_ingestion_attempts,
+                    interrupted_error_code="ingestion_interrupted",
+                    statuses=("running", "pending"),
+                    finished_at_field="finished_at",
                 )
+                for job in outcome.requeued:
+                    version = (
+                        await session.get(DocumentVersion, job.document_version_id)
+                        if job.document_version_id is not None
+                        else None
+                    )
+                    if version is None:
+                        continue
+                    redispatches.append(
+                        (
+                            job.document_id,
+                            job.id,
+                            job.request_id,
+                            storage.local_path(version.storage_path),
+                        )
+                    )
                 await session.commit()
+                if outcome.requeued or outcome.failed:
+                    _startup_logger.info(
+                        "startup recovery: requeued %d ingestion job(s) "
+                        "(%d dispatched), marked %d failed",
+                        len(outcome.requeued),
+                        len(redispatches),
+                        len(outcome.failed),
+                    )
+            # DB27: `asyncio.create_task` returns the event loop's only
+            # strong reference; without holding one ourselves the task can be
+            # garbage-collected mid-run. `application.state` outlives this
+            # function, so tasks stored there survive until they finish, and
+            # the done-callback prunes each one out once it has (successful
+            # or not — failures are already recorded via `_record_dispatch_failure`
+            # inside `dispatch`).
+            application.state.startup_redispatch_tasks = set()
+            if redispatches:
+                dispatcher = LocalIngestionDispatcher(
+                    resolved_settings, application.state.provider_bundle_factory
+                )
+                for document_id, job_id, request_id, source_path in redispatches:
+                    task = asyncio.create_task(
+                        dispatcher.dispatch(
+                            document_id=document_id,
+                            job_id=job_id,
+                            source_path=source_path,
+                            request_id=request_id,
+                        )
+                    )
+                    application.state.startup_redispatch_tasks.add(task)
+                    task.add_done_callback(
+                        application.state.startup_redispatch_tasks.discard
+                    )
+
+            # T023: same recovery pattern as the IngestionJob sweep above, for
+            # EvaluationRun rows left `running`/`pending` by a crash/restart.
+            # `EvaluationBackgroundRunner.dispatch(run_id)` (documents/router.py's
+            # `LocalIngestionDispatcher` equivalent) re-resolves everything it
+            # needs from `run_id` alone via `EvaluationService.execute_run`,
+            # which already accepts both `pending` and `running` — no extra
+            # per-row lookup (like ingestion's `DocumentVersion.storage_path`)
+            # is needed before redispatch. `error_field="failure"`: EvaluationRun
+            # names its failure column `failure`, not `error` (see
+            # jobs/recovery.py's `recover_and_requeue` docstring).
+            async with bootstrap_session_factory() as session:
+                evaluation_outcome = await recover_and_requeue(
+                    session,
+                    model=EvaluationRun,
+                    max_attempts=resolved_settings.max_evaluation_attempts,
+                    interrupted_error_code="evaluation_interrupted",
+                    statuses=("running", "pending"),
+                    error_field="failure",
+                    finished_at_field="completed_at",
+                )
+                requeued_run_ids = [run.id for run in evaluation_outcome.requeued]
+                await session.commit()
+                if evaluation_outcome.requeued or evaluation_outcome.failed:
+                    _startup_logger.info(
+                        "startup recovery: requeued %d evaluation run(s) "
+                        "(%d dispatched), marked %d failed",
+                        len(evaluation_outcome.requeued),
+                        len(requeued_run_ids),
+                        len(evaluation_outcome.failed),
+                    )
+            if requeued_run_ids:
+                runner = EvaluationBackgroundRunner(
+                    resolved_settings, application.state.provider_bundle_factory
+                )
+                for run_id in requeued_run_ids:
+                    task = asyncio.create_task(runner.dispatch(run_id))
+                    application.state.startup_redispatch_tasks.add(task)
+                    task.add_done_callback(
+                        application.state.startup_redispatch_tasks.discard
+                    )
+
+            # T029: a workspace whose stored corpus contract no longer matches
+            # the configured embedding/chunking profile (`corpus_reset_required`,
+            # computed, not a stored flag — `get_corpus_state`) needs a rebuild
+            # before it is usable again (DB40's `run_corpus_rebuild`, US3/T028
+            # +T031). Detect every such workspace up front in one session, then
+            # dispatch each rebuild as its own tracked background task (same
+            # shape as the ingestion/evaluation redispatch above) — a rebuild
+            # can re-parse and re-embed every document in the workspace, too
+            # slow to run inline before `yield`.
+            #
+            # DB41: the rebuild's row is committed before its work starts (so
+            # progress is visible while it runs), which means a crash mid-run
+            # leaves a `pending`/`running` row that the single-active-rebuild
+            # unique index will never let a later rebuild past. Sweep those
+            # first, before the reset-required scan below tries to insert one:
+            # a workspace that still needs rebuilding is re-dispatched by that
+            # same scan, so an interrupted rebuild recovers on its own.
+            async with bootstrap_session_factory() as session:
+                interrupted = await mark_interrupted_rebuilds(session)
+                await session.commit()
+                if interrupted:
+                    _startup_logger.info(
+                        "startup recovery: marked %d interrupted corpus "
+                        "rebuild(s) failed",
+                        len(interrupted),
+                    )
+            async with bootstrap_session_factory() as session:
+                configured_embedding = configured_embedding_profile(resolved_settings)
+                configured_chunking = resolve_corpus_profile(
+                    resolved_settings.chunking_profile_preset,
+                    resolved_settings.retrieval_unit_strategy,
+                )
+                reset_required_workspace_ids: list[Any] = []
+                for workspace_id in await session.scalars(select(Workspace.id)):
+                    state = await get_corpus_state(
+                        session,
+                        workspace_id,
+                        configured_embedding,
+                        configured_chunking,
+                    )
+                    if state.corpus_reset_required:
+                        reset_required_workspace_ids.append(workspace_id)
+            if reset_required_workspace_ids:
+                _startup_logger.info(
+                    "startup: %d workspace(s) need a corpus rebuild",
+                    len(reset_required_workspace_ids),
+                )
+                for workspace_id in reset_required_workspace_ids:
+                    task = asyncio.create_task(
+                        dispatch_corpus_rebuild(
+                            bootstrap_session_factory,
+                            workspace_id=workspace_id,
+                            reason="corpus_reset_required",
+                            settings=resolved_settings,
+                            providers=application.state.provider_bundle_factory(),
+                            request_id=str(uuid4()),
+                            logger=_startup_logger,
+                        )
+                    )
+                    application.state.startup_redispatch_tasks.add(task)
+                    task.add_done_callback(
+                        application.state.startup_redispatch_tasks.discard
+                    )
             yield
         finally:
             if bootstrap_engine is not None:
@@ -135,8 +338,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resolved_settings
     )
     app.include_router(authentication_router)
+    app.include_router(setup_router)
     app.include_router(answering_router)
     app.include_router(decisions_router)
+    app.include_router(diagnostics_router)
     app.include_router(documents_router)
     app.include_router(evaluation_router)
     app.include_router(retrieval_router)

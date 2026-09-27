@@ -60,6 +60,16 @@ async def _current_db_revision(settings: Settings) -> str | None:
         await engine.dispose()
 
 
+async def current_db_revision(settings: Settings) -> str | None:
+    """The revision the database is actually at, or None on a database with none applied.
+
+    Public wrapper around the same read `is_upgrade_pending` uses, so the diagnostics bundle
+    (T057/FR-018) reports the revision the app itself acts on instead of shelling out to the
+    `alembic` CLI (which would mean a subprocess inside a request path).
+    """
+    return await _current_db_revision(settings)
+
+
 def is_upgrade_pending(settings: Settings) -> bool:
     """Return True if the database is not already at the head revision.
 

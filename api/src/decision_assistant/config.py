@@ -3,6 +3,7 @@ from pathlib import Path
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 from decision_assistant.ingestion.profiles import (
     CHUNKING_PROFILE_PRESETS,
@@ -25,6 +26,10 @@ class Settings(BaseSettings):
     upload_directory: Path = Path("/workspace/uploads")
     backup_directory: Path = Path("/workspace/backups")
     pre_migration_backup_retention: int = 5
+    log_directory: Path = Path("/workspace/logs")
+    log_level: str = "INFO"
+    log_max_bytes: int = Field(default=5_000_000, gt=0)
+    log_backup_count: int = Field(default=3, ge=0)
     generation_provider: str = "gemini"
     embedding_provider: str = "gemini"
     gemini_api_key: SecretStr | None = None
@@ -42,11 +47,16 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     auth_jwt_secret: SecretStr | None = None
     auth_access_token_ttl_minutes: int = Field(default=24 * 60, gt=0)
-    auth_bootstrap_username: str | None = None
-    auth_bootstrap_password: SecretStr | None = None
     max_upload_bytes: int = 25 * 1024 * 1024
+    max_pdf_pages: int = Field(default=200, gt=0)
     model_timeout_seconds: float = 120.0
     model_retry_count: int = 2
+    #: Budget for one PDF parse. Separate from `model_timeout_seconds` (DB60) so that tuning provider
+    #: latency does not silently change how long a Docling parse may hold a slot, and vice versa.
+    pdf_parse_timeout_seconds: float = Field(default=120.0, gt=0)
+    #: Process-wide cap on concurrent Docling parses. Each parse is one child process holding its own
+    #: converter and models, so this is the memory bound, not a throttle on ingestions in general.
+    pdf_parse_concurrency: int = Field(default=1, gt=0)
     rerank_enabled: bool = False
     rerank_candidate_limit: int = 12
     rerank_min_candidates: int = 6
@@ -87,12 +97,21 @@ class ConfigurationError(RuntimeError):
     """Raised when required startup configuration is missing or a known placeholder."""
 
 
-# Matches Settings.database_url's own default and compose.yaml's fallback
-# (`${POSTGRES_PASSWORD:-decision_assistant}`) — the shared credential this
-# validation exists to catch (see loop debt DB8).
-_PLACEHOLDER_DATABASE_URL = (
-    "postgresql+asyncpg://decision_assistant:decision_assistant"
-    "@db:5432/decision_assistant"
+# The shared credential this validation exists to catch (see loop debt DB8),
+# matching Settings.database_url's own default and compose.yaml's fallback
+# (`${POSTGRES_PASSWORD:-decision_assistant}`). Compared by username/password,
+# not by the full URL string, so a differently-spelled connection string using
+# the same shared credential (no port, an added query string, a different
+# host/db name) is still caught (checker V76).
+_PLACEHOLDER_USERNAME = "decision_assistant"
+_PLACEHOLDER_PASSWORD = "decision_assistant"
+
+#: Public alias for the same shared credential, for callers that must reason about placeholders
+#: without importing a private name — US5's first-run setup (T041) decides whether `.env` already
+#: holds real secrets, and it must agree with this validation exactly rather than keep a second copy
+#: of the string (DB8/DB26).
+PLACEHOLDER_DB_CREDENTIALS: frozenset[str] = frozenset(
+    {_PLACEHOLDER_USERNAME, _PLACEHOLDER_PASSWORD}
 )
 
 
@@ -101,9 +120,11 @@ def validate_startup_config(settings: Settings) -> None:
 
     Kept as an explicit function rather than a Settings model_validator so
     existing unit tests can still construct a bare `Settings()` for behavior
-    unrelated to auth; T045 (US5) is the task that wires this into the real
-    application startup path once first-run secret generation (T041) exists
-    to supply real values by default.
+    unrelated to auth (only tests that exercise the real `lifespan` need a
+    real `auth_jwt_secret`, see `main.py`). Wired into `main.py`'s `lifespan`
+    (T045) ahead of any DB access; `make setup` (T041/US5) generates the values
+    this check requires, and `scripts/setup.sh` is the supported way to produce
+    them.
     """
     jwt_secret = settings.auth_jwt_secret
     if jwt_secret is None or not jwt_secret.get_secret_value().strip():
@@ -111,7 +132,16 @@ def validate_startup_config(settings: Settings) -> None:
             "AUTH_JWT_SECRET is not configured. Set AUTH_JWT_SECRET in .env to a "
             "random secret value before starting outside of first-run setup."
         )
-    if settings.database_url == _PLACEHOLDER_DATABASE_URL:
+    try:
+        parsed_url = make_url(settings.database_url)
+    except Exception as exc:
+        raise ConfigurationError(
+            f"DATABASE_URL could not be parsed: {exc}"
+        ) from exc
+    if (
+        parsed_url.username == _PLACEHOLDER_USERNAME
+        and parsed_url.password == _PLACEHOLDER_PASSWORD
+    ):
         raise ConfigurationError(
             "DATABASE_URL is using the shared placeholder credential "
             "(decision_assistant:decision_assistant). Set a real POSTGRES_PASSWORD "
