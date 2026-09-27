@@ -551,8 +551,9 @@ Statuses: pending → maker-ready → checker-pass | checker-fail → human-sign
 - Open blocking debt blocks done: true
 
 ## State
-- Phase: checked
-- Last updated: 2026-09-27 (checker, iteration 104, V176-V178: no criterion was maker-ready. D2 stays checker-pass on re-check: 543 API passed, lint clean. D3 was not re-run because no web file changed. **DB72(a) and DB73 are verified fixed**: an independent mutant for each fails exactly its new test. New debt **DB76** (low): `_latest_rebuild` orders by the transaction-start `created_at`, so commit order can invert. D1-D13 are all checker-pass.)
+- Phase: done
+- Last updated: 2026-09-27 (guard: human (user) sign-off recorded. All three done-gate conditions hold: D1-D13 are checker-pass, no high-severity debt is open, and the sign-off is logged in debt.md. Open low- and medium-severity debt is acknowledged and carried forward.)
+  Earlier: 2026-09-27 (checker, iteration 104, V176-V178: no criterion was maker-ready. D2 stays checker-pass on re-check: 543 API passed, lint clean. D3 was not re-run because no web file changed. **DB72(a) and DB73 are verified fixed**: an independent mutant for each fails exactly its new test. New debt **DB76** (low): `_latest_rebuild` orders by the transaction-start `created_at`, so commit order can invert. D1-D13 are all checker-pass.)
   Earlier: 2026-09-27 (maker, iteration 104: **DB72(a) and DB73** fixed — the manual rebuild
   retry takes the provider-switch lock, re-checks its precondition under it, and dispatches with the
   factory that exists after the lock; 2 new tests, each killed by a named mutant. Gates:
