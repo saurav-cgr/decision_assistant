@@ -39,6 +39,15 @@ logs:
 # project's `api_logs`, `postgres_data` and `uploads_data` volumes behind on every red run. Each
 # target is therefore one shell command whose last step cleans up and re-exits with the run's own
 # status, so `make test-api`/`make test-web` still fail loudly.
+#
+# The suite must not depend on the developer's `.env`. Without these, a checkout with no `.env`
+# (CI) falls back to compose.yaml's placeholder `decision_assistant:decision_assistant` credential,
+# which `validate_startup_config` rightly refuses, so every test driving the real `lifespan` fails.
+# The isolated project's database volume is created fresh and removed by `down -v`, so a fixed,
+# test-only password is safe here; exported variables take precedence over `.env` in compose.
+TEST_POSTGRES_PASSWORD := test-only-not-a-secret
+test-api: export POSTGRES_PASSWORD := $(TEST_POSTGRES_PASSWORD)
+test-api: export DATABASE_URL := postgresql+asyncpg://decision_assistant:$(TEST_POSTGRES_PASSWORD)@db:5432/decision_assistant
 test-api:
 	docker compose -p $(TEST_PROJECT) up -d db --wait \
 	 && API_BUILD_TARGET=test docker compose -p $(TEST_PROJECT) -f compose.yaml -f compose.test.yml build api \
