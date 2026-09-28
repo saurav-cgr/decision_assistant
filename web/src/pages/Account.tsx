@@ -1,11 +1,14 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import {
   changePassword,
   changeUsername,
+  getHealth,
   rotateRecoveryCode,
 } from "../api/client";
 import { useAuth } from "../app/AuthContext";
+import { DiagnosticsDownload } from "../components/DiagnosticsDownload";
+import { ProviderSettings } from "../components/ProviderSettings";
 import "../app/authentication.css";
 
 export function Account() {
@@ -15,6 +18,23 @@ export function Account() {
   const [username, setUsername] = useState(user?.username ?? "");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getHealth()
+      .then((health) => {
+        if (!cancelled) {
+          setVersion(health.version);
+        }
+      })
+      .catch(() => {
+        // Version display is informational only; leave it unset on failure.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const submit = async (action: () => Promise<void>, success: string) => {
     setError(null);
@@ -84,6 +104,13 @@ export function Account() {
           <button>Generate recovery code</button>
         </form>
       </div>
+      <p className="account-version">
+        {version ? `Version ${version}` : "Version unavailable"}
+      </p>
+      {/* T052: a profile-changing switch re-ingests every document, so it asks for confirmation
+          before resubmitting with `confirm_rebuild: true`. */}
+      <ProviderSettings />
+      <DiagnosticsDownload />
     </section>
   );
 }

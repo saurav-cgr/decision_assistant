@@ -1,6 +1,5 @@
 from dataclasses import fields
 from inspect import Parameter, signature
-import asyncio
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from decision_assistant.ingestion.chunking import chunk_document
+from decision_assistant.ingestion.parse_runner import ParseTimeoutError
 from decision_assistant.ingestion.parsers import (
     DocumentParseError,
     ParsedDocument,
@@ -214,7 +214,7 @@ def test_docling_failures_are_sanitized(
 
 
 @pytest.mark.asyncio
-async def test_docling_parse_runs_in_worker_thread(
+async def test_pdf_parse_is_dispatched_off_the_caller_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from decision_assistant.ingestion import service
@@ -225,12 +225,21 @@ async def test_docling_parse_runs_in_worker_thread(
     monkeypatch.setattr(
         service,
         "get_settings",
-        lambda: SimpleNamespace(model_timeout_seconds=1),
+        # A stand-in for `Settings`: it must carry every field `_parse_for_ingestion` reads, which is
+        # the validation step's `max_pdf_pages` and DB60's parse budget plus concurrency limit.
+        lambda: SimpleNamespace(
+            pdf_parse_timeout_seconds=1, pdf_parse_concurrency=1, max_pdf_pages=200
+        ),
     )
     monkeypatch.setattr(
         service,
-        "parse_document",
-        lambda path: worker_threads.append(threading.get_ident()) or sentinel,
+        "run_parse_in_subprocess",
+        # The child-process half is covered against a real PDF in `test_parse_runner.py`; here the
+        # question is only where the call is dispatched from.
+        lambda path, *, timeout_seconds, concurrency_limit: worker_threads.append(
+            threading.get_ident()
+        )
+        or sentinel,
     )
 
     assert await service._parse_for_ingestion(TEXT_PDF) is sentinel
@@ -238,31 +247,27 @@ async def test_docling_parse_runs_in_worker_thread(
 
 
 @pytest.mark.asyncio
-async def test_docling_parse_timeout_is_sanitized(
+async def test_pdf_parse_timeout_is_sanitized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from decision_assistant.ingestion import service
 
-    started = threading.Event()
-    release = threading.Event()
+    def time_out(path: Path, *, timeout_seconds: float, concurrency_limit: int) -> None:
+        raise ParseTimeoutError(
+            f"parse did not finish within {timeout_seconds:g}s and was killed"
+        )
+
     monkeypatch.setattr(
         service,
         "get_settings",
-        lambda: SimpleNamespace(model_timeout_seconds=0.01),
+        lambda: SimpleNamespace(
+            pdf_parse_timeout_seconds=0.01, pdf_parse_concurrency=1, max_pdf_pages=200
+        ),
     )
+    monkeypatch.setattr(service, "run_parse_in_subprocess", time_out)
 
-    def hang(path: Path) -> None:
-        started.set()
-        release.wait()
-
-    monkeypatch.setattr(service, "parse_document", hang)
-    task = asyncio.create_task(service._parse_for_ingestion(TEXT_PDF))
-    try:
-        assert await asyncio.to_thread(started.wait, 1)
-        with pytest.raises(DocumentParseError) as error:
-            await task
-    finally:
-        release.set()
+    with pytest.raises(DocumentParseError) as error:
+        await service._parse_for_ingestion(TEXT_PDF)
 
     assert error.value.code == "pdf_parse_timeout"
     assert error.value.retryable is False

@@ -4,12 +4,12 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.models import (
+from decision_assistant.evaluation.models import (
     EvaluationQuestion,
     EvaluationResult,
     EvaluationRun,
-    Workspace,
 )
+from decision_assistant.workspace.models import Workspace
 
 
 @pytest.mark.asyncio

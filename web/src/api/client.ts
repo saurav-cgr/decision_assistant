@@ -1,5 +1,4 @@
 import type {
-  ApiErrorPayload,
   AuthResponse,
   AuthenticatedUser,
   DecisionCorrectionRequest,
@@ -16,101 +15,118 @@ import type {
   ConversationDetail,
   ConversationMessage,
   ConversationSummary,
+  CorpusRebuildStatus,
   QuestionHistoryListResponse,
   RetrievalTraceResponse,
   RetryResponse,
+  SetupStatus,
   TimelineResponse,
   UploadBatchResponse,
   WorkspaceDetail,
   WorkspaceListResponse,
 } from "./types";
+import {
+  API_V1,
+  ApiClientError,
+  apiRequest,
+  configuredOrigin,
+  getAccessToken,
+  handleUnauthorized,
+  normalizeApiError,
+  parseApiError,
+  parseJson,
+  projectPath,
+} from "./transport";
 
-const configuredOrigin = import.meta.env.VITE_API_URL || "http://localhost:8000";
-const API_V1 = `${configuredOrigin.replace(/\/$/, "")}/api/v1`;
+// DB67: the transport half of the client (base URLs, bearer/workspace state, `ApiClientError`,
+// `apiRequest`, the error parsers) now lives in `api/transport.ts`. These re-exports keep the
+// long-standing `from "../api/client"` imports in components, tests and `api/provider.ts` working —
+// only the definitions moved, not the module's public surface.
+export {
+  ApiClientError,
+  apiRequest,
+  getActiveWorkspaceId,
+  projectPath,
+  setAccessToken,
+  setActiveWorkspaceId,
+  setUnauthorizedHandler,
+} from "./transport";
 
-let activeWorkspaceId: string | null = null;
-let accessToken: string | null = null;
-let unauthorizedHandler: (() => void) | null = null;
+export type HealthResponse = {
+  status: string;
+  version: string;
+};
 
-export function setAccessToken(token: string | null): void {
-  accessToken = token;
-}
-
-export function setUnauthorizedHandler(handler: (() => void) | null): void {
-  unauthorizedHandler = handler;
-}
-
-export function setActiveWorkspaceId(workspaceId: string | null): void {
-  activeWorkspaceId = workspaceId;
-}
-
-export function getActiveWorkspaceId(): string | null {
-  return activeWorkspaceId;
-}
-
-function requireWorkspace(): string {
-  if (!activeWorkspaceId) {
-    throw new ApiClientError(0, {
-      code: "no_active_workspace",
-      message: "No active workspace is selected",
-      request_id: "unavailable",
-      retryable: false,
-      details: null,
-    });
+export async function getHealth(): Promise<HealthResponse> {
+  // Unlike apiRequest, this is unauthenticated and lives outside /api/v1
+  // (see api/src/decision_assistant/main.py's /health route).
+  const response = await fetch(`${configuredOrigin.replace(/\/$/, "")}/health`, {
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new ApiClientError(response.status, await parseApiError(response));
   }
-  return activeWorkspaceId;
+  return (await response.json()) as HealthResponse;
 }
 
-function projectPath(path: string): `/${string}` {
-  return `/workspaces/${requireWorkspace()}${path}` as `/${string}`;
-}
+export type DiagnosticsBundle = {
+  blob: Blob;
+  filename: string;
+};
 
-export class ApiClientError extends Error {
-  readonly status: number;
-  readonly code: string;
-  readonly requestId: string;
-  readonly retryable: boolean;
-  readonly details: unknown | null;
+const DIAGNOSTICS_FALLBACK_FILENAME = "decision-assistant-diagnostics.zip";
 
-  constructor(status: number, payload: ApiErrorPayload) {
-    super(payload.message);
-    this.name = "ApiClientError";
-    this.status = status;
-    this.code = payload.code;
-    this.requestId = payload.request_id;
-    this.retryable = payload.retryable;
-    this.details = payload.details;
+export function parseAttachmentFilename(disposition: string | null): string | null {
+  if (!disposition) {
+    return null;
   }
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  return match ? match[1] : null;
 }
 
-export async function apiRequest<T>(
-  path: `/${string}`,
-  init: RequestInit = {},
-): Promise<T> {
-  const headers = new Headers(init.headers);
-  headers.set("accept", "application/json");
-  if (accessToken) {
-    headers.set("authorization", `Bearer ${accessToken}`);
+export async function downloadDiagnosticsBundle(): Promise<DiagnosticsBundle> {
+  // Deliberately not `apiRequest`: that helper always parses JSON, and this response is a zip. Same
+  // origin, bearer token and 401 handling. The endpoint is host-level, so no workspace path is used.
+  const headers = new Headers({ accept: "application/zip" });
+  const token = getAccessToken();
+  if (token) {
+    headers.set("authorization", `Bearer ${token}`);
   }
-  const response = await fetch(`${API_V1}${path}`, { ...init, headers });
-
+  const response = await fetch(`${API_V1}/diagnostics/bundle`, { headers });
   if (!response.ok) {
     if (response.status === 401) {
-      unauthorizedHandler?.();
+      handleUnauthorized();
     }
     throw new ApiClientError(response.status, await parseApiError(response));
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
+  return {
+    blob: await response.blob(),
+    filename:
+      parseAttachmentFilename(response.headers.get("content-disposition")) ??
+      DIAGNOSTICS_FALLBACK_FILENAME,
+  };
 }
 
-export function signUp(username: string, password: string): Promise<AuthResponse> {
+export async function signUp(username: string, password: string): Promise<AuthResponse> {
   return apiRequest<AuthResponse>("/auth/signup", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username, password }),
+  });
+}
+
+// T044 (US5): both setup calls are deliberately unauthenticated — a fresh install has no user, which
+// is the whole point of the flow. `getSetupStatus` is what lets the shell decide between the
+// create-password screen and the sign-in form without first showing the wrong one.
+export function getSetupStatus(): Promise<SetupStatus> {
+  return apiRequest<SetupStatus>("/setup/status");
+}
+
+export function createFirstPassword(password: string): Promise<AuthResponse> {
+  return apiRequest<AuthResponse>("/setup/password", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password }),
   });
 }
 
@@ -184,6 +200,21 @@ export function rotateRecoveryCode(
 
 export function listWorkspaces(): Promise<WorkspaceListResponse> {
   return apiRequest<WorkspaceListResponse>("/workspaces");
+}
+
+// T032: the workspace's latest corpus rebuild. A workspace that has never run
+// one answers 404 `corpus_rebuild_not_found` (see workspace/router.py), which
+// callers should treat as "nothing to show", not as an error.
+export function getCorpusRebuild(): Promise<CorpusRebuildStatus> {
+  return apiRequest<CorpusRebuildStatus>(projectPath("/corpus-rebuild"));
+}
+
+// Only accepted while the latest rebuild is `failed`; anything else answers 409
+// `corpus_rebuild_not_retryable`.
+export function retryCorpusRebuild(): Promise<CorpusRebuildStatus> {
+  return apiRequest<CorpusRebuildStatus>(projectPath("/corpus-rebuild/retry"), {
+    method: "POST",
+  });
 }
 
 export function createWorkspace(name: string): Promise<WorkspaceDetail> {
@@ -382,13 +413,13 @@ export function uploadDocuments(
 
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.open(
-      "POST",
-      `${API_V1}/workspaces/${requireWorkspace()}/documents/upload`,
-    );
+    // `projectPath` supplies the workspace segment and the no-active-workspace guard; building the
+    // path here instead of reading the workspace state keeps that state private to `transport`.
+    request.open("POST", `${API_V1}${projectPath("/documents/upload")}`);
     request.setRequestHeader("accept", "application/json");
-    if (accessToken) {
-      request.setRequestHeader("authorization", `Bearer ${accessToken}`);
+    const token = getAccessToken();
+    if (token) {
+      request.setRequestHeader("authorization", `Bearer ${token}`);
     }
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) {
@@ -418,53 +449,4 @@ export function uploadDocuments(
     });
     request.send(body);
   });
-}
-
-async function parseApiError(response: Response): Promise<ApiErrorPayload> {
-  try {
-    return normalizeApiError(await response.json(), response.status);
-  } catch {
-    // Fall through to stable client-side fallback.
-  }
-  return {
-    code: "http_error",
-    message: `Request failed with HTTP ${response.status}`,
-    request_id: response.headers.get("x-request-id") ?? "unavailable",
-    retryable: response.status >= 500,
-    details: null,
-  };
-}
-
-function parseJson(value: string): unknown {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeApiError(payload: unknown, status: number): ApiErrorPayload {
-  if (payload && typeof payload === "object") {
-    const candidate = payload as Partial<ApiErrorPayload>;
-    if (
-      typeof candidate.code === "string" &&
-      typeof candidate.message === "string" &&
-      typeof candidate.request_id === "string"
-    ) {
-      return {
-        code: candidate.code,
-        message: candidate.message,
-        request_id: candidate.request_id,
-        retryable: candidate.retryable === true,
-        details: candidate.details ?? null,
-      };
-    }
-  }
-  return {
-    code: "http_error",
-    message: `Request failed with HTTP ${status}`,
-    request_id: "unavailable",
-    retryable: status >= 500,
-    details: null,
-  };
 }

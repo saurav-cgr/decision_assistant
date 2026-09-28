@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from decision_assistant.auth.service import InvalidCredentials
 from decision_assistant.auth.tokens import AccessTokenService
 from decision_assistant.db import get_session
-from decision_assistant.models import User
+from decision_assistant.auth.models import User
 
 bearer_scheme = HTTPBearer(auto_error=False)
 

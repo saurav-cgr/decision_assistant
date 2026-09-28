@@ -1,0 +1,164 @@
+# Release (T071): a release tag publishes pinned, reproducible images and refuses to publish a tag
+# whose version does not match the code.
+#
+# Order of business: verify the tag first, scan for secrets second, publish third. Nothing is pushed
+# until both gates pass, because a published image tag can be pulled by someone else the moment it
+# exists.
+#
+# What is deliberately *not* here — a recorded decision, not an oversight: **no benchmark gate.**
+# The Atlas abstention/conflict benchmark (`evaluation/questions.json`) is dropped as a release
+# requirement per product direction. It remains a development-time measurement (see
+# `evaluation/parser_comparison.md`), and a release that changed the corpus profile is expected to
+# say so in its changelog entry instead of gating on a re-run.
+name: Release
+
+on:
+  push:
+    tags:
+      # Matches the SemVer tags this project publishes, e.g. v0.1.0 or v1.2.0-rc.1.
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-version:
+    name: verify tag, versions and changelog agree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # T068/FR-025: the tag is the release's name, so it has to be the same version the code
+      # declares and the changelog documents. `api/tests/unit/test_release_version.py` asserts the
+      # same facts inside the test suite; this repeats them here because a tag can be pushed onto a
+      # commit whose tests never ran in this workflow.
+      - name: Check tag against the declared versions and the changelog
+        id: version
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          API_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' api/pyproject.toml | head -1)
+          WEB_VERSION=$(python3 -c "import json; print(json.load(open('web/package.json'))['version'])")
+
+          echo "tag=$TAG api=$API_VERSION web=$WEB_VERSION"
+          test "$TAG" = "$API_VERSION" || {
+            echo "::error::tag $GITHUB_REF_NAME does not match api/pyproject.toml version $API_VERSION"
+            exit 1
+          }
+          test "$TAG" = "$WEB_VERSION" || {
+            echo "::error::tag $GITHUB_REF_NAME does not match web/package.json version $WEB_VERSION"
+            exit 1
+          }
+          grep -q "^## \[$TAG\]" CHANGELOG.md || {
+            echo "::error::CHANGELOG.md has no entry for $TAG"
+            exit 1
+          }
+          # FR-025: every released version states whether upgrading re-ingests the corpus, and why.
+          sed -n "/^## \[$TAG\]/,/^## \[/p" CHANGELOG.md \
+            | grep -qE "^Corpus rebuild on upgrade: (yes|no)\b" || {
+            echo "::error::CHANGELOG.md entry for $TAG has no 'Corpus rebuild on upgrade: yes|no' line"
+            exit 1
+          }
+
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+  secret-scan:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks needs the full history to find a secret that was later removed.
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No `GITLEAKS_LICENSE` is configured: this action's licence check applies to GitHub
+          # *organizations*, and this repository is published from a personal account. If it ever
+          # moves under an organization, add the licence as a repository secret rather than
+          # removing the scan.
+
+  publish-images:
+    name: build and push images
+    needs: [verify-version, secret-scan]
+    runs-on: ubuntu-latest
+    # The api image predownloads the Docling layout/table/OCR models at build time (AGENTS.md's
+    # "no runtime downloads"), so this job is genuinely slow.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image names
+        id: names
+        run: |
+          set -euo pipefail
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "api=ghcr.io/$OWNER/decision-assistant-api" >> "$GITHUB_OUTPUT"
+          echo "web=ghcr.io/$OWNER/decision-assistant-web" >> "$GITHUB_OUTPUT"
+
+      # "Pinned" is the point of this workflow: each image is pushed under its release version and an
+      # immutable commit tag, so a deployment can pin an exact build. `latest` is deliberately not
+      # pushed — a floating tag is what pinning is meant to avoid.
+      - name: Build and push the api image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          # The production stage, never `test` (which adds the dev extras). compose.yaml pins the
+          # same default; being explicit here means a change to that default cannot silently ship a
+          # test image as the release.
+          target: base
+          push: true
+          tags: |
+            ${{ steps.names.outputs.api }}:${{ needs.verify-version.outputs.version }}
+            ${{ steps.names.outputs.api }}:sha-${{ github.sha }}
+          sbom: true
+          provenance: true
+
+      - name: Build and push the web image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          target: runtime
+          push: true
+          # Vite bakes this in at build time (M-007), so the release artifact carries the same
+          # default compose.yaml uses for a local install.
+          build-args: |
+            VITE_API_URL=http://localhost:8000
+          tags: |
+            ${{ steps.names.outputs.web }}:${{ needs.verify-version.outputs.version }}
+            ${{ steps.names.outputs.web }}:sha-${{ github.sha }}
+          sbom: true
+          provenance: true
+
+      - name: Summarise
+        run: |
+          {
+            echo "### Released ${{ needs.verify-version.outputs.version }}"
+            echo
+            echo "| Image | Tags |"
+            echo "| --- | --- |"
+            echo "| \`${{ steps.names.outputs.api }}\` | \`${{ needs.verify-version.outputs.version }}\`, \`sha-${{ github.sha }}\` |"
+            echo "| \`${{ steps.names.outputs.web }}\` | \`${{ needs.verify-version.outputs.version }}\`, \`sha-${{ github.sha }}\` |"
+            echo
+            echo "No benchmark gate was run (dropped per product direction); the changelog entry for"
+            echo "this version states whether upgrading re-ingests the corpus."
+          } >> "$GITHUB_STEP_SUMMARY"

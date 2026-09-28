@@ -1,141 +1,31 @@
-from datetime import date
-from hashlib import sha256
-from uuid import UUID, uuid4
+"""Hybrid retrieval over passages: profiles, filters, capping and cache collapsing.
 
-import httpx
+The decision-evidence and trace-API tests live in `test_hybrid_retrieval_decisions.py`, and the
+shared corpus scaffolding in `tests/support/retrieval_fixtures.py` (DB53: AGENTS.md's 500-line cap).
+"""
+
+from datetime import date
+
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.config import Settings
-from decision_assistant.main import create_app
-from decision_assistant.models import (
-    Decision,
-    DecisionEvidence,
-    Document,
-    DocumentVersion,
-    EmbeddingCache,
-    Passage,
-    RetrievalTrace,
-    Workspace,
-)
+from decision_assistant.ingestion.models import EmbeddingCache, Passage
 from decision_assistant.providers.base import EmbeddingPurpose
 from decision_assistant.providers.fakes import FakeEmbeddingProvider
-from decision_assistant.retrieval.router import get_retrieval_service
+from decision_assistant.retrieval.models import RetrievalTrace
 from decision_assistant.retrieval.repository import RetrievalRepository
 from decision_assistant.retrieval.schemas import RetrievalFilters, RetrievalSearchRequest
 from decision_assistant.retrieval.service import HybridRetrievalService, RetrievalConfig
-from decision_assistant.workspace.context import (
-    WorkspaceContext,
-    get_workspace_context,
+from decision_assistant.workspace.embedding_profile import (
+    CorpusResetRequired,
+    embedding_profile_fingerprint,
 )
-from decision_assistant.workspace.embedding_profile import CorpusResetRequired
-from decision_assistant.workspace.embedding_profile import embedding_profile_fingerprint
-from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
-
-EMBEDDING_PROFILE = FakeEmbeddingProvider(dimension=768).profile.as_dict()
-
-
-async def create_workspace(session: AsyncSession) -> Workspace:
-    workspace = Workspace(
-        name=f"Retrieval {uuid4()}",
-        embedding_profile=EMBEDDING_PROFILE,
-    )
-    session.add(workspace)
-    await session.flush()
-    return workspace
-
-
-async def create_version(
-    session: AsyncSession,
-    workspace: Workspace,
-    *,
-    name: str,
-    state: str = "active",
-    media_type: str = "text/markdown",
-    project: str = "Atlas",
-    document_date: date = date(2026, 7, 15),
-    participants: list[str] | None = None,
-) -> tuple[Document, DocumentVersion]:
-    document = Document(
-        workspace_id=workspace.id,
-        display_name=name,
-        media_type=media_type,
-    )
-    session.add(document)
-    await session.flush()
-    version = DocumentVersion(
-        document_id=document.id,
-        version_number=1,
-        title=name,
-        document_date=document_date,
-        participants=participants or [],
-        source_type="meeting",
-        project=project,
-        checksum=sha256(name.encode()).hexdigest(),
-        storage_path=f"fixtures/{name}",
-        normalized_content="",
-        chunking_profile=CURRENT_CHUNKING_PROFILE,
-        state=state,
-    )
-    session.add(version)
-    await session.flush()
-    if state == "active":
-        document.active_version_id = version.id
-        await session.flush()
-    return document, version
-
-
-async def create_passage(
-    session: AsyncSession,
-    version: DocumentVersion,
-    *,
-    sequence_number: int,
-    content: str,
-    embedding: list[float],
-    retrieval_unit_kind: str = "passage",
-    parent_passage_id: UUID | None = None,
-) -> Passage:
-    passage = Passage(
-        document_version_id=version.id,
-        sequence_number=sequence_number,
-        content=content,
-        start_offset=0,
-        end_offset=len(content),
-        content_hash=sha256(content.encode()).hexdigest(),
-        locator={"kind": "lines", "start": sequence_number + 1, "end": sequence_number + 1},
-        embedding=embedding,
-        embedding_profile=EMBEDDING_PROFILE,
-        retrieval_unit_kind=retrieval_unit_kind,
-        parent_passage_id=parent_passage_id,
-    )
-    session.add(passage)
-    await session.flush()
-    document = await session.get(Document, version.document_id)
-    assert document is not None
-    cache = await session.scalar(
-        select(EmbeddingCache).where(
-            EmbeddingCache.workspace_id == document.workspace_id,
-            EmbeddingCache.content_hash == passage.content_hash,
-            EmbeddingCache.embedding_profile_fingerprint
-            == embedding_profile_fingerprint(EMBEDDING_PROFILE),
-        )
-    )
-    if cache is None:
-        cache = EmbeddingCache(
-            workspace_id=document.workspace_id,
-            content_hash=passage.content_hash,
-            embedding_profile_fingerprint=embedding_profile_fingerprint(
-                EMBEDDING_PROFILE
-            ),
-            embedding_profile=EMBEDDING_PROFILE,
-            embedding=embedding,
-        )
-        session.add(cache)
-        await session.flush()
-    passage.embedding_cache_id = cache.id
-    await session.flush()
-    return passage
+from tests.support.retrieval_fixtures import (
+    EMBEDDING_PROFILE,
+    create_passage,
+    create_version,
+    create_workspace,
+)
 
 
 @pytest.mark.asyncio
@@ -522,199 +412,3 @@ async def test_explicit_metadata_filters_apply_before_ranking(
         "project": "Atlas",
         "document_type": "text/markdown",
     }
-
-
-@pytest.mark.asyncio
-async def test_decision_fields_add_their_evidence_passage_as_candidate(
-    db_session: AsyncSession,
-) -> None:
-    embedding_provider = FakeEmbeddingProvider(dimension=768)
-    workspace = await create_workspace(db_session)
-    _, version = await create_version(db_session, workspace, name="decision.md")
-    passage = await create_passage(
-        db_session,
-        version,
-        sequence_number=0,
-        content="The rollout dependency remains unresolved.",
-        embedding=(
-            await embedding_provider.embed(
-                ["unrelated storage note"], purpose=EmbeddingPurpose.DOCUMENT
-            )
-        )[0],
-    )
-    decision = Decision(
-        document_version_id=version.id,
-        statement="Postpone authentication.",
-        status="active",
-        reasons=["Import flow is unstable."],
-        alternatives=[],
-        project="Atlas",
-        topic="authentication",
-        provenance="extracted",
-        review_state="supported",
-        user_edited=False,
-        retired=False,
-    )
-    db_session.add(decision)
-    await db_session.flush()
-    db_session.add(
-        DecisionEvidence(
-            decision_id=decision.id,
-            passage_id=passage.id,
-            field_name=None,
-            start_offset=0,
-            end_offset=len(passage.content),
-            support_state="supported",
-            is_primary=True,
-            content_hash=passage.content_hash,
-        )
-    )
-    await db_session.flush()
-    service = HybridRetrievalService(
-        session=db_session,
-        embedding_provider=embedding_provider,
-    )
-
-    result = await service.search(
-        RetrievalSearchRequest(question="authentication"),
-        request_id="retrieval-decision",
-        workspace_id=workspace.id,
-    )
-    trace = await db_session.get(RetrievalTrace, result.trace_id)
-
-    assert trace is not None
-    assert trace.decision_candidates[0]["passage_id"] == str(passage.id)
-    fused = next(
-        item
-        for item in trace.fused_results
-        if item["passage_id"] == str(passage.id)
-    )
-    assert fused["source_ranks"]["decision"] == 1
-
-
-@pytest.mark.asyncio
-async def test_decision_search_keeps_the_highest_rank_for_shared_passage(
-    db_session: AsyncSession,
-) -> None:
-    workspace = await create_workspace(db_session)
-    _, version = await create_version(db_session, workspace, name="decision-rank.md")
-    passage = await create_passage(
-        db_session,
-        version,
-        sequence_number=0,
-        content="The rollout dependency remains unresolved.",
-        embedding=[0.0] * 768,
-    )
-    decisions = [
-        Decision(
-            document_version_id=version.id,
-            statement="authentication rollout needs more operational review",
-            status="active",
-            reasons=[],
-            alternatives=[],
-            project="Atlas",
-            topic="authentication",
-            provenance="extracted",
-            review_state="supported",
-            user_edited=False,
-            retired=False,
-        ),
-        Decision(
-            document_version_id=version.id,
-            statement="authentication",
-            status="active",
-            reasons=[],
-            alternatives=[],
-            project="Atlas",
-            topic="authentication",
-            provenance="extracted",
-            review_state="supported",
-            user_edited=False,
-            retired=False,
-        ),
-    ]
-    db_session.add_all(decisions)
-    await db_session.flush()
-    db_session.add_all(
-        DecisionEvidence(
-            decision_id=decision.id,
-            passage_id=passage.id,
-            field_name=None,
-            start_offset=0,
-            end_offset=len(passage.content),
-            support_state="supported",
-            is_primary=True,
-            content_hash=passage.content_hash,
-        )
-        for decision in decisions
-    )
-    await db_session.flush()
-
-    results = await RetrievalRepository(db_session).decision_search(
-        "authentication",
-        RetrievalFilters(),
-        limit=1,
-        workspace_id=workspace.id,
-    )
-
-    assert results[0].passage.id == passage.id
-    assert results[0].raw_score > 0.1
-
-
-@pytest.mark.asyncio
-async def test_trace_api_returns_trace_and_stable_not_found(
-    db_session: AsyncSession,
-) -> None:
-    embedding_provider = FakeEmbeddingProvider(dimension=768)
-    query_vector = (
-        await embedding_provider.embed(
-            ["authentication"], purpose=EmbeddingPurpose.DOCUMENT
-        )
-    )[0]
-    workspace = await create_workspace(db_session)
-    _, version = await create_version(db_session, workspace, name="trace.md")
-    await create_passage(
-        db_session,
-        version,
-        sequence_number=0,
-        content="Authentication was postponed.",
-        embedding=query_vector,
-    )
-    service = HybridRetrievalService(
-        session=db_session,
-        embedding_provider=embedding_provider,
-    )
-    app = create_app(Settings())
-
-    async def override_service() -> HybridRetrievalService:
-        return service
-
-    app.dependency_overrides[get_retrieval_service] = override_service
-    app.dependency_overrides[get_workspace_context] = (
-        lambda: WorkspaceContext(workspace_id=workspace.id)
-    )
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
-        base_url="http://test",
-    ) as client:
-        search_response = await client.post(
-            f"/api/v1/workspaces/{workspace.id}/retrieval/search",
-            json={"question": "authentication", "filters": {}},
-            headers={"x-request-id": "trace-request"},
-        )
-        assert search_response.status_code == 200
-        trace_id = search_response.json()["trace_id"]
-
-        trace_response = await client.get(
-            f"/api/v1/workspaces/{workspace.id}/retrieval-traces/{trace_id}"
-        )
-        missing_response = await client.get(
-            f"/api/v1/workspaces/{workspace.id}/retrieval-traces/{uuid4()}"
-        )
-
-    assert trace_response.status_code == 200
-    assert trace_response.json()["id"] == trace_id
-    assert trace_response.json()["request_id"] == "trace-request"
-    assert missing_response.status_code == 404
-    assert missing_response.json()["code"] == "not_found"
-    assert UUID(missing_response.json()["request_id"])

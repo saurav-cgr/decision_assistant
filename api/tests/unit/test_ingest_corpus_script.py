@@ -47,7 +47,6 @@ def test_ingest_uploads_supported_files_in_sorted_order(script, tmp_path: Path) 
         return {"results": [{"status": "accepted", "document_id": f"doc-{path.name}"}]}
 
     def fake_wait(workspace_id: str, document_id: str, timeout: float) -> dict:
-        filename = document_id.replace("doc-", "")
         return {
             "active_version": {"id": "v1", "state": "active", "chunking_profile": {"algorithm": "structural-token-v1"}},
             "passages": [{"id": "p1"}],

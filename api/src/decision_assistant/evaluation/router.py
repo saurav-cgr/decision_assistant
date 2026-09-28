@@ -12,11 +12,9 @@ from decision_assistant.evaluation.schemas import (
     EvaluationRunResponse,
     EvaluationRunSummaryResponse,
 )
-from decision_assistant.evaluation.service import (
-    EvaluationService,
-    GenerationClaimJudge,
-    RuntimeEvaluationExecutor,
-)
+from decision_assistant.evaluation.judges import GenerationClaimJudge
+from decision_assistant.evaluation.runtime_executor import RuntimeEvaluationExecutor
+from decision_assistant.evaluation.service import EvaluationService
 from decision_assistant.providers.factory import (
     ProviderBundleFactory,
     get_provider_bundle_factory,

@@ -67,7 +67,11 @@ export function DecisionEditor({ decision, onSaved }: DecisionEditorProps) {
         evidence:
           supportState === "supported"
             ? decision.evidence
-                .filter((evidence) => selectedPassages.includes(evidence.passage_id))
+                .filter(
+                  (evidence): evidence is typeof evidence & { passage_id: string } =>
+                    evidence.passage_id !== null &&
+                    selectedPassages.includes(evidence.passage_id),
+                )
                 .map((evidence) => ({
                   passage_id: evidence.passage_id,
                   start_offset: evidence.start_offset,
@@ -163,25 +167,36 @@ export function DecisionEditor({ decision, onSaved }: DecisionEditorProps) {
         {supportState === "supported" && (
           <fieldset>
             <legend>Select supporting passages</legend>
-            {decision.evidence.map((evidence, index) => (
-              <label key={evidence.passage_id}>
-                <input
-                  type="checkbox"
-                  checked={selectedPassages.includes(evidence.passage_id)}
-                  onChange={(event) =>
-                    setSelectedPassages((current) =>
-                      event.target.checked
-                        ? [...current, evidence.passage_id]
-                        : current.filter((id) => id !== evidence.passage_id),
-                    )
-                  }
-                  aria-label={`Use evidence: ${evidence.quote}`}
-                />
-                <span>
-                  Passage {index + 1} — {evidence.quote}
-                </span>
-              </label>
-            ))}
+            {decision.evidence.map((evidence, index) => {
+              const passageId = evidence.passage_id;
+              if (passageId === null) {
+                return (
+                  <p key={index}>
+                    Passage {index + 1} is no longer available after a corpus rebuild and
+                    cannot be re-cited.
+                  </p>
+                );
+              }
+              return (
+                <label key={passageId}>
+                  <input
+                    type="checkbox"
+                    checked={selectedPassages.includes(passageId)}
+                    onChange={(event) =>
+                      setSelectedPassages((current) =>
+                        event.target.checked
+                          ? [...current, passageId]
+                          : current.filter((id) => id !== passageId),
+                      )
+                    }
+                    aria-label={`Use evidence: ${evidence.quote}`}
+                  />
+                  <span>
+                    Passage {index + 1} — {evidence.quote}
+                  </span>
+                </label>
+              );
+            })}
           </fieldset>
         )}
 

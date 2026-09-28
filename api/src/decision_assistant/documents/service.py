@@ -10,13 +10,18 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.config import Settings
+from decision_assistant.documents.errors import (
+    DisclosureNotAcknowledged,
+    DocumentApiError,
+)
+from decision_assistant.documents.queries import (
+    get_document_detail,
+    list_document_items,
+)
 from decision_assistant.documents.schemas import (
-    ActiveVersionDetail,
     DocumentDetail,
-    DocumentListItem,
     DocumentListResponse,
     FileError,
-    PassageDetail,
     RetryResponse,
     UploadBatchResponse,
     UploadFileResult,
@@ -26,13 +31,10 @@ from decision_assistant.documents.storage import (
     ObjectStorage,
     StoredObjectTooLarge,
 )
-from decision_assistant.errors import ApplicationError
-from decision_assistant.models import (
-    Decision,
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     IngestionJob,
-    Passage,
 )
 from decision_assistant.workspace.service import WorkspaceService
 
@@ -54,16 +56,6 @@ class IngestionDispatcher(Protocol):
         source_path: Path,
         request_id: str,
     ) -> None: ...
-
-
-class DocumentApiError(ApplicationError):
-    def __init__(self, code: str, message: str, status_code: int = 400) -> None:
-        super().__init__(
-            code=code,
-            message=message,
-            status_code=status_code,
-            retryable=False,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +105,11 @@ class DocumentService:
             ).get_or_create_active()
         else:
             workspace = await WorkspaceService(self._session).get(workspace_id)
+        # T049 (FR-014): the upload path is the gate the disclosure exists for. Enforced here, on the
+        # session the route already uses, so the rule holds for every caller of `submit_uploads`
+        # rather than only for callers that remember to depend on a route-level guard.
+        if workspace.disclosure_acknowledged_at is None:
+            raise DisclosureNotAcknowledged()
         results: list[UploadFileResult] = []
         dispatches: list[DispatchRequest] = []
 
@@ -270,60 +267,7 @@ class DocumentService:
         )
 
     async def list_documents(self, *, workspace_id: UUID | None = None) -> DocumentListResponse:
-        statement = select(Document).order_by(Document.created_at.desc())
-        if workspace_id is not None:
-            statement = statement.where(Document.workspace_id == workspace_id)
-        documents = list(await self._session.scalars(statement))
-        items: list[DocumentListItem] = []
-        for document in documents:
-            job = await self._session.scalar(
-                select(IngestionJob)
-                .where(IngestionJob.document_id == document.id)
-                .order_by(IngestionJob.created_at.desc(), IngestionJob.id.desc())
-                .limit(1)
-            )
-            version = (
-                await self._session.get(DocumentVersion, document.active_version_id)
-                if document.active_version_id is not None
-                else None
-            )
-            decision_count = (
-                await self._session.scalar(
-                    select(func.count())
-                    .select_from(Decision)
-                    .where(
-                        Decision.document_version_id == version.id,
-                        Decision.retired.is_(False),
-                    )
-                )
-                if version is not None
-                else 0
-            )
-            modification_state = None
-            if job is not None and job.stage == "unchanged":
-                modification_state = "unchanged"
-            elif version is not None:
-                modification_state = "modified" if version.version_number > 1 else "new"
-            items.append(
-                DocumentListItem(
-                    id=document.id,
-                    display_name=document.display_name,
-                    media_type=document.media_type,
-                    active_version_id=document.active_version_id,
-                    status=job.status if job is not None else None,
-                    stage=job.stage if job is not None else None,
-                    progress=job.progress if job is not None else None,
-                    error=job.error if job is not None else None,
-                    title=version.title if version is not None else None,
-                    document_date=version.document_date if version is not None else None,
-                    participants=version.participants if version is not None else [],
-                    source_type=version.source_type if version is not None else None,
-                    project=version.project if version is not None else None,
-                    modification_state=modification_state,
-                    decision_count=decision_count or 0,
-                )
-            )
-        return DocumentListResponse(items=items)
+        return await list_document_items(self._session, workspace_id=workspace_id)
 
     async def get_document(
         self,
@@ -331,55 +275,8 @@ class DocumentService:
         *,
         workspace_id: UUID | None = None,
     ) -> DocumentDetail:
-        document = await self._session.get(Document, document_id)
-        if document is None or (
-            workspace_id is not None and document.workspace_id != workspace_id
-        ):
-            raise DocumentApiError("document_not_found", "Document not found", 404)
-
-        version = (
-            await self._session.get(DocumentVersion, document.active_version_id)
-            if document.active_version_id is not None
-            else None
-        )
-        passages = (
-            list(
-                await self._session.scalars(
-                    select(Passage)
-                    .where(Passage.document_version_id == version.id)
-                    .order_by(Passage.sequence_number)
-                )
-            )
-            if version is not None
-            else []
-        )
-        return DocumentDetail(
-            id=document.id,
-            display_name=document.display_name,
-            media_type=document.media_type,
-            active_version=(
-                ActiveVersionDetail(
-                    id=version.id,
-                    version_number=version.version_number,
-                    title=version.title,
-                    document_date=version.document_date,
-                    participants=version.participants,
-                    source_type=version.source_type,
-                    project=version.project,
-                    state=version.state,
-                )
-                if version is not None
-                else None
-            ),
-            passages=[
-                PassageDetail(
-                    sequence_number=passage.sequence_number,
-                    content=passage.content,
-                    locator=passage.locator,
-                    structural_metadata=passage.structural_metadata,
-                )
-                for passage in passages
-            ],
+        return await get_document_detail(
+            self._session, document_id, workspace_id=workspace_id
         )
 
     async def retry(
@@ -389,21 +286,36 @@ class DocumentService:
         request_id: str,
         workspace_id: UUID | None = None,
     ) -> RetrySubmission:
-        document = await self._session.get(Document, document_id)
+        # DB31: lock the document row for the rest of this transaction. Two
+        # retries that arrive at the same time would otherwise both read the
+        # same latest `failed` job (the first one's new `pending` job is not
+        # visible to the other transaction yet) and both dispatch — V94's
+        # double-dispatch reached through concurrency instead of a stale view.
+        # The loser blocks here until the winner commits, then re-reads the
+        # latest job below and is rejected with 409.
+        document = await self._session.scalar(
+            select(Document).where(Document.id == document_id).with_for_update()
+        )
         if document is None or (
             workspace_id is not None and document.workspace_id != workspace_id
         ):
             raise DocumentApiError("document_not_found", "Document not found", 404)
+        # V94: must check the LATEST job overall, not merely the latest
+        # `failed` one — a document can have a failed job followed by a
+        # newer pending/running job (e.g. from an earlier retry already in
+        # flight), and retrying against the older failed job would dispatch
+        # a second concurrent ingestion for the same DocumentVersion.
         failed_job = await self._session.scalar(
             select(IngestionJob)
-            .where(
-                IngestionJob.document_id == document.id,
-                IngestionJob.status == "failed",
-            )
+            .where(IngestionJob.document_id == document.id)
             .order_by(IngestionJob.created_at.desc(), IngestionJob.id.desc())
             .limit(1)
         )
-        if failed_job is None or failed_job.document_version_id is None:
+        if (
+            failed_job is None
+            or failed_job.status != "failed"
+            or failed_job.document_version_id is None
+        ):
             raise DocumentApiError("retry_not_available", "No failed ingestion to retry", 409)
         version = await self._session.get(
             DocumentVersion,

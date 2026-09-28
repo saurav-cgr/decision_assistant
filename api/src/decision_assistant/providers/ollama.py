@@ -214,5 +214,5 @@ class OllamaGenerationProvider(_OllamaAdapter):
             if not isinstance(content, str):
                 raise TypeError
             return response_model.model_validate_json(content)
-        except (KeyError, TypeError, ValueError, ValidationError) as exc:
+        except (KeyError, TypeError, ValueError, ValidationError):
             raise ProviderOutputInvalid() from None

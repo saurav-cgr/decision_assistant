@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decision_assistant.config import Settings
@@ -14,15 +13,17 @@ from decision_assistant.decisions.service import DecisionService
 from decision_assistant.documents.service import DocumentService
 from decision_assistant.evaluation.service import EvaluationService
 from decision_assistant.ingestion.profiles import CURRENT_CHUNKING_PROFILE
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     EmbeddingCache,
     Passage,
-    Workspace,
 )
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.providers.base import EmbeddingPurpose
 from decision_assistant.providers.fakes import FakeEmbeddingProvider
 from decision_assistant.retrieval.service import HybridRetrievalService
@@ -106,6 +107,7 @@ async def _seed_workspace(
     passage.embedding_cache_id = cache.id
 
     decision = Decision(
+        workspace_id=workspace.id,
         document_version_id=version.id,
         statement=f"{name} decision: postpone authentication.",
         effective_date=date(2026, 7, 15),

@@ -3,7 +3,7 @@ from uuid import uuid4
 from decision_assistant.auth.passwords import PasswordManager
 from decision_assistant.auth.tokens import AccessTokenService
 from decision_assistant.config import Settings
-from decision_assistant.models import User
+from decision_assistant.auth.models import User
 
 
 def test_password_manager_hashes_and_verifies_passwords() -> None:

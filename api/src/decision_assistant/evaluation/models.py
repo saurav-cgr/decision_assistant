@@ -85,6 +85,7 @@ class EvaluationRun(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     completed_questions: Mapped[int] = mapped_column(Integer, default=0)
     total_questions: Mapped[int] = mapped_column(Integer, default=0)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     failure: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     configuration: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     dataset_version: Mapped[str] = mapped_column(String(100))

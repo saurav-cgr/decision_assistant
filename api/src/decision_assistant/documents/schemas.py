@@ -82,3 +82,7 @@ class DocumentDetail(ApiModel):
     media_type: str
     active_version: ActiveVersionDetail | None
     passages: list[PassageDetail]
+    status: str | None
+    stage: str | None
+    progress: int | None
+    error: dict[str, Any] | None

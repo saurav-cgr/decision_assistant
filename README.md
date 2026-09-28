@@ -279,13 +279,15 @@ docker compose run --rm -T api \
   --workspace-name Atlas
 ```
 
-This preserves `uploads_data`, `ollama_data`, and `web_node_modules`; resets PostgreSQL only. Do not use `docker compose down -v` for this workflow.
+This preserves `uploads_data` and `ollama_data`; resets PostgreSQL only. Do not use `docker compose down -v` for this workflow.
 
 ---
 
 ## 📊 Evaluation
 
 `evaluation/questions.json` contains versioned Atlas benchmark: answerable, unsupported, multi-part, supersession, and conflict questions with expected evidence and statuses.
+
+The evaluation harness is **development only**. That benchmark file lives in the source tree, outside the `api` image's build context, so an installed stack does not ship it: `POST /api/v1/workspaces/{id}/evaluations/runs` answers `503` with code `evaluation_unavailable`. Run evaluation from a source checkout instead.
 
 Measured results exist only after live provider run; not fabricated here. Compare stored metrics:
 
@@ -329,13 +331,19 @@ Supported formats: Markdown, text, DOCX, and PDF (digital or scanned English). P
 
 | Symptom | Cause / fix |
 | --- | --- |
-| `provider_configuration_invalid` | Add `GEMINI_API_KEY`, or verify selected provider settings. |
-| API exits at startup | Set `AUTH_JWT_SECRET`, `AUTH_BOOTSTRAP_USERNAME`, `AUTH_BOOTSTRAP_PASSWORD` in `.env`. |
+| `provider_configuration_invalid` | Add `GEMINI_API_KEY`, or verify selected provider settings (see `docs/providers.md`). |
+| API exits at startup | `AUTH_JWT_SECRET` is missing or `DATABASE_URL` still uses the shared placeholder credential; run `make setup`, then `make start`. `AUTH_BOOTSTRAP_USERNAME`/`AUTH_BOOTSTRAP_PASSWORD` no longer exist. |
 | `provider_quota_exhausted` | Gemini free-tier quota reached; wait for reset or use another configured provider. |
 | `provider_authentication_failed` | Gemini rejected key; verify value and permissions. |
-| `corpus_reset_required` | Embedding or chunking profile changed; reset PostgreSQL and reingest sources. |
+| `provider_unavailable` | Ollama is not running: `docker compose --profile ollama up -d ollama --wait`. |
+| `corpus_reset_required` | Embedding or chunking profile changed; the app re-ingests automatically — `docs/upgrade.md`. |
+| `disclosure_not_acknowledged` | Acknowledge the provider disclosure on the Workspace page (or `POST .../provider-disclosure/ack`) before uploading. |
 | Hybrid answer abstains | Active corpus lacks enough supported evidence; inspect retrieval trace. |
-| Ingestion job stays `running` | API restart interrupted in-process work; use UI retry. |
+| Ingestion job stays `running` | API restart interrupted in-process work; the startup sweep requeues it, or use UI retry. |
+
+`docs/troubleshooting.md` is the long form of the table above — startup failures, database password
+mismatches, rebuilds, upload rejections, and the post-restore restart. `docs/uninstall.md` covers
+removing an install.
 
 ---
 

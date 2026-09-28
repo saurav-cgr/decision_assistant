@@ -20,7 +20,10 @@ from decision_assistant.errors import ApplicationError
 from decision_assistant.ingestion.metadata import MetadataExtractor
 from decision_assistant.ingestion.profiles import resolve_corpus_profile
 from decision_assistant.ingestion.service import IngestionService
-from decision_assistant.models import DocumentVersion, IngestionJob
+from decision_assistant.ingestion.models import (
+    DocumentVersion,
+    IngestionJob,
+)
 from decision_assistant.providers.factory import (
     ProviderBundleFactory,
     get_provider_bundle_factory,

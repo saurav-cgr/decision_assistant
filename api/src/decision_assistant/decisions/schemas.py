@@ -180,14 +180,15 @@ class DecisionCorrectionRequest(StrictModel):
 
 
 class DecisionEvidenceResponse(StrictModel):
-    passage_id: UUID
+    passage_id: UUID | None
     field_name: str | None
-    quote: str
+    quote: str | None
     start_offset: int
     end_offset: int
     content_hash: str
     support_state: SupportState
     is_primary: bool
+    citation_stale: bool
 
 
 class DecisionRevisionResponse(StrictModel):
@@ -217,7 +218,7 @@ class DecisionRelationResponse(StrictModel):
 
 class DecisionSummary(StrictModel):
     id: UUID
-    document_version_id: UUID
+    document_version_id: UUID | None
     statement: str
     effective_date: date | None
     owner: str | None

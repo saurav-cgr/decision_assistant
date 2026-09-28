@@ -219,7 +219,7 @@ class GeminiGenerationProvider(_GeminiAdapter):
             if not isinstance(text, str):
                 raise TypeError
             return response_model.model_validate_json(text)
-        except (AttributeError, TypeError, ValueError, ValidationError) as exc:
+        except (AttributeError, TypeError, ValueError, ValidationError):
             raise ProviderOutputInvalid() from None
 
 

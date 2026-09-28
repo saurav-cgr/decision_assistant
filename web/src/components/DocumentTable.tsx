@@ -1,5 +1,5 @@
 import type { DocumentListItem } from "../api/types";
-import { IngestionStatus } from "./IngestionStatus";
+import { canRetryDocument, IngestionStatus } from "./IngestionStatus";
 
 type DocumentTableProps = {
   documents: DocumentListItem[];
@@ -10,11 +10,6 @@ type DocumentTableProps = {
   onViewSource: (document: DocumentListItem) => void;
 };
 
-const retryableErrorCodes = new Set([
-  "ingestion_interrupted",
-  "provider_unavailable",
-]);
-
 function displayValue(value: string | null): string {
   return value || "Not extracted";
 }
@@ -24,13 +19,6 @@ function displayModificationState(
 ): string {
   if (!state) return "Pending";
   return `${state.charAt(0).toUpperCase()}${state.slice(1)}`;
-}
-
-function canRetry(document: DocumentListItem): boolean {
-  return Boolean(
-    document.error?.retryable ||
-      (document.error?.code && retryableErrorCodes.has(document.error.code)),
-  );
 }
 
 export function DocumentTable({
@@ -126,7 +114,7 @@ export function DocumentTable({
             >
               View source
             </button>
-            {document.status === "failed" && canRetry(document) && (
+            {canRetryDocument(document) && (
               <button
                 type="button"
                 disabled={retryingId === document.id}

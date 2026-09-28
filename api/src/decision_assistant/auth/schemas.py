@@ -46,6 +46,22 @@ class PasswordConfirmation(BaseModel):
     current_password: str = Field(min_length=1, max_length=256)
 
 
+class SetupStatusResponse(BaseModel):
+    needs_password_setup: bool
+    needs_provider_disclosure: bool
+
+
+class FirstRunPasswordRequest(BaseModel):
+    """`POST /setup/password` body.
+
+    Only a password: the username is fixed (`auth.bootstrap.SETUP_USERNAME`), because this product
+    creates exactly one local user and asking for a name would be a question with one answer.
+    Bounds match `Credentials` so the first-run screen and the change-password screen agree.
+    """
+
+    password: str = Field(min_length=8, max_length=256)
+
+
 class UserResponse(BaseModel):
     id: str
     username: str

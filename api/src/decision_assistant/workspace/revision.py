@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.models import Workspace
+from decision_assistant.workspace.models import Workspace
 
 
 async def bump_knowledge_revision(

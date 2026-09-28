@@ -256,6 +256,14 @@ def run_smoke() -> None:
         workspace_id = active["id"]
     API_V1 = f"{API_V1}/workspaces/{workspace_id}"
 
+    # FR-014/T049: uploads are refused until the workspace's provider disclosure is acknowledged.
+    # Idempotent, so an already-acknowledged workspace is unaffected.
+    _request_json(
+        f"{API_V1}/provider-disclosure/ack",
+        method="POST",
+        expected_statuses={200},
+    )
+
     fixture_paths = [
         SAMPLE_ROOT / "02-architecture-sync.md",
         SAMPLE_ROOT / "03-auth-rollout.md",

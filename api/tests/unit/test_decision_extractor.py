@@ -4,7 +4,6 @@ from uuid import UUID
 import pytest
 
 from decision_assistant.decisions.extractor import (
-    DecisionExtractionError,
     DecisionExtractor,
     EvidenceAlignmentError,
 )

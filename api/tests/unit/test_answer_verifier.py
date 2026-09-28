@@ -155,6 +155,82 @@ def test_verifier_rejects_uncited_central_claim() -> None:
     assert result.errors[0].code == "central_claim_uncited"
 
 
+def test_verifier_rejects_explicit_value_outside_the_quoted_span() -> None:
+    """DB50: the value is in the passage, but not in what was quoted.
+
+    This is the discriminating case. The passage does contain the date, so the
+    pre-DB50 passage-wide search accepted it; only the quoted span is text the
+    model actually asserted as evidence.
+    """
+    content = "Authentication was postponed until 2026-08-01, per the review."
+    quote = "Authentication was postponed"
+    start = content.index(quote)
+    answer = generated_answer(
+        claims=[
+            AnswerClaim(
+                text="Authentication was postponed until 2026-08-01.",
+                central=True,
+                passage_ids=[PASSAGE_ID],
+                explicit_dates=["2026-08-01"],
+            )
+        ],
+        citations=[
+            citation(
+                quote=quote,
+                start_offset=start,
+                end_offset=start + len(quote),
+                content_hash=sha256(content.encode()).hexdigest(),
+            )
+        ],
+    )
+
+    assert "2026-08-01" in content, "the trap: the value is in the passage"
+    assert "2026-08-01" not in quote
+
+    result = AnswerVerifier().verify(
+        answer, {PASSAGE_ID: evidence_passage(content=content)}
+    )
+
+    assert result.valid is False
+    assert result.state == AnswerState.ABSTAINED
+    assert [error.code for error in result.errors] == [
+        "explicit_value_not_in_evidence"
+    ]
+
+
+def test_verifier_accepts_explicit_value_inside_the_quoted_span() -> None:
+    """The other half of DB50: quoting the value still verifies."""
+    content = "The beta starts on 2026-08-01 per the approved plan."
+    quote = "beta starts on 2026-08-01"
+    start = content.index(quote)
+    answer = generated_answer(
+        claims=[
+            AnswerClaim(
+                text="The beta starts on 2026-08-01.",
+                central=True,
+                passage_ids=[PASSAGE_ID],
+                explicit_dates=["2026-08-01"],
+            )
+        ],
+        citations=[
+            citation(
+                quote=quote,
+                start_offset=start,
+                end_offset=start + len(quote),
+                content_hash=sha256(content.encode()).hexdigest(),
+            )
+        ],
+    )
+
+    result = AnswerVerifier().verify(
+        answer, {PASSAGE_ID: evidence_passage(content=content)}
+    )
+
+    assert result.valid is True
+    assert result.state == AnswerState.ANSWERED
+    assert result.errors == []
+
+
 def test_evidence_pack_excludes_unsupported_corrected_field() -> None:
     fields = [
         DecisionFieldEvidence(

@@ -3,7 +3,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.models import User, Workspace
+from decision_assistant.auth.models import User
+from decision_assistant.workspace.models import Workspace
 from decision_assistant.workspace.context import get_workspace_context
 from decision_assistant.workspace.service import WorkspaceNotFound
 

@@ -138,6 +138,19 @@ def _find_or_create_workspace(name: str) -> str:
     return workspace_id
 
 
+def _acknowledge_provider_disclosure(workspace_id: str) -> None:
+    """FR-014/T049: uploads are refused until the workspace's disclosure is acknowledged.
+
+    Idempotent (the endpoint keeps the first acknowledgement), so a re-run of the documented corpus
+    reset does not change when the user originally accepted where their documents go.
+    """
+    _request_json(
+        f"{API_V1}/workspaces/{workspace_id}/provider-disclosure/ack",
+        method="POST",
+        expected_statuses={200},
+    )
+
+
 def _upload(workspace_id: str, path: Path) -> dict[str, Any]:
     boundary = "----ingest-boundary"
     content_type = SUPPORTED_SUFFIXES[path.suffix.lower()]
@@ -208,6 +221,8 @@ def ingest(
 
     _ensure_auth(timeout)
     workspace_id = _find_or_create_workspace(workspace_name)
+    # T049/FR-014: uploads are refused until this workspace's provider disclosure is acknowledged.
+    _acknowledge_provider_disclosure(workspace_id)
     summary: list[dict[str, Any]] = []
     for path in paths:
         result = _upload(workspace_id, path)

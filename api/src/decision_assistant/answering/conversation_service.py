@@ -22,7 +22,7 @@ from decision_assistant.answering.schemas import (
     QuestionResponse,
 )
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import Workspace
+from decision_assistant.workspace.models import Workspace
 
 CURRENT_RESPONSE_SCHEMA_VERSION = 1
 MAX_CONTEXT_TURNS = 6

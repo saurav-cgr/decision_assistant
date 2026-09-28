@@ -3,7 +3,6 @@ from uuid import UUID
 
 from fastapi.testclient import TestClient
 
-from decision_assistant.answering.conversation_service import ConversationService
 from decision_assistant.answering.router import (
     get_answer_service,
     get_conversation_service,

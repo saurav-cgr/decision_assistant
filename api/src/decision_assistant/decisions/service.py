@@ -19,11 +19,13 @@ from decision_assistant.decisions.schemas import (
     EvidenceSelection,
 )
 from decision_assistant.errors import ApplicationError
-from decision_assistant.models import (
+from decision_assistant.decisions.models import (
     Decision,
     DecisionEvidence,
     DecisionRelation,
     DecisionRevision,
+)
+from decision_assistant.ingestion.models import (
     Document,
     DocumentVersion,
     Passage,
@@ -57,11 +59,7 @@ class DecisionService:
     ) -> DecisionListResponse:
         statement = select(Decision).where(Decision.retired.is_(False))
         if workspace_id is not None:
-            statement = statement.join(
-                DocumentVersion,
-                DocumentVersion.id == Decision.document_version_id,
-            ).join(Document, Document.id == DocumentVersion.document_id)
-            statement = statement.where(Document.workspace_id == workspace_id)
+            statement = statement.where(Decision.workspace_id == workspace_id)
         filters = {
             "status": status,
             "owner": owner,
@@ -91,7 +89,7 @@ class DecisionService:
         evidence_rows = (
             await self._session.execute(
                 select(DecisionEvidence, Passage)
-                .join(Passage, Passage.id == DecisionEvidence.passage_id)
+                .outerjoin(Passage, Passage.id == DecisionEvidence.passage_id)
                 .where(DecisionEvidence.decision_id == decision.id)
                 .order_by(
                     DecisionEvidence.field_name.asc().nullsfirst(),
@@ -126,14 +124,16 @@ class DecisionService:
                 DecisionEvidenceResponse(
                     passage_id=evidence.passage_id,
                     field_name=evidence.field_name,
-                    quote=passage.content[
-                        evidence.start_offset : evidence.end_offset
-                    ],
+                    # The stored quote (DB40, revision 0016) survives a corpus
+                    # rebuild that reshapes this passage; the slice is only a
+                    # fallback for rows written before the column existed.
+                    quote=_evidence_quote(evidence, passage),
                     start_offset=evidence.start_offset,
                     end_offset=evidence.end_offset,
                     content_hash=evidence.content_hash,
                     support_state=evidence.support_state,
                     is_primary=evidence.is_primary,
+                    citation_stale=evidence.citation_stale,
                 )
                 for evidence, passage in evidence_rows
             ],
@@ -183,6 +183,9 @@ class DecisionService:
                         support_state="supported",
                         is_primary=index == 0,
                         content_hash=selection.content_hash,
+                        quote=passage.content[
+                            selection.start_offset : selection.end_offset
+                        ],
                     )
                 )
             self._session.add(
@@ -207,25 +210,9 @@ class DecisionService:
                 current_states=current_states,
             )
             await self._session.flush()
-            resolved_workspace_id = workspace_id
-            if resolved_workspace_id is None:
-                resolved_workspace_id = await self._session.scalar(
-                    select(Document.workspace_id)
-                    .join(
-                        DocumentVersion,
-                        DocumentVersion.document_id == Document.id,
-                    )
-                    .where(DocumentVersion.id == decision.document_version_id)
-                )
-            if resolved_workspace_id is None:
-                raise DecisionApiError(
-                    "workspace_not_found",
-                    "Decision workspace not found",
-                    404,
-                )
             await bump_knowledge_revision(
                 self._session,
-                resolved_workspace_id,
+                workspace_id if workspace_id is not None else decision.workspace_id,
             )
         return await self.get_decision(decision.id)
 
@@ -365,21 +352,12 @@ class DecisionService:
                 "Decision not found",
                 404,
             )
-        if workspace_id is not None:
-            version = await self._session.get(
-                DocumentVersion, decision.document_version_id
+        if workspace_id is not None and decision.workspace_id != workspace_id:
+            raise DecisionApiError(
+                "decision_not_found",
+                "Decision not found",
+                404,
             )
-            document = (
-                await self._session.get(Document, version.document_id)
-                if version is not None
-                else None
-            )
-            if version is None or document is None or document.workspace_id != workspace_id:
-                raise DecisionApiError(
-                    "decision_not_found",
-                    "Decision not found",
-                    404,
-                )
         return decision
 
     @staticmethod
@@ -430,3 +408,21 @@ class DecisionService:
         if isinstance(value, date):
             return value.isoformat()
         return jsonable_encoder(value)
+
+
+def _evidence_quote(
+    evidence: DecisionEvidence, passage: Passage | None
+) -> str | None:
+    """Return the evidence quote, preferring the stored value over a slice.
+
+    `decision_evidence.quote` (DB40, revision 0016) is authoritative: a corpus
+    rebuild deletes the passage this row pointed at, so a slice of a *new*
+    passage is not the quote that was extracted. The slice remains for rows
+    written before the column existed, and returns `None` once a rebuild
+    orphaned the row without a recoverable quote.
+    """
+    if evidence.quote is not None:
+        return evidence.quote
+    if passage is None:
+        return None
+    return passage.content[evidence.start_offset : evidence.end_offset]

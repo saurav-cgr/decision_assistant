@@ -1,0 +1,128 @@
+# CI (T070): the gates a change has to pass, run with the same commands the
+# Makefile documents so CI and a developer's machine cannot drift.
+#
+# The API linter is `make lint-api`, whose pin is the `dev` extra in
+# api/pyproject.toml; this workflow installs that same pin on the runner instead
+# of building the (Docling-bearing) image for a lint check.
+#
+# What is deliberately *not* here — a recorded decision, not an oversight (D13 /
+# T070 / DB47, settled 2026-09-26):
+#
+# - **API type checking.** There is no Python type checker in this project, and
+#   retrofitting one is not a config change: `mypy --ignore-missing-imports
+#   src/decision_assistant` reports ~103 errors today (SQLAlchemy's
+#   `Select[tuple[int]]` vs `scalar`, `type` has no attribute `status`,
+#   untyped lambdas). A blocking job needs a `[tool.mypy]` config (plugins and
+#   per-module overrides) plus a cleanup pass, which is tracked as its own
+#   future increment. The typecheck T070 asks for *is* run here, in the web
+#   half: `npm run build` is `tsc -b && vite build`.
+# - **Web lint.** `web/package.json` has no lint script and no eslint
+#   configuration; adding one would surface a pre-existing backlog.
+#
+# Both are recorded in the loop's `debt.md` rather than faked with a
+# `continue-on-error` job, which would report a green check that checks nothing.
+name: CI
+
+on:
+  push:
+    branches: ["main", "improvement"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The pin comes from api/pyproject.toml's `dev` extra (DB47 option (a))
+      # rather than being repeated here, so the version CI lints with cannot
+      # drift from the one the test image installs and `make lint-api` runs.
+      # Installed with pip directly rather than as `pip install ./api[dev]`:
+      # that would drag in Docling and torch (gigabytes) for a lint check.
+      - name: Install the pinned ruff
+        run: |
+          PIN=$(grep -o 'ruff==[0-9.]*' api/pyproject.toml | head -1)
+          test -n "$PIN" || (echo "no ruff pin found in api/pyproject.toml" && exit 1)
+          echo "installing $PIN"
+          pip install --no-cache-dir "$PIN"
+      - name: ruff check
+        run: ruff check api/src api/tests
+
+  api-tests:
+    name: api tests (make test-api)
+    runs-on: ubuntu-latest
+    # Builds the api image (Docling models are fetched at build time), then runs
+    # the suite in an isolated compose project. Slow, and deliberately the same
+    # command a developer runs.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: make test-api
+        run: make test-api
+
+  web-tests:
+    name: web tests and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: make test-web
+        run: make test-web
+      # `npm run build` is `tsc -b && vite build`: the typecheck half of T070.
+      # `-p` matters here — compose.yaml pins `name: decision-assistant`, so a
+      # bare `docker compose run` would target the real dev stack instead (DB46).
+      - name: Typecheck and build the web bundle
+        run: |
+          WEB_BUILD_TARGET=build docker compose -p decision-assistant-test -f compose.yaml build web
+          WEB_BUILD_TARGET=build docker compose -p decision-assistant-test \
+            run --rm --no-deps web npm run build
+
+  migration-check:
+    name: migrations on a fresh database
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: decision_assistant
+          POSTGRES_PASSWORD: ci-not-a-secret
+          POSTGRES_DB: decision_assistant
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U decision_assistant"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The API package itself, not the Docker image: this job only needs
+      # alembic plus the models, and `migrations.py`'s in-image path resolution
+      # is covered by `make test-api`.
+      - name: Install the API package
+        run: pip install --no-cache-dir ./api
+      - name: alembic upgrade head
+        working-directory: api
+        env:
+          # Explicitly the CI service container. Never the repository's `.env`.
+          DATABASE_URL: postgresql+asyncpg://decision_assistant:ci-not-a-secret@localhost:5432/decision_assistant
+        run: |
+          alembic upgrade head
+          alembic current | tee /tmp/alembic-current.txt
+          grep -q "(head)" /tmp/alembic-current.txt
+          # A downgrade of the newest revision and a re-upgrade prove the
+          # revision is reversible, which `upgrade head` alone cannot.
+          alembic downgrade -1
+          alembic upgrade head

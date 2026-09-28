@@ -1,14 +1,20 @@
+import asyncio
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from decision_assistant.config import Settings
+from decision_assistant.config import ConfigurationError, Settings
 from decision_assistant.db import get_session
 from decision_assistant.documents.router import get_document_service
+from decision_assistant.ingestion.models import Document, DocumentVersion, Passage
 from decision_assistant.main import create_app
+from decision_assistant.version import get_app_version
 from decision_assistant.workspace.embedding_profile import CorpusResetRequired
+from decision_assistant.workspace.models import Workspace
 
 
 class StubDocumentService:
@@ -24,7 +30,7 @@ def test_health_reports_ready() -> None:
     response = TestClient(app).get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "version": get_app_version()}
     session.execute.assert_awaited_once()
 
 
@@ -159,12 +165,28 @@ def test_public_business_routes_use_v1_namespace() -> None:
 
 
 @pytest.mark.asyncio
-async def test_lifespan_closes_provider_factory_when_application_errors() -> None:
+async def test_lifespan_closes_provider_factory_when_application_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # This test enters the real lifespan context (not just TestClient's request
+    # path), which runs every startup step up to `yield` for real, including a
+    # real `pg_dump` subprocess since backup.py's create_pre_migration_backup
+    # landed. Stub both the gate and the backup: the test only cares that
+    # aclose() runs on error, not that a real backup happens (or that its
+    # gate's real DB round-trip determines whether one would), and a real
+    # pg_dump write to the host filesystem doesn't belong in a unit test's
+    # side effects.
+    monkeypatch.setattr(
+        "decision_assistant.main.is_upgrade_pending",
+        lambda settings: True,
+    )
+    monkeypatch.setattr(
+        "decision_assistant.main.create_pre_migration_backup",
+        lambda settings: None,
+    )
     app = create_app(
         Settings(
             auth_jwt_secret="test-signing-secret-for-lifespan-tests",
-            auth_bootstrap_username="bootstrap-user",
-            auth_bootstrap_password="bootstrap-password",
         )
     )
     close_calls = 0
@@ -181,3 +203,291 @@ async def test_lifespan_closes_provider_factory_when_application_errors() -> Non
             raise RuntimeError("lifespan failure")
 
     assert close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_lifespan_skips_backup_and_still_upgrades_when_no_migration_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # V68: proves the `if is_upgrade_pending(...)` gate itself, not just the
+    # gate function and the backup routine in isolation. Deleting the gate
+    # or reordering backup after upgrade_to_head would leave this failing.
+    import decision_assistant.main as main_module
+
+    monkeypatch.setattr(main_module, "is_upgrade_pending", lambda settings: False)
+
+    backup_calls = 0
+
+    def fake_backup(settings: object) -> None:
+        nonlocal backup_calls
+        backup_calls += 1
+
+    monkeypatch.setattr(main_module, "create_pre_migration_backup", fake_backup)
+
+    upgrade_calls = 0
+    real_upgrade_to_head = main_module.upgrade_to_head
+
+    def spied_upgrade_to_head() -> None:
+        nonlocal upgrade_calls
+        upgrade_calls += 1
+        real_upgrade_to_head()
+
+    monkeypatch.setattr(main_module, "upgrade_to_head", spied_upgrade_to_head)
+
+    app = create_app(
+        Settings(
+            auth_jwt_secret="test-signing-secret-for-lifespan-tests",
+        )
+    )
+
+    class Factory:
+        async def aclose(self) -> None:
+            return None
+
+    app.state.provider_bundle_factory = Factory()
+
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert backup_calls == 0
+    assert upgrade_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_lifespan_blocks_migration_when_pre_migration_backup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # V68: a failed backup must block the migration, not be silently skipped.
+    import decision_assistant.main as main_module
+
+    monkeypatch.setattr(main_module, "is_upgrade_pending", lambda settings: True)
+
+    def failing_backup(settings: object) -> None:
+        raise RuntimeError("backup exploded")
+
+    monkeypatch.setattr(main_module, "create_pre_migration_backup", failing_backup)
+
+    upgrade_calls = 0
+
+    def spied_upgrade_to_head() -> None:
+        nonlocal upgrade_calls
+        upgrade_calls += 1
+
+    monkeypatch.setattr(main_module, "upgrade_to_head", spied_upgrade_to_head)
+
+    app = create_app(
+        Settings(
+            auth_jwt_secret="test-signing-secret-for-lifespan-tests",
+        )
+    )
+    close_calls = 0
+
+    class Factory:
+        async def aclose(self) -> None:
+            nonlocal close_calls
+            close_calls += 1
+
+    app.state.provider_bundle_factory = Factory()
+
+    with pytest.raises(RuntimeError, match="backup exploded"):
+        async with app.router.lifespan_context(app):
+            pass
+
+    assert upgrade_calls == 0
+    assert close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_lifespan_blocks_all_db_access_when_startup_config_is_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # V76: proves the `validate_startup_config(...)` call itself is wired into
+    # `lifespan`, not just present and correct in isolation (M-033's mutant-kill
+    # pattern) — deleting the call would leave every other test in this file
+    # green since they all supply a passing config.
+    import decision_assistant.main as main_module
+
+    def failing_validate(settings: object) -> None:
+        raise ConfigurationError("startup config invalid")
+
+    monkeypatch.setattr(main_module, "validate_startup_config", failing_validate)
+
+    monkeypatch.setattr(
+        main_module,
+        "is_upgrade_pending",
+        lambda settings: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "create_pre_migration_backup",
+        lambda settings: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "upgrade_to_head",
+        lambda: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+
+    app = create_app(
+        Settings(
+            auth_jwt_secret="test-signing-secret-for-lifespan-tests",
+        )
+    )
+    close_calls = 0
+
+    class Factory:
+        async def aclose(self) -> None:
+            nonlocal close_calls
+            close_calls += 1
+
+    app.state.provider_bundle_factory = Factory()
+
+    with pytest.raises(ConfigurationError, match="startup config invalid"):
+        async with app.router.lifespan_context(app):
+            pass
+
+    assert close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_lifespan_calls_validate_startup_config_before_migration_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # V76: proves ordering, not just that validate_startup_config is called
+    # somewhere — it must run before any DB-touching step, so a broken config
+    # never gets as far as a pending-migration check or a real DB connection.
+    import decision_assistant.main as main_module
+
+    call_order: list[str] = []
+    real_validate = main_module.validate_startup_config
+
+    def spied_validate(settings: object) -> None:
+        call_order.append("validate_startup_config")
+        real_validate(settings)
+
+    monkeypatch.setattr(main_module, "validate_startup_config", spied_validate)
+
+    def spied_is_upgrade_pending(settings: object) -> bool:
+        call_order.append("is_upgrade_pending")
+        return False
+
+    monkeypatch.setattr(main_module, "is_upgrade_pending", spied_is_upgrade_pending)
+    monkeypatch.setattr(main_module, "create_pre_migration_backup", lambda settings: None)
+
+    real_upgrade_to_head = main_module.upgrade_to_head
+
+    def spied_upgrade_to_head() -> None:
+        call_order.append("upgrade_to_head")
+        real_upgrade_to_head()
+
+    monkeypatch.setattr(main_module, "upgrade_to_head", spied_upgrade_to_head)
+
+    app = create_app(
+        Settings(
+            auth_jwt_secret="test-signing-secret-for-lifespan-tests",
+        )
+    )
+
+    class Factory:
+        async def aclose(self) -> None:
+            return None
+
+    app.state.provider_bundle_factory = Factory()
+
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert call_order == ["validate_startup_config", "is_upgrade_pending", "upgrade_to_head"]
+
+
+@pytest.mark.asyncio
+async def test_lifespan_dispatches_corpus_rebuild_only_for_reset_required_workspaces(
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
+) -> None:
+    # T029: at startup, every workspace whose active corpus no longer matches
+    # the configured embedding/chunking profile must get a rebuild dispatched;
+    # a workspace with no active passages (nothing to mismatch) must not.
+    import decision_assistant.main as main_module
+
+    stale_workspace = Workspace(
+        id=uuid4(),
+        name=f"T029 stale {uuid4()}",
+        embedding_profile={"provider": "stale-provider", "dimension": 1},
+    )
+    clean_workspace = Workspace(id=uuid4(), name=f"T029 clean {uuid4()}")
+    db_session.add_all([stale_workspace, clean_workspace])
+    await db_session.flush()
+
+    document = Document(
+        workspace_id=stale_workspace.id,
+        display_name="minutes.md",
+        media_type="text/markdown",
+    )
+    db_session.add(document)
+    await db_session.flush()
+    version = DocumentVersion(
+        document_id=document.id,
+        version_number=1,
+        checksum="chk",
+        storage_path="minutes.md",
+        state="active",
+    )
+    db_session.add(version)
+    await db_session.flush()
+    document.active_version_id = version.id
+    db_session.add(
+        Passage(
+            document_version_id=version.id,
+            sequence_number=0,
+            content="We will use Postgres.",
+            start_offset=0,
+            end_offset=22,
+            content_hash="hash",
+            locator={"kind": "line", "line": 1},
+            embedding=[0.0] * 768,
+        )
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(main_module, "is_upgrade_pending", lambda settings: False)
+
+    dispatched_workspace_ids: list[object] = []
+
+    async def fake_dispatch_corpus_rebuild(_session_factory, **kwargs: object) -> None:
+        dispatched_workspace_ids.append(kwargs["workspace_id"])
+
+    monkeypatch.setattr(
+        main_module, "dispatch_corpus_rebuild", fake_dispatch_corpus_rebuild
+    )
+
+    app = create_app(
+        Settings(
+            auth_jwt_secret="test-signing-secret-for-lifespan-tests",
+        )
+    )
+
+    class Factory:
+        def __call__(self) -> object:
+            return object()
+
+        async def aclose(self) -> None:
+            return None
+
+    app.state.provider_bundle_factory = Factory()
+
+    try:
+        async with app.router.lifespan_context(app):
+            pending_tasks = [
+                task
+                for task in app.state.startup_redispatch_tasks
+                if not task.done()
+            ]
+            if pending_tasks:
+                await asyncio.gather(*pending_tasks)
+
+        assert dispatched_workspace_ids == [stale_workspace.id]
+    finally:
+        await db_session.delete(stale_workspace)
+        await db_session.delete(clean_workspace)
+        await db_session.commit()

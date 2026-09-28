@@ -4,6 +4,82 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("diagnostics bundle download", () => {
+  it("sends the bearer token and uses the filename from the download headers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("zip-bytes", {
+        status: 200,
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition":
+            'attachment; filename="decision-assistant-diagnostics-20260926T120000Z.zip"',
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { downloadDiagnosticsBundle, setAccessToken } = await import(
+      /* @vite-ignore */ "./client"
+    );
+    setAccessToken("token-123");
+
+    const bundle = await downloadDiagnosticsBundle();
+
+    const [requestedUrl, init] = fetchMock.mock.calls[0];
+    expect(String(requestedUrl)).toMatch(/\/api\/v1\/diagnostics\/bundle$/);
+    const headers = new Headers((init as RequestInit).headers);
+    expect(headers.get("authorization")).toBe("Bearer token-123");
+    expect(bundle.filename).toBe("decision-assistant-diagnostics-20260926T120000Z.zip");
+    // The body is asserted by size: jsdom's Blob has no `text()`, and a Blob *body* is stringified
+    // by jsdom's Response (hence the raw string above).
+    expect(bundle.blob.size).toBe("zip-bytes".length);
+  });
+
+  it("falls back to a stable filename when the header is missing or malformed", async () => {
+    for (const disposition of [null, "attachment;", "inline"]) {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response("zip-bytes", {
+          status: 200,
+          headers: disposition ? { "content-disposition": disposition } : {},
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const { downloadDiagnosticsBundle } = await import(
+        /* @vite-ignore */ "./client"
+      );
+
+      const bundle = await downloadDiagnosticsBundle();
+
+      expect(bundle.filename).toBe("decision-assistant-diagnostics.zip");
+    }
+  });
+
+  it("surfaces an API error when the bundle cannot be fetched", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "invalid_credentials",
+          message: "Not authenticated",
+          request_id: "request-401",
+          retryable: false,
+          details: null,
+        }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { ApiClientError, downloadDiagnosticsBundle } = await import(
+      /* @vite-ignore */ "./client"
+    );
+
+    await expect(downloadDiagnosticsBundle()).rejects.toMatchObject({
+      code: "invalid_credentials",
+      status: 401,
+      requestId: "request-401",
+    });
+    await expect(downloadDiagnosticsBundle()).rejects.toBeInstanceOf(ApiClientError);
+  });
+});
+
 describe("Decision Assistant API client", () => {
   it("lists documents through the versioned business API", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
